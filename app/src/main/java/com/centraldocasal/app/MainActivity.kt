@@ -112,7 +112,7 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
             finally { busy.value = false }
         }
     }
-    fun save(record: Record) = action { repo.save(record); if (record.kind == "task") Reminders.schedule(getApplication(), repo.session.value.uid, record) }
+    fun save(record: Record) = action { repo.save(record); if (record.kind == "task") Reminders.schedule(getApplication(), repo.session.value.uid, record, repo.session.value.name) }
     fun complete(task: Record, day: LocalDate, completed: Boolean) = action { repo.save(Record(occurrenceId(task.id, day), "occurrence", task.isPrivate, mapOf("taskId" to task.id, "date" to day.toString(), "done" to completed))); if (completed) Reminders.cancel(getApplication(), repo.session.value.uid, task.id, day) }
     fun logout() { Reminders.cancelAll(getApplication(), repo.session.value.uid); repo.logout() }
     override fun onCleared() { repo.close() }
@@ -148,7 +148,11 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
             if(!reminderPrefs.contains("enabled")) reminderPrefs.edit().putBoolean("enabled",true).apply()
-            data.records.filter { it.kind=="task" }.forEach { Reminders.schedule(context,session.uid,it) }
+            Reminders.migrate(context,session.uid)
+            data.records.filter { it.kind=="task" }.forEach { task ->
+                val completeToday=data.records.any { it.kind=="occurrence" && it.text("taskId")==task.id && it.text("date")==LocalDate.now().toString() && it.flag("done") }
+                Reminders.schedule(context,session.uid,task,session.name,completedDay=LocalDate.now().takeIf { completeToday })
+            }
         }
     }
     LaunchedEffect(data.records, session.uid) {
@@ -200,7 +204,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
-                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null })
+                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location)
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate)
@@ -569,7 +573,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             } }
         }
         item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r,session.name) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { quiet = it; prefs.edit().putBoolean("quiet", it).apply() }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
         } }
@@ -580,7 +584,15 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             }
             Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(testInQuiet,{testInQuiet=it},modifier=Modifier.semantics { contentDescription="Permitir somente este teste durante o Sossego" }); Text("Permitir somente este teste durante o Sossego",style=MaterialTheme.typography.bodySmall) }
             FilledTonalButton(onClick = { vm.message.value=AndroidInteractions.sendTestNotification(context,session.uid,testInQuiet);notificationAllowed=AndroidInteractions.notificationsAllowed(context);testInQuiet=false },enabled=notificationAllowed) { Text("Enviar notificação de teste") }
-            Text("Teste manual com aviso genérico. Som e exibição dependem do Android e do Não Perturbe. Rotinas importadas continuam sem lembretes até sua confirmação.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick={ vm.message.value=Reminders.sendDetailedTest(context,session.uid,session.name) },enabled=notificationAllowed) { Text("Testar aviso com detalhes da tarefa") }
+            Text("O teste confirma a permissão. Lembretes reais mostram tarefa, horário, responsável e observação. No Samsung, confira também a economia de bateria e o Não Perturbe.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            val alarmManager=remember { context.getSystemService(android.app.AlarmManager::class.java) }
+            val exactAlarmAllowed=Build.VERSION.SDK_INT<31 || alarmManager?.canScheduleExactAlarms()==true
+            Text(if(exactAlarmAllowed) "Avisos no horário: alarmes exatos disponíveis." else "Avisos no horário: alarme aproximado. O Android pode atrasá-los.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(Build.VERSION.SDK_INT>=31 && !exactAlarmAllowed) OutlinedButton(onClick={
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+context.packageName))) }
+                    .onFailure { vm.message.value="Ative Alarmes e lembretes no acesso especial aos aplicativos." }
+            }) { Text("Permitir alarmes no horário") }
         } }
         item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
@@ -644,7 +656,7 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
             else -> emptyMap()
         }
         val record = Record(id, kind, if (kind == "health") true else isPrivate, fields); vm.repo.save(record)
-        if (kind == "task") Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record)
+        if (kind == "task") Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record, vm.repo.session.value.name)
         onDismiss()
     } }, busy = busy) {
         Field("Título", title, { title = it }); Field("Data (dd/mm/aaaa)", date, { date = it }); Field(if (kind == "plan") "Próxima ação / descrição" else "Observações", note, { note = it }, singleLine = false)
