@@ -43,6 +43,10 @@ internal fun personalTodayTasks(records: List<Record>, day: LocalDate, name: Str
 }
 
 
+/** Shared memories only. Completed quests are experiences, not saved moments. */
+internal fun sharedMomentCount(records: List<com.centraldocasal.app.domain.Record>): Int =
+    records.count { it.kind == "moment" && !it.isPrivate }
+
 @Composable
 internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, data: DataState, navigate: (String) -> Unit, selectTab: (String) -> Unit, requestLocationPermission: () -> Unit = {}) {
     val day = LocalDate.now()
@@ -53,7 +57,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
     val unmatchedPurchases=data.records.count { it.kind=="matchSuggestion" }
     val pendingPurchases=data.baskets.values.sumOf { basket -> basket.entries.count { !it.bought } }
     val careToday = careEventsForDay(data.records, day)
-    val memories = data.records.count { it.kind == "quest" && !it.flag("cancelled") && (it.fields["completed"] as? List<*>)?.distinct()?.size == 2 }
+    val memories = sharedMomentCount(data.records)
     val converted=data.records.filter { it.kind=="plan" }.map { it.text("sourcePlanId") }.filter { it.isNotBlank() }.toSet()
     val projectCount=data.records.count { it.kind=="plan" || (it.kind=="importedPlan"&&it.id !in converted) }
     val busy by vm.busy.collectAsStateWithLifecycle()
