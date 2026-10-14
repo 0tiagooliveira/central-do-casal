@@ -36,7 +36,7 @@ class LiveLocationService : Service(), LocationListener {
         const val EXTRA_HOUSEHOLD = "household"
         const val EXTRA_UID = "uid"
         const val SESSION_MS = 30 * 60_000L
-        const val STALE_MS = 3 * 60_000L
+        const val STALE_MS = 90_000L
         private const val UPDATE_MS = 15_000L
         private const val CHANNEL = "central-live-location"
         private const val NOTICE_ID = 7781
