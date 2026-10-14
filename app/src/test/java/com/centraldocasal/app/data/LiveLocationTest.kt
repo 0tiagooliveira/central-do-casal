@@ -21,5 +21,9 @@ class LiveLocationTest {
         assertFalse(fresh.copy(expiresAt = now + 1_000_000L).isCurrent(now + 120_000L))
         assertFalse(fresh.copy(capturedAt = now - 180_001L).isCurrent(now))
         assertFalse(fresh.copy(capturedAt = 0L).isCurrent(now))
+        assertFalse(fresh.copy(capturedAt = now + 20_000L).isCurrent(now))
+        assertFalse(fresh.copy(latitude = 91.0).isCurrent(now))
+        assertFalse(fresh.copy(longitude = -181.0).isCurrent(now))
+        assertFalse(fresh.copy(capturedAt = now - 90_001L).isCurrent(now))
     }
 }
