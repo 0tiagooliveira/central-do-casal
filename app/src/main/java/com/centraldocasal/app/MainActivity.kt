@@ -516,6 +516,8 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
     var sounds by rememberSaveable(session.uid) { mutableStateOf(experience.sounds) }
     var notificationAllowed by remember { mutableStateOf(AndroidInteractions.notificationsAllowed(context)) }
     var testInQuiet by rememberSaveable { mutableStateOf(false) }
+    var showTaskDetailsOnLockScreen by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("showDetailsOnLockScreen",false)) }
+    var reminderDiagnosticRefresh by remember { mutableIntStateOf(0) }
     val lifecycle=androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycle,context) {
         val observer=androidx.lifecycle.LifecycleEventObserver { _,event -> if(event==androidx.lifecycle.Lifecycle.Event.ON_RESUME) notificationAllowed=AndroidInteractions.notificationsAllowed(context) }
@@ -586,6 +588,55 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             FilledTonalButton(onClick = { vm.message.value=AndroidInteractions.sendTestNotification(context,session.uid,testInQuiet);notificationAllowed=AndroidInteractions.notificationsAllowed(context);testInQuiet=false },enabled=notificationAllowed) { Text("Enviar notificação de teste") }
             OutlinedButton(onClick={ vm.message.value=Reminders.sendDetailedTest(context,session.uid,session.name) },enabled=notificationAllowed) { Text("Testar aviso com detalhes da tarefa") }
             OutlinedButton(onClick={ vm.message.value=Reminders.scheduleDeliveryTest(context,session.uid,session.name) },enabled=notificationAllowed && reminders) { Text("Testar agendamento real em 2 minutos") }
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Mostrar detalhes da tarefa na tela bloqueada",style=MaterialTheme.typography.bodyMedium)
+                    Text("Opcional: pode expor informações pessoais a quem estiver perto do celular. SOS permanece privado.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(showTaskDetailsOnLockScreen,{
+                    showTaskDetailsOnLockScreen=it
+                    prefs.edit().putBoolean("showDetailsOnLockScreen",it).apply()
+                })
+            }
+            val diagnosis=remember(session.uid,data.records,reminderDiagnosticRefresh,notificationAllowed) {
+                Reminders.diagnostics(context,session.uid)
+            }
+            Text("Diagnóstico: ${diagnosis.futureSchedules} aviso(s) futuro(s) programado(s) · ${diagnosis.knownTasks} tarefa(s) no agendador local.",style=MaterialTheme.typography.bodySmall)
+            Text(when {
+                !diagnosis.notificationsAllowed -> "Bloqueio: notificações desativadas no Android."
+                !diagnosis.taskChannelAllowed -> "Bloqueio: canal 'Tarefas com detalhes' silenciado no Android."
+                !reminders -> "Bloqueio: lembretes desligados neste perfil."
+                diagnosis.futureSchedules==0 -> "Nenhum aviso futuro encontrado. Verifique o horário, responsável e a opção 'Permitir lembrete' nas tarefas."
+                else -> "O aplicativo programou avisos, mas o Android ainda pode atrasar a entrega por economia de bateria."
+            },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            diagnosis.nextAt?.let { at ->
+                Text("Próximo programado: ${java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at))}",style=MaterialTheme.typography.bodySmall)
+            }
+            diagnosis.lastDeliveredAt?.let { at ->
+                Text("Última notificação enviada ao Android: ${java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at))}",style=MaterialTheme.typography.bodySmall)
+            }
+            if(diagnosis.lastFailedAt!=null) Text("Houve falha recente ao agendar ou exibir um aviso. Execute o teste em dois minutos.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick={reminderDiagnosticRefresh++}) { Text("Atualizar diagnóstico") }
+                OutlinedButton(onClick={
+                    Reminders.cancelAll(context,session.uid)
+                    data.records.filter { it.kind=="task" }.forEach { task ->
+                        Reminders.schedule(context,session.uid,task,session.name)
+                    }
+                    reminderDiagnosticRefresh++
+                    vm.message.value="Avisos recalculados neste aparelho. Confira o próximo horário no diagnóstico."
+                },enabled=reminders && session.uid.isNotBlank()) { Text("Reagendar tarefas") }
+            }
+            OutlinedButton(onClick={
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.packageName)
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID,"central-tasks-v2")) }
+                    .onFailure { vm.message.value="Não foi possível abrir o canal de tarefas. Confira as notificações nas configurações do Android." }
+            }) { Text("Configurar canal de tarefas no Android") }
+            OutlinedButton(onClick={
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:"+context.packageName))) }
+                    .onFailure { vm.message.value="Não foi possível abrir as configurações deste aplicativo." }
+            }) { Text("Ver bateria e permissões do aplicativo") }
             Text("O teste confirma a permissão. Lembretes reais mostram tarefa, horário, responsável e observação. No Samsung, confira também a economia de bateria e o Não Perturbe.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             val alarmManager=remember { context.getSystemService(android.app.AlarmManager::class.java) }
             val exactAlarmAllowed=Build.VERSION.SDK_INT<31 || alarmManager?.canScheduleExactAlarms()==true
