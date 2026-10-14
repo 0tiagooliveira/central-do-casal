@@ -318,6 +318,7 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
         if(!reviewOnly) item { ChoiceStrip(listOf("Neste dia","Todos os registros"),if(showAll) "Todos os registros" else "Neste dia",{showAll=it=="Todos os registros"}) }
         if(!reviewOnly) item { WeekRibbon(day, { dayText=it.toString() }) }
         if(!reviewOnly) item { ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it}) }
+        if(!reviewOnly) item { CareEventsPanel(vm, session, data, day) }
         item { Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("Nova tarefa") } }
         val allTasks=data.records.filter { it.kind == "task" && if(reviewOnly) (it.flag("needsReview")||it.flag("needsTimeReview")) else (showAll || occurs(it, day)) && (reviewOnly || !done(it, day, data)) }
         val tasks=allTasks.filter { task -> reviewOnly || when(audience) { "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name); "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"; else -> taskBelongsTo(task,session.name) } }
