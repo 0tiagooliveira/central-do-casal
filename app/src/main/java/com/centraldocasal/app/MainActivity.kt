@@ -610,6 +610,31 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 Reminders.diagnostics(context,session.uid)
             }
             Text("Diagnóstico: ${diagnosis.futureSchedules} aviso(s) futuro(s) programado(s) · ${diagnosis.knownTasks} tarefa(s) no agendador local.",style=MaterialTheme.typography.bodySmall)
+            val checks = remember(session.uid,session.name,data.records,reminderDiagnosticRefresh) {
+                data.records.filter { it.kind=="task" }.map { Reminders.inspect(context,session.uid,it,session.name) }
+                    .sortedWith(compareBy<Reminders.TaskCheck> { it.plannedAt != null }.thenBy { it.title })
+            }
+            if (checks.isNotEmpty()) {
+                val blocked = checks.count { it.plannedAt == null }
+                Text("Verificação individual: ${checks.size-blocked} programada(s) · $blocked sem horário ativo neste aparelho.",
+                    style=MaterialTheme.typography.labelLarge)
+                checks.take(18).forEach { check ->
+                    Column(Modifier.fillMaxWidth().padding(vertical=3.dp)) {
+                        Text(check.title,style=MaterialTheme.typography.bodyMedium)
+                        Text(check.status,style=MaterialTheme.typography.bodySmall,
+                            color=if(check.plannedAt==null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        check.plannedAt?.let { at -> Text(
+                            "Agendado: " + java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm")
+                                .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at)),
+                            style=MaterialTheme.typography.labelSmall,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant
+                        ) }
+                    }
+                }
+                if(checks.size>18) Text("Mais ${checks.size-18} tarefa(s) não exibidas. Revise a Rotina.",
+                    style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                if(blocked>0) OutlinedButton(onClick={navigate("Rotina")}) { Text("Abrir Rotina para corrigir") }
+            }
             Text(when {
                 !diagnosis.notificationsAllowed -> "Bloqueio: notificações desativadas no Android."
                 !diagnosis.taskChannelAllowed -> "Bloqueio: canal 'Tarefas com detalhes' silenciado no Android."

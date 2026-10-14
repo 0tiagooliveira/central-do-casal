@@ -16,6 +16,13 @@ import org.json.JSONObject
 import java.util.UUID
 
 data class SessionState(val uid: String = "", val name: String = "", val email: String = "", val local: Boolean = false, val household: String = "", val verified: Boolean = false)
+
+/** A confirmed Firestore profile can supply the name missing from older Firebase Auth users. */
+internal fun effectiveProfileName(documentName: String?, authName: String?): String =
+    documentName?.trim()?.takeIf { it.isNotBlank() }
+        ?: authName?.trim()?.takeIf { it.isNotBlank() }
+        ?: "Meu perfil"
+
 data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList())
 
 /** One repository owns persistence. Local data never silently migrate into a cloud household. */
@@ -56,6 +63,10 @@ class CentralRepository(context: Context) {
             // A local profile write does not yet authorize reads of the new household.
             if (!confirmedProfile(snap.metadata.hasPendingWrites(), snap.metadata.isFromCache, prefs.getString("confirmedHousehold_$uid", null) == household)) return@addSnapshotListener
             if (!snap.metadata.isFromCache) { prefs.edit().putString("confirmedHousehold_$uid", household).apply(); access.confirm("profile") }
+            val resolvedName = effectiveProfileName(snap.getString("displayName"), auth.currentUser?.displayName)
+            if (resolvedName != mutableSession.value.name) {
+                mutableSession.value = mutableSession.value.copy(name = resolvedName)
+            }
             if (household != mutableSession.value.household || listeners.isEmpty()) {
                 mutableSession.value = mutableSession.value.copy(household = household)
                 subscribe(household, uid)
