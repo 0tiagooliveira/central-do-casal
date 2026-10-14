@@ -2,7 +2,7 @@
 
 ## Validação e distribuição
 
-- A versão de código atual é `0.3.22-dev` (`versionCode 30`). As validações registradas em `VALIDACAO.md` pertencem a versões anteriores e não certificam esta revisão. O CI da versão atual precisa concluir build, testes Android/JVM e testes de regras Firestore.
+- A versão de código é `0.3.22-dev` (`versionCode 30`). O [CI do PR #8](https://github.com/0tiagooliveira/central-do-casal/actions/runs/38557432319) concluiu com sucesso build, testes Android/JVM e **39/39 testes Firestore Emulator**. Isso **não comprova deploy** das regras no Firebase de produção nem QA nos aparelhos. `VALIDACAO.md` descreve a antiga versão 0.2.0; consulte `docs/ESTADO_ATUAL.md` para o estado vigente.
 - Instalação física, sincronização em dois aparelhos/duas contas, concorrência offline, reconexão, reinício/bateria, teclado, fontes grandes e TalkBack: ainda não certificados.
 - Sons, vibração e notificações: implementação do sistema e testes manuais disponíveis; comportamento físico pendente de verificação.
 - Assinatura de produção e Play Store: não configuradas. Distribuição de desenvolvimento.
@@ -10,9 +10,9 @@
 
 ## Produto e serviços
 
-- Modo Mercado, orçamento/carrinho/fechamento, painel anual de documentos, comparação do mesmo SKU/unidade e confirmação humana estão implementados. Servidor para recalcular fechamento, retificação/reabertura, favoritos e fila offline colaborativa continuam pendentes.
+- Modo Mercado, orçamento/carrinho/fechamento, painel anual de documentos, comparação do mesmo SKU/unidade, links explícitos Planos → Compras/Rotina e confirmação humana estão implementados. Servidor para recalcular fechamento, retificação/reabertura, favoritos e fila offline colaborativa continuam pendentes.
 - Painel anual não é conciliação financeira ou painel bancário. Orçamentos financeiros completos, planejamento integral e importador genérico no celular continuam pendentes.
-- Seleção semanal implementada; calendário mensal completo, prioridade/esforço, soneca e FCM remoto incompletos. WorkManager não garante hora exata.
+- Seleção semanal e eventos reais de cuidados (Lucca/Mel) implementados; calendário mensal completo, prioridade/esforço, soneca e FCM remoto incompletos. WorkManager não garante hora exata.
 - Três destinos de Jornada e quatro cartões iniciais implementados. Mapa integral, álbum sincronizado, cápsulas com duplo consentimento, selos e arquivo integral de memórias incompletos.
 - Login Google, exclusão completa de conta, política de retenção, App Check, Crashlytics, rate limits, backend privilegiado, auditoria e migrações não concluídos.
 - Sophia/backend/voz, Alexa/Avant, Poup+, Notion, calendários/clima externos e hardware doméstico dependem de serviços legítimos não integrados. Nenhuma proposta importada os ativa automaticamente.
