@@ -253,6 +253,7 @@ private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: Centra
     var date by rememberSaveable(step.id) { mutableStateOf(LocalDate.now().format(formatter)) }
     var time by rememberSaveable(step.id) { mutableStateOf("") }
     var owner by rememberSaveable(step.id) { mutableStateOf("Ambos") }
+    var category by rememberSaveable(step.id) { mutableStateOf("Rotina") }
     var visibility by rememberSaveable(step.id) { mutableStateOf(if(plan.isPrivate) "Só para mim" else "Compartilhada") }
     val parsedDate = runCatching { LocalDate.parse(date,formatter) }.getOrNull()
     val validTime = time.isBlank() || runCatching { java.time.LocalTime.parse(time) }.isSuccess
@@ -266,6 +267,8 @@ private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: Centra
                 OutlinedTextField(time,{time=it},label={Text("Horário opcional (HH:mm)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                 Text("Responsável",style=MaterialTheme.typography.labelLarge)
                 ChoiceStrip(listOf("Tiago","Rhayra","Ambos"),owner,{owner=it})
+                Text("Área",style=MaterialTheme.typography.labelLarge)
+                ChoiceStrip(listOf("Pessoal","Casa","Lucca","Rotina"),category,{category=it})
                 Text("Visibilidade",style=MaterialTheme.typography.labelLarge)
                 ChoiceStrip(listOf("Compartilhada","Só para mim"),visibility,{visibility=it})
                 if(plan.isPrivate && visibility=="Compartilhada") Text("Ao salvar, o título desta etapa privada ficará visível no espaço do casal.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
@@ -280,7 +283,7 @@ private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: Centra
                 onClick = {
                     val iso = requireNotNull(parsedDate).toString()
                     vm.action("Etapa agendada na Rotina") {
-                        val task = vm.repo.createPlanStepTask(plan.id,step.id,step.title,iso,owner,time.trim(),visibility=="Só para mim")
+                        val task = vm.repo.createPlanStepTask(plan.id,step.id,step.title,iso,owner,category,time.trim(),visibility=="Só para mim")
                         Reminders.schedule(vm.getApplication(),vm.repo.session.value.uid,task)
                         onSaved(iso)
                     }
