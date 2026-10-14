@@ -177,10 +177,20 @@ object Reminders {
         if(upcoming==null){cancelAlarm(context,uid,record.id);forget(context,uid,record.id);return}
         val p=store(context)
         val exact=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
-        val fingerprint=(listOf(upcoming.toString(),time.toString(),name,
+        // Só campos que afetam agendamento ou texto visível entram no hash.
+        // Registros recuperados do cache podem ter defaults/ordem diferentes
+        // dos objetos Firestore. Isso não deve rearmar alarmes sem necessidade.
+        val weekdays = (record.fields["days"] as? List<*>)
+            ?.mapNotNull { (it as? Number)?.toInt() }?.distinct()?.sorted().orEmpty()
+        val fingerprint=(listOf(
+            upcoming.toString(),time.toString(),name,
             pref.getBoolean("quiet",true).toString(),exact.toString(),
-            ZoneId.systemDefault().id,record.toMap().toSortedMap().toString()).joinToString("|"))
-            .hashCode().toString()
+            ZoneId.systemDefault().id,record.text("date"),
+            record.text("repeat"),record.text("title"),record.text("note"),
+            record.text("owner","Ambos"),record.flag("skipReminder").toString(),
+            record.flag("needsReview").toString(),record.flag("needsTimeReview").toString(),
+            weekdays.joinToString(",")
+        ).joinToString("|")).hashCode().toString()
         if(!forceRearm && p.getString(fingerprintKey(uid,record.id),null)==fingerprint &&
             p.getLong(plannedKey(uid,record.id),0L)>System.currentTimeMillis()) return
         cancelAlarm(context,uid,record.id)
@@ -240,11 +250,12 @@ object Reminders {
             pref.edit().putBoolean(MIGRATION,true).apply()
         }
     }
-    fun restore(context:Context) {
+    /** Boot always rearms; foreground resume only rearms if time zone, permissions or data changed. */
+    fun restore(context:Context, forceRearm:Boolean=true) {
         val uid=context.getSharedPreferences("central_local_v1",Context.MODE_PRIVATE).getString("activeUid","").orEmpty()
         if(uid.isBlank())return
         val ids=store(context).getStringSet("$ID_LIST:$uid",emptySet()).orEmpty().toList()
-        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it,forceRearm=true) } }
+        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it,forceRearm=forceRearm) } }
     }
     data class Diagnostics(
         val knownTasks: Int,
