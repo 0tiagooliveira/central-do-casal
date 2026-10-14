@@ -300,7 +300,7 @@ object Reminders {
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id,scheduledDay))
             }
         } catch (_: SecurityException) {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id,scheduledDay))
         }
     }
 
