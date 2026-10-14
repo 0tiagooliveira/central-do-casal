@@ -154,8 +154,8 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
-                    Text("Registra um alerta no espaço do casal mesmo sem GPS. A localização será incluída quando disponível. Não substitui serviços de emergência.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy && !locating,onClick={ if(hasPermission) requestLocation(::triggerSos) else triggerSos(null) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                    Text("Registra o alerta imediatamente, sem esperar pelo GPS. Inclui posição recente apenas se já tiver sido obtida. Não substitui serviços de emergência.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Button(enabled=!busy,onClick={ triggerSos(location?.takeIf { current -> System.currentTimeMillis() - current.capturedAt in 0L..90_000L }) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS agora") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -195,7 +195,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy && !locating,onClick={ if(hasPermission) requestLocation(::triggerSos) else triggerSos(null) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                Button(enabled=!busy,onClick={ triggerSos(location?.takeIf { current -> System.currentTimeMillis() - current.capturedAt in 0L..90_000L }) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS agora") }
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }
