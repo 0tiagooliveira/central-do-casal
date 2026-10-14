@@ -58,7 +58,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
                 Text("Uma vida mais leve, organizada a dois.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        item { WeatherCard(requestLocationPermission) }
+        item { WeatherCard(requestLocationPermission, tasks = data.records.filter { it.kind == "task" }) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryTile("", "${tasks.size}", "Tarefas de hoje · $completedCount concluídas", CalendarLine, accent, { touch { selectTab("Rotina") } }, Modifier.weight(1f))
