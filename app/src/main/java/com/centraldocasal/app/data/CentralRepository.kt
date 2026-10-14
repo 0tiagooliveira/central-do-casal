@@ -359,12 +359,13 @@ class CentralRepository(context: Context) {
     }
 
     /** Creates at most one routine task for a plan step, preserving the origin. */
-    suspend fun createPlanStepTask(planId: String, stepId: String, title: String, date: String, owner: String, time: String, isPrivate: Boolean): Record {
+    suspend fun createPlanStepTask(planId: String, stepId: String, title: String, date: String, owner: String, category: String, time: String, isPrivate: Boolean): Record {
         require(planId.isNotBlank() && stepId.isNotBlank()) { "Origem do plano inválida." }
         val cleanTitle = title.trim()
         require(cleanTitle.isNotEmpty() && cleanTitle.length <= 200) { "Etapa inválida." }
         java.time.LocalDate.parse(date)
         require(owner in setOf("Tiago", "Rhayra", "Ambos")) { "Escolha o responsável." }
+        require(category in setOf("Pessoal","Casa","Lucca","Rotina")) { "Escolha a área da tarefa." }
         if (time.isNotBlank()) java.time.LocalTime.parse(time)
         val id = "plan-task-${planId}-${stepId}"
         val task = Record(id, "task", isPrivate, mapOf(
@@ -372,7 +373,7 @@ class CentralRepository(context: Context) {
             "note" to "Criada a partir de uma etapa de plano.",
             "date" to date,
             "owner" to owner,
-            "category" to "Casa",
+            "category" to category,
             "repeat" to "Única",
             "time" to time,
             "skipReminder" to time.isBlank(),
