@@ -141,8 +141,10 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
         items(steps, key = { (it["id"] as? String).orEmpty() }) { step ->
             val currentStepId = (step["id"] as? String).orEmpty()
             val currentStepTitle = (step["title"] as? String).orEmpty()
-            val shoppingLinked = data.baskets.values.any { basket -> basket.entries.any { it.sourcePlanId == plan.id && it.sourceStepId == currentStepId } }
-            val routineLinked = data.records.any { it.kind == "task" && it.text("sourcePlanId") == plan.id && it.text("sourceStepId") == currentStepId }
+            val linkedBasket = data.baskets.values.firstOrNull { basket -> basket.entries.any { it.sourcePlanId == plan.id && it.sourceStepId == currentStepId } }
+            val linkedTask = data.records.firstOrNull { it.kind == "task" && it.text("sourcePlanId") == plan.id && it.text("sourceStepId") == currentStepId }
+            val shoppingLinked = linkedBasket != null
+            val routineLinked = linkedTask != null
             OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -155,12 +157,12 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (shoppingLinked) {
-                            TextButton(onClick = { onOpenLinked("Compras") }) { Icon(BasketLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está em Compras") }
+                            TextButton(onClick = { onOpenLinked("Compras:${linkedBasket?.market.orEmpty()}") }) { Icon(BasketLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está em ${linkedBasket?.market ?: "Compras"}") }
                         } else {
                             TextButton(onClick = { shoppingStep = PlanStepAction(currentStepId,currentStepTitle) }, enabled=!busy) { Icon(BasketLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Enviar para Compras") }
                         }
                         if (routineLinked) {
-                            TextButton(onClick = { onOpenLinked("Rotina") }) { Icon(CalendarLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está na Rotina") }
+                            TextButton(onClick = { onOpenLinked("Rotina:${linkedTask?.text("date").orEmpty()}") }) { Icon(CalendarLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está na Rotina") }
                         } else {
                             TextButton(onClick = { routineStep = PlanStepAction(currentStepId,currentStepTitle) }, enabled=!busy) { Icon(CalendarLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Agendar na Rotina") }
                         }
@@ -187,9 +189,9 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
             vm = vm,
             busy = busy,
             onDismiss = { shoppingStep = null },
-            onSaved = {
+            onSaved = { market ->
                 shoppingStep = null
-                onOpenLinked("Compras")
+                onOpenLinked("Compras:$market")
             }
         )
     }
@@ -200,16 +202,16 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
             vm = vm,
             busy = busy,
             onDismiss = { routineStep = null },
-            onSaved = {
+            onSaved = { date ->
                 routineStep = null
-                onOpenLinked("Rotina")
+                onOpenLinked("Rotina:$date")
             }
         )
     }
 }
 
 @Composable
-private fun PlanStepShoppingDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: () -> Unit) {
+private fun PlanStepShoppingDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: (String) -> Unit) {
     var market by rememberSaveable(step.id) { mutableStateOf("Mercado") }
     var sharePrivate by rememberSaveable(step.id) { mutableStateOf(false) }
     val session = vm.repo.session.value
@@ -236,7 +238,7 @@ private fun PlanStepShoppingDialog(plan: Record, step: PlanStepAction, vm: Centr
                 onClick = {
                     vm.action("Etapa enviada para Compras") {
                         vm.repo.linkPlanStepToBasket(plan.id,step.id,step.title,market)
-                        onSaved()
+                        onSaved(market)
                     }
                 }
             ) { Text("Adicionar à lista") }
@@ -246,7 +248,7 @@ private fun PlanStepShoppingDialog(plan: Record, step: PlanStepAction, vm: Centr
 }
 
 @Composable
-private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: () -> Unit) {
+private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: (String) -> Unit) {
     val formatter = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy") }
     var date by rememberSaveable(step.id) { mutableStateOf(LocalDate.now().format(formatter)) }
     var time by rememberSaveable(step.id) { mutableStateOf("") }
@@ -280,7 +282,7 @@ private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: Centra
                     vm.action("Etapa agendada na Rotina") {
                         val task = vm.repo.createPlanStepTask(plan.id,step.id,step.title,iso,owner,time.trim(),visibility=="Só para mim")
                         Reminders.schedule(vm.getApplication(),vm.repo.session.value.uid,task)
-                        onSaved()
+                        onSaved(iso)
                     }
                 }
             ) { Text("Criar tarefa") }
