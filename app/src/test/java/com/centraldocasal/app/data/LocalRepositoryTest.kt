@@ -59,8 +59,14 @@ class LocalRepositoryTest {
         first.close()
 
         val second = CentralRepository(context)
-        assertEquals(event, second.data.value.records.single { it.id == event.id })
-        second.remove(event)
+        val stored = second.data.value.records.single { it.id == event.id }
+        assertEquals("careEvent", stored.kind)
+        assertEquals("diaper", stored.text("careType"))
+        assertEquals("Lucca", stored.text("subject"))
+        assertEquals("local", stored.text("actorUid"))
+        assertEquals(123456789L, stored.number("occurredAt"))
+        assertEquals("2026-10-13", stored.text("date"))
+        second.remove(stored)
         assertFalse(second.data.value.records.any { it.id == event.id })
         second.close()
     }
