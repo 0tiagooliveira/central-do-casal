@@ -108,6 +108,8 @@ class DetailedTaskNotificationTest {
         assertEquals(android.app.Notification.VISIBILITY_PRIVATE,shadowOf(manager).allNotifications.single().visibility)
         context.getSharedPreferences("reminders_local",Context.MODE_PRIVATE)
             .edit().putBoolean("showDetailsOnLockScreen",true).commit()
+        // A tarefa única foi consumida no primeiro disparo; recadastre para a segunda entrega.
+        Reminders.schedule(context,"local",task,"Rhayra")
         TaskAlarmReceiver().onReceive(context,intent)
         assertEquals(android.app.Notification.VISIBILITY_PUBLIC,shadowOf(manager).allNotifications.single().visibility)
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
