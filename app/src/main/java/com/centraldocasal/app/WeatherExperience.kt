@@ -29,7 +29,10 @@ internal data class WeatherSnapshot(
     val todayLow: Double,
     val rainChance: Int?,
     val description: String,
-    val fetchedAtMillis: Long = System.currentTimeMillis()
+    val fetchedAtMillis: Long = System.currentTimeMillis(),
+    val tomorrowHigh: Double? = null,
+    val tomorrowLow: Double? = null,
+    val tomorrowRainChance: Int? = null
 )
 
 internal fun weatherDescription(code: Int): String = when(code) {
@@ -60,6 +63,12 @@ internal object WeatherSource {
         if(root.optBoolean("error",false)) error("Previsão indisponível")
         val current=root.getJSONObject("current")
         val daily=root.getJSONObject("daily")
+        fun nextDayDouble(field: String): Double? = daily.optJSONArray(field)
+            ?.takeIf { it.length() > 1 && !it.isNull(1) }
+            ?.getDouble(1)
+        fun nextDayChance(field: String): Int? = daily.optJSONArray(field)
+            ?.takeIf { it.length() > 1 && !it.isNull(1) }
+            ?.getInt(1)
         return WeatherSnapshot(
             current.getDouble("temperature_2m"),
             current.getDouble("apparent_temperature"),
@@ -68,7 +77,10 @@ internal object WeatherSource {
             daily.getJSONArray("temperature_2m_max").getDouble(0),
             daily.getJSONArray("temperature_2m_min").getDouble(0),
             daily.optJSONArray("precipitation_probability_max")?.takeIf { it.length()>0 && !it.isNull(0) }?.optInt(0),
-            weatherDescription(current.getInt("weather_code"))
+            weatherDescription(current.getInt("weather_code")),
+            tomorrowHigh = nextDayDouble("temperature_2m_max"),
+            tomorrowLow = nextDayDouble("temperature_2m_min"),
+            tomorrowRainChance = nextDayChance("precipitation_probability_max")
         )
     }
     suspend fun fetch(latitude:Double,longitude:Double):WeatherSnapshot = withContext(Dispatchers.IO) {
@@ -110,6 +122,17 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit) {
                 Text("Sensação de ${data.feelsLike.toInt()} °C · Mín. ${data.todayLow.toInt()} °C · Máx. ${data.todayHigh.toInt()} °C")
                 Text("Umidade ${data.humidity}% · Vento ${data.wind.toInt()} km/h" +
                     (data.rainChance?.let { " · Chance de chuva $it%" } ?: ""),style=MaterialTheme.typography.bodySmall)
+                if (data.tomorrowHigh != null && data.tomorrowLow != null) {
+                    HorizontalDivider()
+                    Text("Amanhã", style = MaterialTheme.typography.titleSmall)
+                    Text("Mín. ${data.tomorrowLow.roundToInt()} °C · Máx. ${data.tomorrowHigh.roundToInt()} °C" +
+                        (data.tomorrowRainChance?.let { " · Chuva: até $it% de probabilidade" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall)
+                    if ((data.tomorrowRainChance ?: 0) >= 60) {
+                        Text("Pode chover amanhã. Confira a previsão antes de organizar os deslocamentos.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             } else {
                 Text("Consulte a previsão para sua localização, somente quando desejar.",style=MaterialTheme.typography.bodySmall)
             }
