@@ -207,16 +207,16 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     BackHandler(route.isNotBlank()) { route = "" }
     Scaffold(snackbarHost = { SnackbarHost(snack) }, topBar = {
         if (session.uid.isNotBlank()) Surface(color = MaterialTheme.colorScheme.background) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (route.isNotBlank()) IconButton(onClick = { route = "" }) { Icon(Icons.Default.ArrowBack, "Voltar") }
-                else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(11.dp).size(23.dp), tint = MaterialTheme.colorScheme.primary) }
+                else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(if (route.isBlank()) "Central do Casal" else route, style = MaterialTheme.typography.titleLarge)
+                    Text(if (route.isBlank()) "Central do Casal" else route, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                     if (route.isBlank()) Text(if (session.name.isBlank()) "Nosso espaço" else session.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (route.isBlank()) {
                     IconButton(onClick = { route = "Lembretes" }) { Icon(ReminderBell, "Abrir lembretes", Modifier.size(22.dp)) }
-                    FilledTonalIconButton(onClick = { route = "Configurações" }, shape = CircleShape, modifier = Modifier.size(48.dp).semantics { contentDescription="Configurações e privacidade" }) { PersonalPortrait(experience.photo,session.name,size=42.dp) }
+                    FilledTonalIconButton(onClick = { route = "Configurações" }, shape = CircleShape, modifier = Modifier.size(40.dp).semantics { contentDescription="Configurações e privacidade" }) { PersonalPortrait(experience.photo,session.name,size=36.dp) }
                 }
             }
         }
