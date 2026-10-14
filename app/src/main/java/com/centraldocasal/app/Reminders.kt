@@ -55,6 +55,14 @@ object Reminders {
     private fun prefs(context: Context, uid: String) =
         context.getSharedPreferences("reminders_$uid", Context.MODE_PRIVATE)
 
+    /** Create the task channel before the first alarm fires so the Android settings are usable. */
+    private fun ensureChannel(context: Context) {
+        context.getSystemService(NotificationManager::class.java)
+            ?.createNotificationChannel(NotificationChannel(CHANNEL, "Tarefas com detalhes", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Lembretes de tarefas com título, horário e responsável"
+            })
+    }
+
     private fun belongs(record: Record, profileName: String): Boolean {
         val owner = record.text("owner", "Ambos").trim()
         if (owner.equals("Ambos", true)) return true
@@ -111,6 +119,7 @@ object Reminders {
 
     fun schedule(context: Context, uid: String, record: Record, profileName: String = "", completedDay: LocalDate? = null, forceRearm: Boolean = false) {
         if(uid.isBlank() || record.kind != "task") return
+        ensureChannel(context)
         val pref=prefs(context,uid)
         if(profileName.isNotBlank()) pref.edit().putString("profileName",profileName).apply()
         val name=profileName.ifBlank { pref.getString("profileName","").orEmpty() }
@@ -304,9 +313,7 @@ object Reminders {
         val date=LocalDate.now()
         if(!AndroidInteractions.notificationsAllowed(context))return
         val manager=context.getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(NotificationChannel(CHANNEL,"Tarefas com detalhes",NotificationManager.IMPORTANCE_HIGH).apply {
-            description="Lembretes de tarefas com título, horário e responsável"
-        })
+        ensureChannel(context)
         if(manager.getNotificationChannel(CHANNEL)?.importance==NotificationManager.IMPORTANCE_NONE)return
         val owner=task.text("owner","Ambos")
         val details="${time} • $owner".let { formatted ->
