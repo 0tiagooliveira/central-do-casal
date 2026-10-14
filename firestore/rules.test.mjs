@@ -94,6 +94,20 @@ test('members can share house devices and safety state while strangers and priva
  await assertFails(updateDoc(doc(shared,'households/home/records/safetyAlert'),{title:'não pode alterar alerta'}));
 });
 test('member cannot store private flag in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/private'),record('alice','task',true)));});
+test('care events require genuine authorship and only the author can undo',async()=> {
+ const care=(uid,type='diaper',subject='Lucca')=>({
+   kind:'careEvent',private:false,careType:type,subject,actorUid:uid,actorName:uid,
+   occurredAt:Date.now(),date:'2026-10-13',updatedBy:uid,updatedAt:serverTimestamp()
+ });
+ const ref=doc(db('alice'),'households/home/records/care-alice');
+ await assertSucceeds(setDoc(ref,care('alice')));
+ await assertSucceeds(getDoc(doc(db('bob'),'households/home/records/care-alice')));
+ await assertFails(updateDoc(ref,{careType:'bath'}));
+ await assertFails(deleteDoc(doc(db('bob'),'households/home/records/care-alice')));
+ await assertSucceeds(deleteDoc(ref));
+ await assertFails(setDoc(doc(db('bob'),'households/home/records/care-forged'),care('alice')));
+ await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid'),care('alice','petFood','Lucca')));
+});
 test('user cannot forge mutation author',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/forged'),record('bob')));});
 test('receipt snapshots cannot be modified or deleted',async()=> {
   await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'households/home/records/receipt'),{...record('alice','receipt'),total:123});});

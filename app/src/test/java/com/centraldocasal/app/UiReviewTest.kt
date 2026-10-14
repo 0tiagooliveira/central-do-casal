@@ -78,6 +78,7 @@ class UiReviewTest {
         compose.onNodeWithTag("tab-Compras").performClick()
         capture("compras"); compose.onNodeWithText("Montar lista do mês").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("tab-Rotina").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed(); capture("rotina")
         compose.onNodeWithTag("tab-Planos").performClick()
         compose.onNodeWithText("Criar um plano").assertIsDisplayed(); capture("planos")
@@ -113,6 +114,7 @@ class UiReviewTest {
             compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}, openReminder = true) } }
         }
         compose.onNodeWithTag("tab-Rotina").assertIsSelected()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed()
         org.junit.Assert.assertEquals(before, vm.repo.data.value)
     }
