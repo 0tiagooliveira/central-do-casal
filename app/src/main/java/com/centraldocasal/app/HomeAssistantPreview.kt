@@ -16,6 +16,9 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 internal data class HomeAssistantEntity(
     val id: String,
@@ -134,12 +137,17 @@ internal object HomeAssistantProbe {
     }
 }
 
+/** A read is a snapshot, not a live subscription. Never command from stale state. */
+internal fun homeAssistantObservationFresh(observedAt: Long, now: Long = System.currentTimeMillis()): Boolean =
+    observedAt > 0 && now >= observedAt && now - observedAt <= 2 * 60_000L
+
 @Composable
 internal fun HomeAssistantPreviewCard() {
     val scope = rememberCoroutineScope()
     var baseUrl by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") } // RAM only; never saveable or written to Firestore
     var entities by remember { mutableStateOf<List<HomeAssistantEntity>>(emptyList()) }
+    var observedAt by remember { mutableLongStateOf(0L) }
     var status by remember { mutableStateOf("Nenhuma conexão consultada neste aparelho.") }
     var loading by remember { mutableStateOf(false) }
     var pendingCommand by remember { mutableStateOf<Pair<HomeAssistantEntity,Boolean>?>(null) }
@@ -150,7 +158,7 @@ internal fun HomeAssistantPreviewCard() {
             Text("Home Assistant · consulta real",style=MaterialTheme.typography.titleMedium)
             Text("Consulta real de estados e controle manual experimental de luzes/tomadas, sempre com confirmação. Outros dispositivos permanecem somente leitura.",style=MaterialTheme.typography.bodySmall)
             OutlinedTextField(
-                value=baseUrl,onValueChange={baseUrl=it},
+                value=baseUrl,onValueChange={baseUrl=it;entities=emptyList();observedAt=0L;status="Endereço alterado. Consulte novamente."},
                 label={Text("Endereço HTTPS da sua instância")},
                 placeholder={Text("https://casa.exemplo.com")},
                 singleLine=true,modifier=Modifier.fillMaxWidth(),enabled=!loading
@@ -166,20 +174,29 @@ internal fun HomeAssistantPreviewCard() {
                 FilledTonalButton(enabled=!loading && baseUrl.isNotBlank() && token.isNotBlank(),onClick={
                     loading=true
                     entities=emptyList()
+                    observedAt=0L
                     val credential=token
                     token=""
                     scope.launch {
                         try {
                             entities=HomeAssistantProbe.read(baseUrl,credential)
+                            observedAt=System.currentTimeMillis()
                             status="Conexão confirmada. ${entities.size} dispositivo(s) exibido(s)."
                         } catch (_:Exception) {
                             status="Consulta indisponível. Confira HTTPS, rede e autorização no Home Assistant."
                         } finally { loading=false }
                     }
                 }) { Text(if(loading) "Consultando…" else "Consultar estados reais") }
-                if(entities.isNotEmpty()) TextButton(onClick={entities=emptyList();status="Estados descartados da tela."},enabled=!loading) { Text("Limpar") }
+                if(entities.isNotEmpty()) TextButton(onClick={entities=emptyList();observedAt=0L;status="Estados descartados da tela."},enabled=!loading) { Text("Limpar") }
             }
             Text(status,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if (observedAt > 0L) {
+                Text(
+                    "Consulta pontual às " + DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(observedAt)) +
+                        ". Estados podem mudar; atualize antes de controlar.",
+                    style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             entities.take(20).forEach { entity ->
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
@@ -192,7 +209,15 @@ internal fun HomeAssistantPreviewCard() {
                         if(entity.domain in listOf("light","switch") &&
                             entity.state in listOf("on","off")) {
                             TextButton(
-                                onClick={pendingCommand=entity to (entity.state!="on")},
+                                onClick={
+                                    if(homeAssistantObservationFresh(observedAt)) {
+                                        pendingCommand=entity to (entity.state!="on")
+                                    } else {
+                                        entities=emptyList()
+                                        observedAt=0L
+                                        status="A consulta ficou antiga. Consulte novamente antes de controlar."
+                                    }
+                                },
                                 enabled=!loading
                             ) { Text(if(entity.state=="on") "Desligar" else "Ligar") }
                         }
@@ -229,12 +254,18 @@ internal fun HomeAssistantPreviewCard() {
                         val base=baseUrl
                         commandCredential=""
                         pendingCommand=null
+                        if (!homeAssistantObservationFresh(observedAt)) {
+                            entities=emptyList()
+                            observedAt=0L
+                            status="Consulta antiga. Faça uma nova leitura antes de comandar."
+                        } else {
                         loading=true
                         scope.launch {
                             try {
                                 HomeAssistantProbe.command(base,credential,device.id,turnOn)
                                 val refreshed=HomeAssistantProbe.read(base,credential)
                                 entities=refreshed
+                                observedAt=System.currentTimeMillis()
                                 val state=refreshed.firstOrNull { it.id==device.id }?.state
                                 status=if(state==(if(turnOn) "on" else "off")) {
                                     "Estado confirmado na consulta: " + device.title + " " + (if(turnOn) "ligado." else "desligado.")
@@ -242,8 +273,11 @@ internal fun HomeAssistantPreviewCard() {
                                     "Comando aceito pelo Home Assistant; estado ainda não confirmado. Consulte novamente."
                                 }
                             } catch (_:Exception) {
-                                status="Não foi possível confirmar o comando. Verifique conexão e permissões no Home Assistant."
+                                entities=emptyList()
+                                observedAt=0L
+                                status="Não foi possível confirmar o comando. Consulte os estados novamente; a ação pode ter sido aplicada."
                             } finally { loading=false }
+                        }
                         }
                     }
                 ) { Text("Confirmar comando") }
