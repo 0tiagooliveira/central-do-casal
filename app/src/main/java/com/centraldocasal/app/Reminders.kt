@@ -204,6 +204,35 @@ object Reminders {
         val ids=store(context).getStringSet("$ID_LIST:$uid",emptySet()).orEmpty().toList()
         ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it) } }
     }
+    data class Diagnostics(
+        val knownTasks: Int,
+        val futureSchedules: Int,
+        val nextAt: Long?,
+        val lastDeliveredAt: Long?,
+        val lastFailedAt: Long?,
+        val notificationsAllowed: Boolean,
+        val taskChannelAllowed: Boolean,
+        val exactAlarmsAllowed: Boolean
+    )
+
+    fun diagnostics(context: Context, uid: String): Diagnostics {
+        val p=store(context)
+        val now=System.currentTimeMillis()
+        val ids=p.getStringSet("$ID_LIST:$uid",emptySet()).orEmpty()
+        val planned=ids.map { p.getLong(plannedKey(uid,it),0L) }.filter { it>now }
+        val channel=context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(CHANNEL)
+        return Diagnostics(
+            knownTasks=ids.size,
+            futureSchedules=planned.size,
+            nextAt=planned.minOrNull(),
+            lastDeliveredAt=p.getLong("lastDelivered:$uid",0L).takeIf { it>0L },
+            lastFailedAt=p.getLong("lastScheduleFailed:$uid",0L).takeIf { it>0L },
+            notificationsAllowed=AndroidInteractions.notificationsAllowed(context),
+            taskChannelAllowed=channel?.importance != NotificationManager.IMPORTANCE_NONE,
+            exactAlarmsAllowed=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
+        )
+    }
+
     /** Manual device-only test: uses the same channel and payload as real tasks. */
     fun sendDetailedTest(context:Context,uid:String,profileName:String):String {
         if(uid.isBlank())return "Entre na conta para testar."
@@ -300,7 +329,7 @@ object Reminders {
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setVisibility(if(pref.getBoolean("showDetailsOnLockScreen",false)) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(tap)
             .setAutoCancel(true)
             .build()
