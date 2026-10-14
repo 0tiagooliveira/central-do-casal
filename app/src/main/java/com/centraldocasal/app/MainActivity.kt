@@ -205,7 +205,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Lembretes" -> ReminderInbox(session,data,openRoutine={route="";tab="Rotina"},openSettings={route="Configurações"})
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";tab="Compras"}) }
-                    "Planos" -> PlansScreen(vm, data)
+                    "Planos" -> PlansScreen(vm, data, onOpenLinked = { destination -> route = ""; tab = destination })
                     "Nós" -> TogetherScreen(vm, session, data)
                     "Finanças" -> FinanceScreen(vm, data)
                     "Saúde" -> HealthScreen(vm, data)
@@ -361,12 +361,12 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
 }
 
 @Composable
-private fun PlansScreen(vm: CentralViewModel, data: DataState) {
+private fun PlansScreen(vm: CentralViewModel, data: DataState, onOpenLinked: (String) -> Unit = {}) {
     var showAreas by rememberSaveable { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }; var editing by remember { mutableStateOf<Record?>(null) }; var contributing by remember { mutableStateOf<Record?>(null) }
     var draft by remember { mutableStateOf<Record?>(null) }
     if (creating || editing != null) { GoalEditor(vm, editing ?: draft,isNew=creating) { creating = false; editing = null;draft=null }; return }
-    PlansExperienceScreen(vm, data, onCreate = { draft=null;creating = true }, onEdit = { editing = it }, onContribution = { contributing = it },onStartImported={reference -> draft=projectDraft(reference);creating=true})
+    PlansExperienceScreen(vm, data, onCreate = { draft=null;creating = true }, onEdit = { editing = it }, onContribution = { contributing = it },onStartImported={reference -> draft=projectDraft(reference);creating=true},onOpenLinked=onOpenLinked)
 
     contributing?.let { plan ->
         var amount by remember { mutableStateOf("0,00") }; var note by remember { mutableStateOf("") }; val id = remember { java.util.UUID.randomUUID().toString() }
