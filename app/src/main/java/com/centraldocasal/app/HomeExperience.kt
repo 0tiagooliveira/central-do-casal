@@ -33,7 +33,7 @@ import java.util.Locale
 private fun homeMoney(value: Long) = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal.valueOf(value, 2))
 
 @Composable
-internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, data: DataState, navigate: (String) -> Unit, selectTab: (String) -> Unit) {
+internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, data: DataState, navigate: (String) -> Unit, selectTab: (String) -> Unit, requestLocationPermission: () -> Unit = {}) {
     val day = LocalDate.now()
     val tasks = data.records.filter { it.kind == "task" && occurs(it, day) }.sortedBy { if (it.flag("needsTimeReview")) "99:99" else it.text("time").ifBlank { "99:99" } }
     fun completed(task: Record) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
@@ -58,6 +58,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
                 Text("Uma vida mais leve, organizada a dois.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        item { WeatherCard(requestLocationPermission) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryTile("", "${tasks.size}", "Tarefas de hoje · $completedCount concluídas", CalendarLine, accent, { touch { selectTab("Rotina") } }, Modifier.weight(1f))
