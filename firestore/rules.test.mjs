@@ -88,10 +88,24 @@ test('user cannot point profile at unauthorized household',async()=> {await asse
 test('member cannot put health in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/health'),record('alice','health')));});
 test('members can share house devices and safety state while strangers and private collections remain blocked',async()=>{
  const shared=db('alice');
- for(const kind of ['smartDevice','safetyCheckIn','safetyAlert']) await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),{...record('alice',kind),private:false}));
+ const safety=(uid,kind)=>({
+   ...record(uid,kind),private:false,ownerUid:uid,ownerName:uid,
+   latitude:0,longitude:0,mapUrl:'',
+   ...(kind==='safetyAlert'?{createdAt:Date.now()}:{capturedAt:Date.now()})
+ });
+ for(const kind of ['smartDevice','safetyCheckIn','safetyAlert']) {
+   const data=kind==='smartDevice'?{...record('alice',kind),private:false}:safety('alice',kind);
+   await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),data));
+ }
  await assertFails(setDoc(doc(db('eve'),'households/home/records/device'),{...record('eve','smartDevice'),private:false}));
  await assertFails(setDoc(doc(shared,'users/alice/records/private-device'),{...record('alice','smartDevice',true),private:true}));
  await assertFails(updateDoc(doc(shared,'households/home/records/safetyAlert'),{title:'não pode alterar alerta'}));
+ await assertFails(updateDoc(doc(db('bob'),'households/home/records/safetyCheckIn'),{capturedAt:Date.now()+5_000}));
+ await assertFails(deleteDoc(doc(db('bob'),'households/home/records/safetyCheckIn')));
+ await assertSucceeds(deleteDoc(doc(db('alice'),'households/home/records/safetyCheckIn')));
+ await assertFails(setDoc(doc(db('bob'),'households/home/records/forged-alert'),safety('alice','safetyAlert')));
+ await assertFails(setDoc(doc(db('bob'),'households/home/records/forged-checkin'),safety('alice','safetyCheckIn')));
+ await assertFails(setDoc(doc(db('alice'),'households/home/records/invalid-coordinates'),{...safety('alice','safetyAlert'),latitude:92}));
 });
 test('member cannot store private flag in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/private'),record('alice','task',true)));});
 test('care events require genuine authorship and only the author can undo',async()=> {
