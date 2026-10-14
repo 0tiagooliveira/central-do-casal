@@ -207,16 +207,16 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     BackHandler(route.isNotBlank()) { route = "" }
     Scaffold(snackbarHost = { SnackbarHost(snack) }, topBar = {
         if (session.uid.isNotBlank()) Surface(color = MaterialTheme.colorScheme.background) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (route.isNotBlank()) IconButton(onClick = { route = "" }) { Icon(Icons.Default.ArrowBack, "Voltar") }
-                else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(11.dp).size(23.dp), tint = MaterialTheme.colorScheme.primary) }
+                else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(if (route.isBlank()) "Central do Casal" else route, style = MaterialTheme.typography.titleLarge)
+                    Text(if (route.isBlank()) "Central do Casal" else route, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                     if (route.isBlank()) Text(if (session.name.isBlank()) "Nosso espaço" else session.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (route.isBlank()) {
                     IconButton(onClick = { route = "Lembretes" }) { Icon(ReminderBell, "Abrir lembretes", Modifier.size(22.dp)) }
-                    FilledTonalIconButton(onClick = { route = "Configurações" }, shape = CircleShape, modifier = Modifier.size(48.dp).semantics { contentDescription="Configurações e privacidade" }) { PersonalPortrait(experience.photo,session.name,size=42.dp) }
+                    FilledTonalIconButton(onClick = { route = "Configurações" }, shape = CircleShape, modifier = Modifier.size(40.dp).semantics { contentDescription="Configurações e privacidade" }) { PersonalPortrait(experience.photo,session.name,size=36.dp) }
                 }
             }
         }
@@ -409,6 +409,7 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
     var planned by remember { mutableStateOf(quantityInput(entry?.plannedMilli ?: 1000)) }; var actualQty by remember { mutableStateOf(quantityInput(entry?.actualMilli ?: 1000)) }
     var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought ?: false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
+    var advanced by rememberSaveable(entry?.id) { mutableStateOf(false) }
     EditDialog(if (entry == null) "Novo item" else "Ficha do produto", dismiss, save = { vm.action {
         require(title.isNotBlank()) { "Informe o produto." }
         require(unit in listOf("un", "kg", "g", "L", "mL", "pacote")) { "Escolha a unidade antes de salvar." }
@@ -417,11 +418,31 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
         if (bought) item.real()
         vm.repo.editBasket(basket.market, basket.revision.takeIf { vm.repo.data.value.baskets.containsKey(basket.market) }) { it.copy(entries = it.entries.filterNot { e -> e.id == id } + item) }; dismiss()
     } }, busy = busy) {
-        Field("Produto", title, { title = it }); Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it }); Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it }); Field("Subgrupo opcional", subgroup, { subgroup=it }); Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it }); Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it }); if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it }); Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
-        Field("Quantidade prevista", planned, { planned = it }); Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
-        Text("Preço por $unit. Para 500 g a R$ 0,04/g, use quantidade 500; para 0,5 kg a R$ 40/kg, use 0,5.", style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" }); Text("Foi comprado") }
-        if (bought) { Field("Quantidade comprada", actualQty, { actualQty = it }); Field("Preço real por unidade (R$)", real, { real = it }) }
+        Field("Produto", title, { title = it })
+        Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
+        Field("Quantidade prevista", planned, { planned = it })
+        Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" })
+            Text("Já coloquei no carrinho")
+        }
+        if (bought) {
+            Field("Quantidade comprada", actualQty, { actualQty = it })
+            Field("Preço real por unidade (R$)", real, { real = it })
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        TextButton(onClick = { advanced = !advanced }) {
+            Text(if (advanced) "Ocultar detalhes" else "Organização, cômodo e prioridade")
+        }
+        if (advanced) {
+            Text("Opcional: personalize apenas o que você precisa.", style = MaterialTheme.typography.bodySmall)
+            Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it })
+            Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it })
+            Field("Subgrupo opcional", subgroup, { subgroup=it })
+            Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it })
+            Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it })
+            if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it })
+        }
         if (entry != null && basket.entries.any { it.id==entry.id }) TextButton(onClick = { vm.action { vm.repo.editBasket(basket.market, basket.revision) { it.copy(entries = it.entries.filterNot { e -> e.id == id }) }; dismiss() } }, enabled = !busy) { Text("Remover da sessão atual") }
     }
 }
@@ -752,7 +773,15 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         if(reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
         item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
         item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
-        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item {
+            TextButton(onClick = { details = !details }) {
+                Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão")
+            }
+            if (details) {
+                Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Previsão meteorológica: dados Open-Meteo (CC BY 4.0). O serviço recebe somente coordenadas aproximadas e não armazenamos a posição da previsão no Firebase.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Sair do espaço?") }, text = { Text("Sua conta perde acesso aos registros compartilhados. Seus registros privados permanecem na sua conta. O histórico do espaço é preservado.") }, confirmButton = { Button(onClick = { vm.action { Reminders.cancelAll(vm.getApplication(), session.uid); vm.repo.leaveHouse(); leaving = false } }) { Text("Sair do espaço") } }, dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancelar") } })

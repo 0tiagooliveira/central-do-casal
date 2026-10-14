@@ -59,11 +59,11 @@ class UiReviewTest {
         val basket=Basket("Mercado",budget=10000,entries=listOf(Entry(id="fixture-bought",title="Arroz fixture",estimated=1000,actual=1200,bought=true),Entry(id="fixture-pending",title="Feijão fixture",estimated=700)))
         var edited: Entry?=null
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { ShoppingSessionScreen(DataState(baskets=mapOf("Mercado" to basket)),SessionState(local=true),false,{edited=it},{},{},{},{},{},{},{},{},"Mercado",onQuickSave={edited=it}) } } }
-        compose.onNodeWithText("R$ 88,00").assertIsDisplayed()
+        compose.onAllNodesWithText("R$ 12,00").onFirst().assertIsDisplayed()
         capture("mercado-orcamento-fixture")
-        compose.onNodeWithText("Modo Mercado").performScrollTo().performClick()
+        compose.onNodeWithText("No mercado").performScrollTo().performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Adicionar ao carrinho")); compose.onNodeWithText("Adicionar ao carrinho").performClick()
-        compose.onNodeWithText("Preço real / un").performTextReplacement("8,50"); compose.onNodeWithText("Quantidade (un)").performTextReplacement("2"); capture("edicao-rapida-fixture"); compose.onNodeWithText("Adicionar",substring=false).performClick(); compose.runOnIdle { org.junit.Assert.assertEquals("fixture-pending",edited?.id); org.junit.Assert.assertTrue(edited?.bought==true); org.junit.Assert.assertEquals(850L,edited?.actual); org.junit.Assert.assertEquals(2000L,edited?.actualMilli) }
+        compose.onNodeWithText("Preço real / un").performTextReplacement("8,50"); compose.onNodeWithText("Quantidade (un)").performTextReplacement("2"); capture("edicao-rapida-fixture"); compose.onNodeWithText("Adicionar",substring=false).assertIsEnabled().performClick(); compose.waitForIdle(); val debugTree = compose.onRoot(useUnmergedTree = true).printToString().take(6500); compose.runOnIdle { org.junit.Assert.assertEquals("A alteração do carrinho deve acionar onQuickSave. Árvore da interface: $debugTree", "fixture-pending",edited?.id); org.junit.Assert.assertTrue(edited?.bought==true); org.junit.Assert.assertEquals(850L,edited?.actual); org.junit.Assert.assertEquals(2000L,edited?.actualMilli) }
         capture("modo-mercado-fixture")
     }
     @Test fun skuHistoryShowsIncreaseWithoutCombiningDifferentUnits() {
@@ -76,7 +76,7 @@ class UiReviewTest {
     @Test fun fiveTabsAndSettingsRemainUsableWithNewDesign() {
         compose.onNodeWithText("Olá, Tiago ♡").assertIsDisplayed(); capture("hoje")
         compose.onNodeWithTag("tab-Compras").performClick()
-        capture("compras"); compose.onNodeWithText("Montar lista do mês").performScrollTo().assertIsDisplayed()
+        capture("compras"); compose.onNodeWithText("Montar lista do catálogo").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("tab-Rotina").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed(); capture("rotina")
@@ -169,11 +169,11 @@ class UiReviewTest {
         val vm=CentralViewModel(context); vm.repo.useLocal("Perfil fixture")
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}) } } }
         compose.onNodeWithTag("tab-Compras").performClick()
-        compose.onNodeWithText("Catálogo").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Catálogo")); compose.onNodeWithText("Catálogo").performClick()
         compose.onNodeWithText("Produto fixture").assertIsDisplayed().performClick()
         compose.onNodeWithText("Preparar item para lista").assertIsDisplayed()
         compose.onNodeWithText("Fechar").performClick()
-        compose.onNodeWithText("Histórico").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Histórico")); compose.onNodeWithText("Histórico").performClick()
         compose.onNodeWithText("Loja fixture").assertIsDisplayed()
         compose.onNodeWithText("Nota sem detalhamento de produtos").assertIsDisplayed()
         org.junit.Assert.assertFalse(vm.repo.data.value.records.any { it.kind=="transaction" })
