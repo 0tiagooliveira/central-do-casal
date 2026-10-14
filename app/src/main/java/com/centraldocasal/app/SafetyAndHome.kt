@@ -134,6 +134,10 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             vm.message.value = "Conecte as duas contas e permita localização antes de compartilhar."
             return
         }
+        if (!AndroidInteractions.notificationsAllowed(context)) {
+            vm.message.value = "Ative as notificações deste aplicativo no Android para visualizar o aviso persistente e o botão Parar."
+            return
+        }
         val intent = Intent(context, LiveLocationService::class.java)
             .setAction(LiveLocationService.ACTION_START)
             .putExtra(LiveLocationService.EXTRA_UID, session.uid)
@@ -144,7 +148,14 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     }
     val hasPermission = SafetyLocationReader.permitted(context)
     val ownManualLocation = data.records.firstOrNull { it.kind == "safetyCheckIn" && it.text("ownerUid") == session.uid }
-    val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }.maxByOrNull { it.number("capturedAt") }
+    val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }
+        .maxByOrNull { it.number("capturedAt") }?.takeIf { point ->
+            recentSosLocation(SafetyLocation(
+                (point.fields["latitude"] as? Number)?.toDouble() ?: Double.NaN,
+                (point.fields["longitude"] as? Number)?.toDouble() ?: Double.NaN,
+                point.number("capturedAt")
+            )) != null
+        }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
         val fresh = recentSosLocation(current)
         if(fresh==null) {
