@@ -29,6 +29,13 @@ import java.util.Date
  * deve ser iniciado pelo usuário com app em primeiro plano. Não é serviço de emergência.
  * Se Android matar o processo, não reiniciamos a sessão; o documento expira logicamente.
  */
+/** Usar GPS exige localização precisa; acesso apenas aproximado usa NETWORK. */
+internal fun liveLocationProviderCandidates(fineGranted: Boolean, coarseGranted: Boolean): List<String> =
+    buildList {
+        if (fineGranted) add(LocationManager.GPS_PROVIDER)
+        if (fineGranted || coarseGranted) add(LocationManager.NETWORK_PROVIDER)
+    }
+
 class LiveLocationService : Service(), LocationListener {
     companion object {
         const val ACTION_START = "com.centraldocasal.app.live.START"
@@ -74,9 +81,9 @@ class LiveLocationService : Service(), LocationListener {
         }
         val who = intent.getStringExtra(EXTRA_UID).orEmpty()
         val home = intent.getStringExtra(EXTRA_HOUSEHOLD).orEmpty()
-        val permitted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!permitted || who.isBlank() || home.isBlank() || auth.currentUser?.uid != who) {
+        val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if ((!fineGranted && !coarseGranted) || who.isBlank() || home.isBlank() || auth.currentUser?.uid != who) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -91,11 +98,14 @@ class LiveLocationService : Service(), LocationListener {
             else startForeground(NOTICE_ID, notification)
             sharing = true
             var subscribed = false
-            for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
-                if (manager.isProviderEnabled(provider)) {
-                    @Suppress("MissingPermission")
-                    manager.requestLocationUpdates(provider, UPDATE_MS, 0f, this, Looper.getMainLooper())
-                    subscribed = true
+            for (provider in liveLocationProviderCandidates(fineGranted, coarseGranted)) {
+                if (runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)) {
+                    // Um provedor indisponível não deve impedir o outro.
+                    val requested = runCatching {
+                        @Suppress("MissingPermission")
+                        manager.requestLocationUpdates(provider, UPDATE_MS, 0f, this, Looper.getMainLooper())
+                    }.isSuccess
+                    if (requested) subscribed = true
                 }
             }
             if (!subscribed) stopSelf()
