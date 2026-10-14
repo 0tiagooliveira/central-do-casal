@@ -72,6 +72,29 @@ class MainActivity : ComponentActivity() {
             getSharedPreferences("experience_$uid",MODE_PRIVATE).edit().putString("photo",uri.toString()).apply()
         }
     }
+    private var pendingMomentRecord: Record? = null
+    private var pendingMomentUid: String = ""
+    private val momentPhotoPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val record = pendingMomentRecord
+        val uid = pendingMomentUid
+        pendingMomentRecord = null
+        pendingMomentUid = ""
+        if (uri != null && record != null) {
+            val vm = androidx.lifecycle.ViewModelProvider(this)[CentralViewModel::class.java]
+            if (uid == vm.repo.session.value.uid && !vm.repo.session.value.local) {
+                runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                vm.action("Foto adicionada à lembrança", timeoutMs = 120_000) {
+                    val path = MomentPhotoStorage.upload(this@MainActivity, vm.repo.session.value, record, uri)
+                    try {
+                        vm.repo.setMomentPhoto(record, path)
+                    } catch (error: Exception) {
+                        MomentPhotoStorage.removeUnlinked(path)
+                        throw error
+                    }
+                }
+            }
+        }
+    }
     private val exportFile = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) contentResolver.openOutputStream(uri)?.use { it.write(pendingExport.toByteArray(Charsets.UTF_8)) }
         pendingExport = ""
@@ -110,7 +133,7 @@ class MainActivity : ComponentActivity() {
             val experience=rememberExperience(profile.uid)
             CompositionLocalProvider(LocalExperience provides experience) {
             CentralTheme(profile.name) {
-                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false}, reminderTaskId=reminderTaskId, reminderTaskDate=reminderTaskDate, reminderTaskUid=reminderTaskUid)
+                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, momentPhoto = { record -> pendingMomentUid=profile.uid; pendingMomentRecord=record; momentPhotoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false}, reminderTaskId=reminderTaskId, reminderTaskDate=reminderTaskDate, reminderTaskUid=reminderTaskUid)
             }
             }
         }
@@ -149,7 +172,7 @@ private fun displayDate(value: String) = runCatching { LocalDate.parse(value).fo
 private fun dateInput(value: String) = LocalDate.parse(value, dateFormat).toString()
 
 @Composable
-fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}, reminderTaskId: String = "", reminderTaskDate: String = "", reminderTaskUid: String = "") {
+fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, momentPhoto: (Record) -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}, reminderTaskId: String = "", reminderTaskDate: String = "", reminderTaskUid: String = "") {
     val session by vm.repo.session.collectAsStateWithLifecycle()
     val data by vm.repo.data.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -254,7 +277,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";requestedRoutineDate=null;tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";requestedShoppingMarket=null;tab="Compras"}) }
                     "Planos" -> PlansScreen(vm, data, onOpenLinked = { destination -> route = ""; when { destination.startsWith("Compras:") -> { requestedShoppingMarket=destination.substringAfter(":").takeIf { it in listOf("Mercado","Açougue") }; tab="Compras" }; destination.startsWith("Rotina:") -> { requestedRoutineDate=destination.substringAfter(":").takeIf { runCatching { LocalDate.parse(it) }.isSuccess }; tab="Rotina" }; else -> tab=destination } })
-                    "Nós" -> TogetherScreen(vm, session, data)
+                    "Nós" -> TogetherScreen(vm, session, data, onMomentPhoto = momentPhoto)
                     "Finanças" -> FinanceScreen(vm, data)
                     "Saúde" -> HealthScreen(vm, data)
                     "Configurações" -> SettingsScreen(vm, session, data, export, notify, navigate = { route = it }, photo = photo)
@@ -485,7 +508,7 @@ private fun FinanceScreen(vm: CentralViewModel, data: DataState) {
 }
 
 @Composable
-private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: DataState) {
+private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: DataState, onMomentPhoto: (Record) -> Unit = {}) {
     var section by rememberSaveable { mutableStateOf("Resumo") }; var create by remember { mutableStateOf(false) }
     var momentEdit by remember { mutableStateOf<Record?>(null) }
     var destination by rememberSaveable { mutableStateOf("Ilha das Surpresas") }; var cardIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -510,7 +533,7 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
             item { Button(onClick = { touch(); create = true }, enabled = !busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Guardar um momento") } }
             val moments = data.records.filter { it.kind == "moment" }
             if (moments.isEmpty()) item { Empty("As memórias começam com vocês", "Guarde uma lembrança real, pessoal ou compartilhada.") }
-            items(moments, key = { it.id }) { r -> Card(onClick={momentEdit=r},modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text(r.text("title"),style=MaterialTheme.typography.titleMedium);Text("${displayDate(r.text("date"))} · ${if(r.isPrivate) "Privada" else "Compartilhada"}",style=MaterialTheme.typography.bodySmall);Text(r.text("note"));Text("Editar lembrança",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) } } }
+            items(moments, key = { it.id }) { r -> Card(onClick={momentEdit=r},modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text(r.text("title"),style=MaterialTheme.typography.titleMedium);Text("${displayDate(r.text("date"))} · ${if(r.isPrivate) "Privada" else "Compartilhada"}",style=MaterialTheme.typography.bodySmall);Text(r.text("note"));MomentPhotoPreview(r, enabled = !busy && !session.local && (r.isPrivate || session.household.isNotBlank())) { onMomentPhoto(r) };Text("Editar lembrança",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) } } }
         } else if (section=="Baú") {
             val saved=data.records.filter { it.kind=="quest"&&!it.flag("cancelled")&&(it.fields["completed"] as? List<*>)?.distinct()?.size==2 }
             if(saved.isEmpty()) item { Empty("Baú de descobertas","As experiências confirmadas pelos dois aparecem aqui.") }
@@ -822,7 +845,7 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
         if (kind == "task" && time.isNotBlank()) java.time.LocalTime.parse(time)
         if(kind == "task" && repeat == "Dias da semana") require(weekdays.isNotEmpty()) { "Selecione os dias da semana." }
         if(kind == "task" && taskReminder && time.isNotBlank()) require(timeReviewed && reviewed) { "Confirme os dados e o horário antes de habilitar lembretes." }
-        val provenance = initial?.fields?.filterKeys { it in setOf("source", "sourceHash", "sourceRecurrence", "original", "importedAt", "sourcePlanId", "sourceStepId") } ?: emptyMap()
+        val provenance = initial?.fields?.filterKeys { it in setOf("source", "sourceHash", "sourceRecurrence", "original", "importedAt", "sourcePlanId", "sourceStepId", "photoPath") } ?: emptyMap()
         val fields: Map<String, Any?> = provenance + mapOf("title" to title.trim(), "note" to note.trim(), "date" to isoDate) + when (kind) {
             "task" -> mapOf("owner" to owner, "category" to category, "repeat" to repeat, "time" to time, "days" to weekdays.sorted(), "skipReminder" to (!taskReminder || time.isBlank()), "needsReview" to !reviewed, "needsTimeReview" to !timeReviewed)
             "plan" -> mapOf("target" to Money.cents(amount), "horizon" to horizon)
