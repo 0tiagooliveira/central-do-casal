@@ -97,7 +97,7 @@ test('live location is scoped to owner, household, valid coordinates and expiry'
  const point=(uid,lat=-25.0,lon=-49.0)=>({
    ownerUid:uid,latitude:lat,longitude:lon,capturedAt:Timestamp.now(),
    updatedAt:serverTimestamp(),
-   expiresAt:Timestamp.fromMillis(Date.now()+120000),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),
    sessionEndsAt:Timestamp.fromMillis(Date.now()+1800000)
  });
  const ref=doc(db('alice'),'households/home/liveLocations/alice');
@@ -107,6 +107,26 @@ test('live location is scoped to owner, household, valid coordinates and expiry'
  await assertFails(setDoc(ref,point('bob')));
  await assertFails(setDoc(ref,point('alice',100,0)));
  await assertFails(setDoc(ref,{...point('alice'),expiresAt:Timestamp.fromMillis(Date.now()+86400000)}));
+ // É permitido atualizar a posição na mesma sessão, sem estender o prazo.
+ await assertSucceeds(updateDoc(ref,{
+   latitude:-24.5,capturedAt:Timestamp.now(),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),updatedAt:serverTimestamp()
+ }));
+ // O cliente não pode prolongar ou encurtar silenciosamente uma sessão existente.
+ await assertFails(updateDoc(ref,{
+   sessionEndsAt:Timestamp.fromMillis(Date.now()+25*60000),
+   updatedAt:serverTimestamp()
+ }));
+ // Um fix mais antigo não pode substituir a última posição recebida.
+ await assertFails(updateDoc(ref,{
+   capturedAt:Timestamp.fromMillis(Date.now()-30000),
+   updatedAt:serverTimestamp()
+ }));
+ // Publicar uma localização "atual" por mais de 90 s também é proibido.
+ await assertFails(updateDoc(ref,{
+   expiresAt:Timestamp.fromMillis(Date.now()+120000),
+   updatedAt:serverTimestamp()
+ }));
  await assertFails(deleteDoc(doc(db('bob'),'households/home/liveLocations/alice')));
  await assertSucceeds(deleteDoc(ref));
  await assertFails(setDoc(doc(db('bob'),'households/home/liveLocations/alice'),point('bob')));
