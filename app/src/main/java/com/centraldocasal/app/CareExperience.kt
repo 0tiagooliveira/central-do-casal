@@ -3,6 +3,7 @@ package com.centraldocasal.app
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -77,7 +78,7 @@ internal fun CareEventsPanel(
                 }
             }
             if (events.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     careKinds.forEach { kind ->
                         Text(
                             "${kind.label}: ${events.count { it.text("careType") == kind.id }}",
