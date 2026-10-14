@@ -10,6 +10,11 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35],application=Application::class)
 class WeatherSourceTest {
+    @Test fun weatherCacheGroupsNearbyCoordinatesWithoutSharingUnrelatedCities() {
+        assertEquals(weatherCacheCell(-25.4283,-49.2731),weatherCacheCell(-25.4284,-49.2732))
+        assertNotEquals(weatherCacheCell(-25.4283,-49.2731),weatherCacheCell(-23.5505,-46.6333))
+    }
+
     @Test fun parsesForecastAndTranslatesWeatherCodes(){
         val json="""{
           "current":{"temperature_2m":21.7,"apparent_temperature":20.3,"relative_humidity_2m":77,"wind_speed_10m":8.1,"weather_code":63},
