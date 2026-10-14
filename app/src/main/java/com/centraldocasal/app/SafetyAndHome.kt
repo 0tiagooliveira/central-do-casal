@@ -17,6 +17,8 @@ import android.provider.Settings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -262,6 +264,54 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                 } }
             }
         }
+    }
+    editingDevice?.let { device ->
+        var editTitle by remember(device.id) { mutableStateOf(device.text("title")) }
+        var editRoom by remember(device.id) { mutableStateOf(device.text("room", "Casa")) }
+        var editType by remember(device.id) { mutableStateOf(device.text("deviceType", "Outro")) }
+        var editProvider by remember(device.id) { mutableStateOf(device.text("provider")) }
+        AlertDialog(
+            onDismissRequest={editingDevice=null},
+            title={Text("Editar aparelho")},
+            text={
+                Column(Modifier.heightIn(max=460.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(editTitle,{editTitle=it},label={Text("Nome")},singleLine=true)
+                    OutlinedTextField(editRoom,{editRoom=it},label={Text("Cômodo")},singleLine=true)
+                    Text("Tipo",style=MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf("Luz","Tomada","TV","Assistente","Outro").forEach { kind ->
+                            FilterChip(selected=editType==kind,onClick={editType=kind},label={Text(kind)})
+                        }
+                    }
+                    Text("Provedor",style=MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf("Home Assistant","Alexa","Google Home","Smart Life / Tuya","Bluetooth").forEach { kind ->
+                            FilterChip(selected=editProvider==kind,onClick={editProvider=kind},label={Text(kind)})
+                        }
+                    }
+                    Text("Trocar o provedor não conecta o dispositivo automaticamente. Será necessário confirmar no aplicativo oficial.",style=MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton={
+                Button(
+                    enabled=!busy && editTitle.trim().length in 2..100 && editRoom.trim().length in 1..60,
+                    onClick={
+                        val changedProvider = editProvider != device.text("provider")
+                        val changes = mapOf(
+                            "title" to editTitle.trim(),
+                            "room" to editRoom.trim(),
+                            "deviceType" to editType,
+                            "provider" to editProvider
+                        ) + if(changedProvider) mapOf("state" to "pending") else emptyMap()
+                        vm.action("Aparelho atualizado") {
+                            vm.repo.save(device.copy(fields=device.fields + changes))
+                        }
+                        editingDevice=null
+                    }
+                ) { Text("Salvar") }
+            },
+            dismissButton={TextButton(onClick={editingDevice=null}) { Text("Cancelar") }}
+        )
     }
     if(adding) {
         var title by rememberSaveable { mutableStateOf("") }; var room by rememberSaveable { mutableStateOf("Casa") }; var provider by rememberSaveable { mutableStateOf("Home Assistant") }; var deviceType by rememberSaveable { mutableStateOf("Luz") }
