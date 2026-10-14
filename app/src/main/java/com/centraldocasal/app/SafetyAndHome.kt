@@ -64,7 +64,10 @@ internal object SafetyLocationReader {
     fun request(context: Context, callback: (SafetyLocation?) -> Unit) {
         if (!permitted(context)) { callback(null); return }
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+        val preciseAllowed = ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+        val providers = if(preciseAllowed)
+            listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
+        else listOf(LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
         val now = System.currentTimeMillis()
         val known = providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
             .filter { SafetyLocation(it.latitude, it.longitude, it.time).isFresh(now) }
