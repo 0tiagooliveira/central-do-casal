@@ -88,8 +88,10 @@ internal object WeatherSource {
         val now=System.currentTimeMillis()
         val cell=weatherCacheCell(latitude,longitude)
         lastForecast?.takeIf { it.cell==cell && now-it.savedAt in 0L..CACHE_MILLIS }?.let { return@withContext it.forecast }
-        val lat=String.format(Locale.US,"%.3f",latitude)
-        val lon=String.format(Locale.US,"%.3f",longitude)
+        // A previsão não precisa de coordenadas de ~100 metros; usamos uma
+        // célula de ~1 km, igual à chave do cache, minimizando dados enviados.
+        val lat=String.format(Locale.US,"%.2f",cell.first / 100.0)
+        val lon=String.format(Locale.US,"%.2f",cell.second / 100.0)
         val url=URL("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=auto")
         val connection=url.openConnection() as HttpURLConnection
         try {
@@ -162,7 +164,7 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit) {
             TextButton(onClick={
                 context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))
             },contentPadding=PaddingValues(0.dp)) { Text("Previsão: Open-Meteo · CC BY 4.0",style=MaterialTheme.typography.labelSmall) }
-            Text("A consulta envia uma localização aproximada ao Open-Meteo. Não salvamos essa localização no Firebase. Consultas da mesma região em até 15 minutos usam cache temporário em memória.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Enviamos ao Open-Meteo apenas coordenadas arredondadas a 2 casas decimais (cerca de 1 km). Não salvamos localização da previsão no Firebase. A mesma região utiliza cache em memória por até 15 minutos.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
