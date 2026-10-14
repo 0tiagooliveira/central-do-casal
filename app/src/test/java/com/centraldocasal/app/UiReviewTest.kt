@@ -63,7 +63,7 @@ class UiReviewTest {
         capture("mercado-orcamento-fixture")
         compose.onNodeWithText("No mercado").performScrollTo().performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Adicionar ao carrinho")); compose.onNodeWithText("Adicionar ao carrinho").performClick()
-        compose.onNodeWithText("Preço real / un").performTextReplacement("8,50"); compose.onNodeWithText("Quantidade (un)").performTextReplacement("2"); capture("edicao-rapida-fixture"); compose.onNodeWithText("Adicionar",substring=false).assertIsEnabled().performClick(); compose.waitForIdle(); compose.runOnIdle { org.junit.Assert.assertEquals("A alteração do carrinho deve acionar onQuickSave.", "fixture-pending",edited?.id); org.junit.Assert.assertTrue(edited?.bought==true); org.junit.Assert.assertEquals(850L,edited?.actual); org.junit.Assert.assertEquals(2000L,edited?.actualMilli) }
+        compose.onNodeWithText("Preço real / un").performTextReplacement("8,50"); compose.onNodeWithText("Quantidade (un)").performTextReplacement("2"); capture("edicao-rapida-fixture"); compose.onNodeWithText("Adicionar",substring=false).assertIsEnabled().performClick(); compose.waitForIdle(); val debugTree = compose.onRoot(useUnmergedTree = true).printToString().take(6500); compose.runOnIdle { org.junit.Assert.assertEquals("A alteração do carrinho deve acionar onQuickSave. Árvore da interface: $debugTree", "fixture-pending",edited?.id); org.junit.Assert.assertTrue(edited?.bought==true); org.junit.Assert.assertEquals(850L,edited?.actual); org.junit.Assert.assertEquals(2000L,edited?.actualMilli) }
         capture("modo-mercado-fixture")
     }
     @Test fun skuHistoryShowsIncreaseWithoutCombiningDifferentUnits() {
