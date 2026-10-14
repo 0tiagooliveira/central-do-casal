@@ -18,6 +18,23 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
     }
+    // Apenas quem gravou pode se declarar como origem de um SOS/check-in.
+    function validSafetyIdentity() {
+      let info = request.resource.data;
+      return !(info.kind in ['safetyAlert','safetyCheckIn'])
+        || (info.ownerUid == request.auth.uid
+          && info.ownerName is string && info.ownerName.size() <= 100
+          && info.latitude is number && info.latitude >= -90 && info.latitude <= 90
+          && info.longitude is number && info.longitude >= -180 && info.longitude <= 180
+          && info.mapUrl is string && info.mapUrl.size() <= 256
+          && (info.kind != 'safetyAlert' || (info.createdAt is int && info.createdAt > 0))
+          && (info.kind != 'safetyCheckIn' || (info.capturedAt is int && info.capturedAt > 0)));
+    }
+    function validSafetyUpdateOwner() {
+      return resource.data.kind != 'safetyCheckIn'
+        || (resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid);
+    }
     function validCareEvent() {
       let event = request.resource.data;
       return event.keys().hasAll(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
@@ -73,6 +90,39 @@ service cloud.firestore {
           && request.resource.data.members == resource.data.members.removeAll([request.auth.uid])
           && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == '')
       );
+      // Somente o próprio usuário pode transmitir ou apagar sua localização.
+      // O parceiro vê dados apenas enquanto fizer parte do mesmo household.
+      // A expiração também é aplicada no cliente; limpeza física exige TTL administrativo.
+      match /liveLocations/{ownerUid} {
+        allow get, list: if member(hid);
+        function validLiveLocation() {
+          let loc = request.resource.data;
+          return request.auth.uid == ownerUid
+            && loc.keys().hasAll(['ownerUid','latitude','longitude','capturedAt','updatedAt','expiresAt','sessionEndsAt'])
+            && loc.keys().hasOnly(['ownerUid','latitude','longitude','capturedAt','updatedAt','expiresAt','sessionEndsAt'])
+            && loc.ownerUid == ownerUid
+            && loc.latitude is number && loc.latitude >= -90 && loc.latitude <= 90
+            && loc.longitude is number && loc.longitude >= -180 && loc.longitude <= 180
+            && loc.capturedAt is timestamp
+            && loc.capturedAt >= request.time - duration.value(2,'m')
+            && loc.capturedAt <= request.time + duration.value(1,'m')
+            && loc.updatedAt == request.time
+            && loc.expiresAt is timestamp && loc.expiresAt > request.time
+            && loc.expiresAt <= request.time + duration.value(90,'s')
+            && loc.sessionEndsAt is timestamp && loc.sessionEndsAt > request.time
+            && loc.sessionEndsAt <= request.time + duration.value(31,'m');
+        }
+        // Uma escrita de localização NÃO renova a duração da sessão.
+        // Reiniciar após o limite exige encerrar a sessão antiga e iniciar uma nova.
+        function validLiveUpdate() {
+          return resource.data.ownerUid == ownerUid
+            && request.resource.data.sessionEndsAt == resource.data.sessionEndsAt
+            && request.resource.data.capturedAt >= resource.data.capturedAt;
+        }
+        allow create: if member(hid) && validLiveLocation();
+        allow update: if member(hid) && validLiveLocation() && validLiveUpdate();
+        allow delete: if member(hid) && own(ownerUid) && resource.data.ownerUid == ownerUid;
+      }
       match /baskets/{market} {
         allow read: if member(hid);
         allow create, update: if member(hid) && market in ['Mercado', 'Açougue']
@@ -141,10 +191,13 @@ service cloud.firestore {
             && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
             && next.data.generation != basket.data.generation && next.data.revision == basket.data.revision + 1;
         }
-        allow create: if member(hid) && ((validRecord(false) && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
-        allow update: if member(hid) && ((validRecord(false) && request.resource.data.kind == resource.data.kind
+        allow create: if member(hid) && ((validRecord(false) && validSafetyIdentity() && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
+        allow update: if member(hid) && ((validRecord(false) && validSafetyIdentity() && validSafetyUpdateOwner()
+          && request.resource.data.kind == resource.data.kind
           && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse());
-        allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
+        allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction']
+          || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid)
+          || (resource.data.kind == 'safetyCheckIn' && resource.data.ownerUid == request.auth.uid));
       }
     }
     match /invites/{iid} {

@@ -86,12 +86,75 @@ test('stranger cannot forge household membership',async()=> {await assertFails(u
 test('member cannot add third party',async()=> {await assertFails(updateDoc(doc(db('alice'),'households/home'),{members:['alice','bob','eve']}));});
 test('user cannot point profile at unauthorized household',async()=> {await assertFails(setDoc(doc(db('eve'),'users/eve'),profile('eve')));});
 test('member cannot put health in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/health'),record('alice','health')));});
+const safetyRecord = (uid,kind) => ({
+  kind,private:false,ownerUid:uid,ownerName:uid,
+  latitude:-25.0,longitude:-49.0,
+  mapUrl:'https://maps.google.com/?q=-25.0,-49.0',
+  ...(kind==='safetyAlert'?{createdAt:Date.now()}:{capturedAt:Date.now()}),
+  updatedBy:uid,updatedAt:serverTimestamp()
+});
 test('members can share house devices and safety state while strangers and private collections remain blocked',async()=>{
  const shared=db('alice');
- for(const kind of ['smartDevice','safetyCheckIn','safetyAlert']) await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),{...record('alice',kind),private:false}));
+ await assertSucceeds(setDoc(doc(shared,'households/home/records/smartDevice'),record('alice','smartDevice')));
+ for(const kind of ['safetyCheckIn','safetyAlert']) await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),safetyRecord('alice',kind)));
  await assertFails(setDoc(doc(db('eve'),'households/home/records/device'),{...record('eve','smartDevice'),private:false}));
  await assertFails(setDoc(doc(shared,'users/alice/records/private-device'),{...record('alice','smartDevice',true),private:true}));
  await assertFails(updateDoc(doc(shared,'households/home/records/safetyAlert'),{title:'não pode alterar alerta'}));
+});
+test('SOS identity belongs to authenticated writer and partner cannot rewrite a check-in',async()=>{
+ const alice=db('alice'), bob=db('bob');
+ await assertFails(setDoc(doc(alice,'households/home/records/forged-sos'),safetyRecord('bob','safetyAlert')));
+ await assertFails(setDoc(doc(alice,'households/home/records/forged-checkin'),safetyRecord('bob','safetyCheckIn')));
+ await assertFails(setDoc(doc(alice,'households/home/records/out-of-range'),{...safetyRecord('alice','safetyAlert'),latitude:100}));
+ const ref=doc(alice,'households/home/records/own-checkin');
+ await assertSucceeds(setDoc(ref,safetyRecord('alice','safetyCheckIn')));
+ await assertSucceeds(setDoc(ref,safetyRecord('alice','safetyCheckIn')));
+ await assertFails(setDoc(doc(bob,'households/home/records/own-checkin'),safetyRecord('bob','safetyCheckIn')));
+ await assertFails(updateDoc(doc(bob,'households/home/records/own-checkin'),{
+   ownerUid:'bob',ownerName:'bob',updatedBy:'bob',updatedAt:serverTimestamp()
+ }));
+ await assertFails(deleteDoc(doc(bob,'households/home/records/own-checkin')));
+ await assertSucceeds(deleteDoc(ref));
+ const afterDelete=await assertSucceeds(getDoc(ref));
+ if(afterDelete.exists()) throw new Error('Check-in was not deleted');
+});
+test('live location is scoped to owner, household, valid coordinates and expiry', async () => {
+ const point=(uid,lat=-25.0,lon=-49.0)=>({
+   ownerUid:uid,latitude:lat,longitude:lon,capturedAt:Timestamp.now(),
+   updatedAt:serverTimestamp(),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),
+   sessionEndsAt:Timestamp.fromMillis(Date.now()+1800000)
+ });
+ const ref=doc(db('alice'),'households/home/liveLocations/alice');
+ await assertSucceeds(setDoc(ref,point('alice')));
+ await assertSucceeds(getDoc(doc(db('bob'),'households/home/liveLocations/alice')));
+ await assertFails(getDoc(doc(db('eve'),'households/home/liveLocations/alice')));
+ await assertFails(setDoc(ref,point('bob')));
+ await assertFails(setDoc(ref,point('alice',100,0)));
+ await assertFails(setDoc(ref,{...point('alice'),expiresAt:Timestamp.fromMillis(Date.now()+86400000)}));
+ // É permitido atualizar a posição na mesma sessão, sem estender o prazo.
+ await assertSucceeds(updateDoc(ref,{
+   latitude:-24.5,capturedAt:Timestamp.now(),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),updatedAt:serverTimestamp()
+ }));
+ // O cliente não pode prolongar ou encurtar silenciosamente uma sessão existente.
+ await assertFails(updateDoc(ref,{
+   sessionEndsAt:Timestamp.fromMillis(Date.now()+25*60000),
+   updatedAt:serverTimestamp()
+ }));
+ // Um fix mais antigo não pode substituir a última posição recebida.
+ await assertFails(updateDoc(ref,{
+   capturedAt:Timestamp.fromMillis(Date.now()-30000),
+   updatedAt:serverTimestamp()
+ }));
+ // Publicar uma localização "atual" por mais de 90 s também é proibido.
+ await assertFails(updateDoc(ref,{
+   expiresAt:Timestamp.fromMillis(Date.now()+120000),
+   updatedAt:serverTimestamp()
+ }));
+ await assertFails(deleteDoc(doc(db('bob'),'households/home/liveLocations/alice')));
+ await assertSucceeds(deleteDoc(ref));
+ await assertFails(setDoc(doc(db('bob'),'households/home/liveLocations/alice'),point('bob')));
 });
 test('member cannot store private flag in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/private'),record('alice','task',true)));});
 test('care events require genuine authorship and only the author can undo',async()=> {
