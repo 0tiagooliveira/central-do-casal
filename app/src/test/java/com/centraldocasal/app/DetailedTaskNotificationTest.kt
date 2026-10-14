@@ -81,6 +81,9 @@ class DetailedTaskNotificationTest {
             "owner" to "Rhayra"
         ))
         Reminders.schedule(context,"local",task,"Rhayra")
+        val channel=manager.getNotificationChannel("central-tasks-v2")
+        assertNotNull("O canal precisa existir antes do disparo para configurar no Android.", channel)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH,channel.importance)
         val alarms=context.getSystemService(AlarmManager::class.java)
         val before=shadowOf(alarms).peekNextScheduledAlarm()
         assertNotNull(before)
@@ -113,6 +116,35 @@ class DetailedTaskNotificationTest {
         TaskAlarmReceiver().onReceive(context,intent)
         assertEquals(android.app.Notification.VISIBILITY_PUBLIC,shadowOf(manager).allNotifications.single().visibility)
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
+    }
+
+    @Test fun profileNameChangeEnablesNewOwnerAlarm() {
+        val task = Record("profile-task", "task", fields = mapOf(
+            "title" to "Buscar a Rhayra", "owner" to "Rhayra",
+            "date" to LocalDate.now().plusDays(1).toString(),
+            "time" to "17:30", "repeat" to "Única"
+        ))
+        Reminders.schedule(context, "local", task, "Tiago")
+        assertEquals(0, Reminders.diagnostics(context, "local").futureSchedules)
+        Reminders.schedule(context, "local", task, "Rhayra")
+        assertEquals(1, Reminders.diagnostics(context, "local").futureSchedules)
+    }
+
+    @Test fun changingQuietHoursRearmsExistingTaskToCorrectTime() {
+        val tomorrow = LocalDate.now().plusDays(1)
+        val task = Record("quiet-task", "task", fields = mapOf(
+            "title" to "Rotina noturna", "owner" to "Rhayra",
+            "date" to tomorrow.toString(),
+            "time" to "02:10", "repeat" to "Única"
+        ))
+        Reminders.schedule(context, "local", task, "Rhayra")
+        val before = Reminders.diagnostics(context, "local").nextAt
+        assertNotNull(before)
+        context.getSharedPreferences("reminders_local", Context.MODE_PRIVATE).edit().putBoolean("quiet",true).commit()
+        Reminders.schedule(context, "local", task, "Rhayra")
+        val after = Reminders.diagnostics(context, "local").nextAt
+        assertNotNull(after)
+        assertTrue("Com Sossego ativo, o alarme deve ser reagendado após a janela silenciosa.", after!! > before!!)
     }
 
     @Test fun anotherUsersPrivateTaskDoesNotAppearOnThisDevice() {

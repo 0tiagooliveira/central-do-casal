@@ -144,7 +144,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.message.value = null } }
     LaunchedEffect(session.uid) { route = ""; tab = "Hoje"; requestedShoppingMarket = null; requestedRoutineDate = null }
     LaunchedEffect(session.uid,openReminder) { if(openReminder && session.uid.isNotBlank()) { route="";tab="Rotina";requestedRoutineDate=null;consumeReminder() } }
-    LaunchedEffect(session.uid, data.records) {
+    LaunchedEffect(session.uid, session.name, data.records) {
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
             if(!reminderPrefs.contains("enabled")) reminderPrefs.edit().putBoolean("enabled",true).apply()
@@ -577,7 +577,15 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r,session.name) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { quiet = it; prefs.edit().putBoolean("quiet", it).apply() }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { enabled ->
+                    quiet = enabled
+                    prefs.edit().putBoolean("quiet", enabled).apply()
+                    data.records.filter { record -> record.kind == "task" }.forEach { task ->
+                        val completeToday = data.records.any { it.kind == "occurrence" && it.text("taskId") == task.id && it.text("date") == LocalDate.now().toString() && it.flag("done") }
+                        Reminders.schedule(context, session.uid, task, session.name, completedDay = LocalDate.now().takeIf { completeToday })
+                    }
+                    reminderDiagnosticRefresh++
+                }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
         } }
         item { Panel("Notificações e permissões", if(notificationAllowed) "Notificações permitidas pelo Android" else "Notificações ainda bloqueadas no Android") {
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -699,10 +707,10 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
         require(title.isNotBlank()) { "Informe um título." }; val isoDate = dateInput(date)
         if (kind == "task" && time.isNotBlank()) java.time.LocalTime.parse(time)
         if(kind == "task" && repeat == "Dias da semana") require(weekdays.isNotEmpty()) { "Selecione os dias da semana." }
-        if(kind == "task" && taskReminder) require(timeReviewed && reviewed) { "Confirme os dados e o horário antes de habilitar lembretes." }
+        if(kind == "task" && taskReminder && time.isNotBlank()) require(timeReviewed && reviewed) { "Confirme os dados e o horário antes de habilitar lembretes." }
         val provenance = initial?.fields?.filterKeys { it in setOf("source", "sourceHash", "sourceRecurrence", "original", "importedAt", "sourcePlanId", "sourceStepId") } ?: emptyMap()
         val fields: Map<String, Any?> = provenance + mapOf("title" to title.trim(), "note" to note.trim(), "date" to isoDate) + when (kind) {
-            "task" -> mapOf("owner" to owner, "category" to category, "repeat" to repeat, "time" to time, "days" to weekdays.sorted(), "skipReminder" to !taskReminder, "needsReview" to !reviewed, "needsTimeReview" to !timeReviewed)
+            "task" -> mapOf("owner" to owner, "category" to category, "repeat" to repeat, "time" to time, "days" to weekdays.sorted(), "skipReminder" to (!taskReminder || time.isBlank()), "needsReview" to !reviewed, "needsTimeReview" to !timeReviewed)
             "plan" -> mapOf("target" to Money.cents(amount), "horizon" to horizon)
             "transaction" -> mapOf("amount" to Money.cents(amount), "type" to type, "category" to category, "origin" to "Manual")
             else -> emptyMap()
@@ -721,7 +729,7 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
                 Field("Horário opcional (HH:mm)", time, { time = it })
                 if(initial?.flag("needsReview") == true) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reviewed, { reviewed = it }, modifier = Modifier.semantics { contentDescription = "Confirmar os dados desta rotina" }); Text("Confirmar os dados desta rotina", style = MaterialTheme.typography.bodySmall) }
                 if(initial?.flag("needsTimeReview") == true) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(timeReviewed, { timeReviewed = it }, modifier = Modifier.semantics { contentDescription = "Confirmar o horário registrado" }); Text("Confirmar o horário registrado", style = MaterialTheme.typography.bodySmall) }
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(taskReminder, { taskReminder = it }, modifier = Modifier.semantics { contentDescription = "Permitir lembrete desta tarefa" }); Text("Permitir lembrete desta tarefa", style = MaterialTheme.typography.bodySmall) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(taskReminder && time.isNotBlank(), { taskReminder = it }, enabled = time.isNotBlank(), modifier = Modifier.semantics { contentDescription = "Permitir lembrete desta tarefa" }); Text(if(time.isBlank()) "Informe um horário para receber aviso desta tarefa." else "Permitir lembrete desta tarefa", style = MaterialTheme.typography.bodySmall) }
             }
             "plan" -> { Choice("Horizonte", listOf("Curto prazo", "Médio prazo", "Longo prazo"), horizon, { horizon = it }); Field("Valor-alvo opcional (R$)", amount, { amount = it }) }
             "transaction" -> { Choice("Tipo", listOf("Receita", "Despesa"), type, { type = it }); Field("Valor (R$)", amount, { amount = it }); Choice("Categoria", listOf("Mercado", "Transporte", "Parcelas/dívidas", "Cuidados pessoais", "Casa", "Lucca", "Outros"), category, { category = it }) }
