@@ -11,3 +11,12 @@ Fluxo de aceitação para o S23 FE e S25 FE:
 7. Registre: aparelho, Android/One UI, horário agendado, horário recebido, atraso, permissão de alarme exato, status da bateria, app aberto/fechado, captura sem dados sensíveis.
 
 O teste programado é local e não grava registros no Firebase. Se o sistema negar a entrega ou adiar pelo gerenciamento de bateria, o aplicativo não deve afirmar sucesso sem a confirmação física. **SOS é separado de notificações de tarefa e não pode depender deste canal para segurança.**
+
+## Falha por permissão ou canal bloqueado
+
+Se o Android impedir uma notificação recorrente, o aplicativo deve registrar o bloqueio local e manter programada a próxima ocorrência. Isso não recupera avisos perdidos nem garante pontualidade no Samsung.
+
+1. Confira o diagnóstico de entrega bloqueada em **Configurações > Notificações e permissões**.
+2. Reative as notificações e toque **Reagendar tarefas**.
+3. Faça **Testar agendamento real em 2 minutos** com tela bloqueada.
+4. Na bandeja, título, horário, responsável e observação aparecem completos. Na tela bloqueada, detalhes ficam ocultos, a menos que o próprio usuário ative sua exibição.
