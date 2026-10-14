@@ -151,7 +151,7 @@ class CentralRepository(context: Context) {
         }
     }
     suspend fun save(record: Record) {
-        require(record.kind in setOf("task", "occurrence", "plan", "contribution", "moment", "transaction", "health", "quest", "catalogLink", "safetyCheckIn", "safetyAlert", "smartDevice"))
+        require(record.kind in setOf("task", "occurrence", "plan", "contribution", "moment", "transaction", "health", "quest", "catalogLink", "safetyCheckIn", "safetyAlert", "smartDevice", "careEvent"))
         if (record.kind == "catalogLink") {
             require(!record.isPrivate && record.fields.keys.all { it in setOf("skuId", "baseItemId", "status", "revision", "updatedBy", "updatedAt") }) { "O vínculo aceita apenas dados de confirmação." }
             require(record.id == record.text("skuId")) { "O vínculo precisa identificar o SKU." }
@@ -310,7 +310,7 @@ class CentralRepository(context: Context) {
         }.await()
     }
     suspend fun remove(record: Record) {
-        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health")) { "Este histórico é preservado." }
+        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent")) { "Este histórico é preservado." }
         if (session.value.local) { persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == record.id })); return }
         recordCollection(record.isPrivate).document(record.id).delete().await()
     }
