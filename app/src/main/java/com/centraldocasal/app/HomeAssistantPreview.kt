@@ -57,7 +57,7 @@ internal object HomeAssistantProbe {
 
     /** Requires an explicit, one-off human command and keeps the credential only in RAM. */
     suspend fun command(base: String, bearer: String, entityId: String, turnOn: Boolean) = withContext(Dispatchers.IO) {
-        require(bearer.length in 20..4096 && bearer.none { it == '\\r' || it == '\\n' }) {
+        require(bearer.length in 20..4096 && bearer.none { it == '\r' || it == '\n' }) {
             "Credencial inválida."
         }
         val conn = commandEndpoint(base, entityId, turnOn).openConnection() as HttpURLConnection
