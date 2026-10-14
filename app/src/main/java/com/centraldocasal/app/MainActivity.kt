@@ -112,7 +112,7 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
             finally { busy.value = false }
         }
     }
-    fun save(record: Record) = action { repo.save(record); if (record.kind == "task") Reminders.schedule(getApplication(), repo.session.value.uid, record) }
+    fun save(record: Record) = action { repo.save(record); if (record.kind == "task") Reminders.schedule(getApplication(), repo.session.value.uid, record, repo.session.value.name) }
     fun complete(task: Record, day: LocalDate, completed: Boolean) = action { repo.save(Record(occurrenceId(task.id, day), "occurrence", task.isPrivate, mapOf("taskId" to task.id, "date" to day.toString(), "done" to completed))); if (completed) Reminders.cancel(getApplication(), repo.session.value.uid, task.id, day) }
     fun logout() { Reminders.cancelAll(getApplication(), repo.session.value.uid); repo.logout() }
     override fun onCleared() { repo.close() }
@@ -148,7 +148,11 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
             if(!reminderPrefs.contains("enabled")) reminderPrefs.edit().putBoolean("enabled",true).apply()
-            data.records.filter { it.kind=="task" }.forEach { Reminders.schedule(context,session.uid,it) }
+            Reminders.migrate(context,session.uid)
+            data.records.filter { it.kind=="task" }.forEach { task ->
+                val completeToday=data.records.any { it.kind=="occurrence" && it.text("taskId")==task.id && it.text("date")==LocalDate.now().toString() && it.flag("done") }
+                Reminders.schedule(context,session.uid,task,session.name,completedDay=LocalDate.now().takeIf { completeToday })
+            }
         }
     }
     LaunchedEffect(data.records, session.uid) {
@@ -569,7 +573,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             } }
         }
         item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r,session.name) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { quiet = it; prefs.edit().putBoolean("quiet", it).apply() }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
         } }
@@ -644,7 +648,7 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
             else -> emptyMap()
         }
         val record = Record(id, kind, if (kind == "health") true else isPrivate, fields); vm.repo.save(record)
-        if (kind == "task") Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record)
+        if (kind == "task") Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record, vm.repo.session.value.name)
         onDismiss()
     } }, busy = busy) {
         Field("Título", title, { title = it }); Field("Data (dd/mm/aaaa)", date, { date = it }); Field(if (kind == "plan") "Próxima ação / descrição" else "Observações", note, { note = it }, singleLine = false)
