@@ -53,6 +53,13 @@ internal fun weatherDescription(code: Int): String = when(code) {
 internal fun weatherCacheCell(latitude: Double, longitude: Double): Pair<Int,Int> =
     (latitude * 100).roundToInt() to (longitude * 100).roundToInt()
 
+/** O servidor recebe só uma célula aproximada, nunca a coordenada GPS bruta. */
+internal fun weatherRequestCoordinates(latitude: Double, longitude: Double): Pair<String,String> {
+    val cell = weatherCacheCell(latitude,longitude)
+    return String.format(Locale.US,"%.2f",cell.first / 100.0) to
+        String.format(Locale.US,"%.2f",cell.second / 100.0)
+}
+
 internal object WeatherSource {
     private data class Cache(val cell: Pair<Int,Int>, val savedAt: Long, val forecast: WeatherSnapshot)
     @Volatile private var lastForecast: Cache? = null
@@ -90,8 +97,7 @@ internal object WeatherSource {
         lastForecast?.takeIf { it.cell==cell && now-it.savedAt in 0L..CACHE_MILLIS }?.let { return@withContext it.forecast }
         // A previsão não precisa de coordenadas de ~100 metros; usamos uma
         // célula de ~1 km, igual à chave do cache, minimizando dados enviados.
-        val lat=String.format(Locale.US,"%.2f",cell.first / 100.0)
-        val lon=String.format(Locale.US,"%.2f",cell.second / 100.0)
+        val (lat,lon)=weatherRequestCoordinates(latitude,longitude)
         val url=URL("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=auto")
         val connection=url.openConnection() as HttpURLConnection
         try {
