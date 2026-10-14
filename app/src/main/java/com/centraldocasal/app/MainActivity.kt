@@ -347,7 +347,7 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
         require(title.isNotBlank()) { "Informe o produto." }
         require(unit in listOf("un", "kg", "g", "L", "mL", "pacote")) { "Escolha a unidade antes de salvar." }
         val savedRoom=if(storageRoom=="Outro") customRoom.trim().ifBlank { "Casa" } else storageRoom
-        val item = Entry(id, title.trim(), unit, Money.quantity(planned), Money.quantity(actualQty), if(estimated.isBlank()) 0 else Money.cents(estimated), real.takeIf { it.isNotBlank() }?.let(Money::cents), bought, estimateKnown=estimated.isNotBlank(),unitReviewed=true,quantityReviewed=true,sourceBaseId=entry?.sourceBaseId.orEmpty(),sourceSkuId=entry?.sourceSkuId.orEmpty(),category=entry?.category.orEmpty(),storageRoom=savedRoom,recipient=recipient,group=needGroup,subgroup=subgroup.trim(),priority=priority)
+        val item = Entry(id, title.trim(), unit, Money.quantity(planned), Money.quantity(actualQty), if(estimated.isBlank()) 0 else Money.cents(estimated), real.takeIf { it.isNotBlank() }?.let(Money::cents), bought, estimateKnown=estimated.isNotBlank(),unitReviewed=true,quantityReviewed=true,sourceBaseId=entry?.sourceBaseId.orEmpty(),sourceSkuId=entry?.sourceSkuId.orEmpty(),category=entry?.category.orEmpty(),storageRoom=savedRoom,recipient=recipient,group=needGroup,subgroup=subgroup.trim(),priority=priority,sourcePlanId=entry?.sourcePlanId.orEmpty(),sourceStepId=entry?.sourceStepId.orEmpty())
         if (bought) item.real()
         vm.repo.editBasket(basket.market, basket.revision.takeIf { vm.repo.data.value.baskets.containsKey(basket.market) }) { it.copy(entries = it.entries.filterNot { e -> e.id == id } + item) }; dismiss()
     } }, busy = busy) {
