@@ -303,10 +303,14 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
 }
 
 @Composable
-private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState,reviewOnly:Boolean=false) {
+private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("Para mim") }
-    var dayText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }; val day = LocalDate.parse(dayText)
+    var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
+    LaunchedEffect(requestedDate) {
+        requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }?.let { dayText = it }
+    }
+    val day = LocalDate.parse(dayText)
     var editing by remember { mutableStateOf<Record?>(null) }; var creating by remember { mutableStateOf(false) }
     val context=LocalContext.current
     val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
