@@ -236,6 +236,7 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                     }
                 }
             }
+            item { HomeAssistantPreviewCard() }
             item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text("Nenhum aparelho pareado encontrado. Use as configurações Bluetooth para parear primeiro.",style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
     onClick={
         vm.action("Aparelho Bluetooth registrado") {
