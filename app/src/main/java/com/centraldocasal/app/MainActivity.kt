@@ -695,6 +695,13 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 Text("Última notificação enviada ao Android: ${java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at))}",style=MaterialTheme.typography.bodySmall)
             }
             if(diagnosis.lastFailedAt!=null) Text("Houve falha recente ao agendar ou exibir um aviso. Execute o teste em dois minutos.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+            diagnosis.lastDeliveryBlockedAt?.let { at ->
+                Text("Entrega de aviso bloqueada pelo Android em " +
+                    java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.Instant.ofEpochMilli(at)) +
+                    ". Confira permissão de notificações e o canal de tarefas; próximas ocorrências recorrentes continuam agendadas.",
+                    style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+            }
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick={reminderDiagnosticRefresh++}) { Text("Atualizar diagnóstico") }
                 OutlinedButton(onClick={
