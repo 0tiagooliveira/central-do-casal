@@ -94,7 +94,7 @@ class LiveLocationService : Service(), LocationListener {
             for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
                 if (manager.isProviderEnabled(provider)) {
                     @Suppress("MissingPermission")
-                    manager.requestLocationUpdates(provider, UPDATE_MS, 10f, this, Looper.getMainLooper())
+                    manager.requestLocationUpdates(provider, UPDATE_MS, 0f, this, Looper.getMainLooper())
                     subscribed = true
                 }
             }
