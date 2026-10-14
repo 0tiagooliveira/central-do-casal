@@ -1,0 +1,30 @@
+# Android/Gradle - gerados localmente
+.gradle/
+**/build/
+.idea/
+*.iml
+local.properties
+.kotlin/
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+
+# Segredos e logs privados (auditar tambem os arquivos NAO ignorados)
+.env
+.env.*
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+firestore-debug.log
+firebase-debug.log
+*.log
+*.bak
+
+# Arquivos pessoais/temporarios
+*.tmp
+.DS_Store
+Thumbs.db
