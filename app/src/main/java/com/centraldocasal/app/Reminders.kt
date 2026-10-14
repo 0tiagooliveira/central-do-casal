@@ -186,6 +186,26 @@ object Reminders {
         val ids=store(context).getStringSet("$ID_LIST:$uid",emptySet()).orEmpty().toList()
         ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it) } }
     }
+    /** Manual device-only test: uses the same channel and payload as real tasks. */
+    fun sendDetailedTest(context:Context,uid:String,profileName:String):String {
+        if(uid.isBlank())return "Entre na conta para testar."
+        if(!AndroidInteractions.notificationsAllowed(context))return "Notificações bloqueadas no Android."
+        val id="manual-detailed-preview"
+        val task=Record(id=id,kind="task",fields=mapOf(
+            "title" to "Exemplo: reservar almoço de amanhã",
+            "note" to "Conferir horário e disponibilidade",
+            "owner" to profileName.ifBlank { "Ambos" },
+            "date" to LocalDate.now().plusDays(1).toString(),
+            "time" to LocalTime.now().withSecond(0).withNano(0).toString(),
+            "repeat" to "Única"
+        ))
+        cache(context,uid,task)
+        return try {
+            deliver(context,uid,id)
+            "Notificação de exemplo enviada. Verifique a bandeja do Android."
+        } finally { forget(context,uid,id) }
+    }
+
     internal fun deliver(context:Context,uid:String,id:String) {
         val active=context.getSharedPreferences("central_local_v1",Context.MODE_PRIVATE).getString("activeUid","")
         if(active!=uid)return
