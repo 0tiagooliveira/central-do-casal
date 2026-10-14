@@ -16,7 +16,10 @@ import org.json.JSONObject
 import java.util.UUID
 
 data class SessionState(val uid: String = "", val name: String = "", val email: String = "", val local: Boolean = false, val household: String = "", val verified: Boolean = false)
-data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList())
+data class LiveLocation(val uid: String, val latitude: Double, val longitude: Double, val capturedAt: Long, val expiresAt: Long, val sessionEndsAt: Long) {
+    fun isCurrent(now: Long): Boolean = now < expiresAt && now < sessionEndsAt && capturedAt > 0 && now - capturedAt < 180_000L
+}
+data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList(), val liveLocations: List<LiveLocation> = emptyList())
 
 /** One repository owns persistence. Local data never silently migrate into a cloud household. */
 class CentralRepository(context: Context) {
@@ -107,6 +110,24 @@ class CentralRepository(context: Context) {
             if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
             if (error != null) fail("catalogLinks", error)
             else if (snap != null) { if (!snap.metadata.isFromCache) access.confirm("catalogLinks"); sharedLinks = snap.documents.mapNotNull(::readRecord); publish() }
+        }
+        listeners += house.collection("liveLocations").addSnapshotListener(MetadataChanges.INCLUDE) { snap, error ->
+            if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
+            if (error != null) fail("liveLocations", error)
+            else if (snap != null) {
+                // Nunca exibir localização em cache como se fosse confirmação recente do servidor.
+                val locations = if (snap.metadata.isFromCache) emptyList() else snap.documents.mapNotNull { doc ->
+                    val lat = doc.getDouble("latitude") ?: return@mapNotNull null
+                    val lon = doc.getDouble("longitude") ?: return@mapNotNull null
+                    val captured = doc.getTimestamp("capturedAt")?.toDate()?.time ?: return@mapNotNull null
+                    val expires = doc.getTimestamp("expiresAt")?.toDate()?.time ?: return@mapNotNull null
+                    val end = doc.getTimestamp("sessionEndsAt")?.toDate()?.time ?: return@mapNotNull null
+                    if (doc.id != doc.getString("ownerUid") || lat !in -90.0..90.0 || lon !in -180.0..180.0) null
+                    else LiveLocation(doc.id, lat, lon, captured, expires, end)
+                }
+                mutableData.value = mutableData.value.copy(liveLocations = locations)
+                publish()
+            }
         }
         listeners += house.collection("baskets").addSnapshotListener(MetadataChanges.INCLUDE) { snap, error ->
             if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
