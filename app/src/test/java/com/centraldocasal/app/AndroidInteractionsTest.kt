@@ -74,5 +74,9 @@ class AndroidInteractionsTest {
         assertEquals("Você tem um alerta importante.", notice.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertFalse(notice.publicVersion.extras.toString().contains("Pessoa Teste"))
         assertFalse(notice.publicVersion.extras.toString().contains("maps.example"))
+        assertEquals("Alerta SOS do casal", notice.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals("Abra a Central do Casal para conferir o pedido de ajuda.", notice.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertFalse(notice.extras.toString().contains("Pessoa Teste"))
+        assertFalse(notice.extras.toString().contains("maps.example"))
     }
 }
