@@ -101,6 +101,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var location by remember { mutableStateOf<SafetyLocation?>(null) }
     var locating by remember { mutableStateOf(false) }
     var sharingRequested by remember(session.uid) { mutableStateOf(false) }
+    var confirmingSosLive by remember(session.uid) { mutableStateOf(false) }
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(session.uid) {
         while (true) {
@@ -164,6 +165,17 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             vm.repo.save(Record("sos-${session.uid}-${UUID.randomUUID()}","safetyAlert",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"createdAt" to System.currentTimeMillis(),"mapUrl" to (current?.mapsUrl().orEmpty()),"latitude" to (current?.latitude ?: 0.0),"longitude" to (current?.longitude ?: 0.0))))
         }
     }
+    if(confirmingSosLive) AlertDialog(
+        onDismissRequest={confirmingSosLive=false},
+        title={Text("Compartilhar localização ao vivo?")},
+        text={Text("Ao confirmar, a Central registra o SOS e tenta atualizar sua localização para o outro participante do casal por até 30 minutos. Um aviso do Android ficará visível, com botão Parar. Rede, GPS e bateria podem interromper o envio. Não substitui ligação para serviços de emergência.")},
+        confirmButton={Button(onClick={
+            confirmingSosLive=false
+            startSharing()
+            triggerSos(location?.takeIf { current -> current.isFresh(System.currentTimeMillis()) })
+        }) { Text("Confirmar SOS e compartilhar") }},
+        dismissButton={TextButton(onClick={confirmingSosLive=false}) { Text("Cancelar") }}
+    )
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("SOS e localização", style=MaterialTheme.typography.headlineMedium, fontWeight=FontWeight.Bold)
@@ -175,6 +187,10 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
                     Text("Registra o alerta imediatamente, sem esperar pelo GPS. Inclui posição recente apenas se já tiver sido obtida. Não substitui serviços de emergência.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
                     Button(enabled=!busy,onClick={ triggerSos(location?.takeIf { current -> current.isFresh(System.currentTimeMillis()) }) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS agora") }
+                    OutlinedButton(enabled=!busy && canShare,onClick={
+                        if(!hasPermission) requestPermission() else confirmingSosLive=true
+                    },modifier=Modifier.fillMaxWidth()) { Text(if(hasPermission) "SOS + localização ao vivo por 30 min" else "Permitir localização para SOS ao vivo") }
+                    Text("A localização ao vivo só começa após confirmação. O SOS simples não depende de GPS nem inicia rastreamento.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
