@@ -102,6 +102,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var locating by remember { mutableStateOf(false) }
     var sharingRequested by remember(session.uid) { mutableStateOf(false) }
     var confirmingSosLive by remember(session.uid) { mutableStateOf(false) }
+    var confirmingRemoveManual by remember(session.uid) { mutableStateOf(false) }
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(session.uid) {
         while (true) {
@@ -130,6 +131,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             .onFailure { vm.message.value = "O Android não permitiu iniciar o compartilhamento. Abra o app e confira as permissões." }
     }
     val hasPermission = SafetyLocationReader.permitted(context)
+    val ownManualLocation = data.records.firstOrNull { it.kind == "safetyCheckIn" && it.text("ownerUid") == session.uid }
     val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }.maxByOrNull { it.number("capturedAt") }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
         if (!current.isFresh(System.currentTimeMillis())) {
@@ -176,6 +178,20 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         }) { Text("Confirmar SOS e compartilhar") }},
         dismissButton={TextButton(onClick={confirmingSosLive=false}) { Text("Cancelar") }}
     )
+    if(confirmingRemoveManual) AlertDialog(
+        onDismissRequest={confirmingRemoveManual=false},
+        title={Text("Apagar localização manual?")},
+        text={Text("A última localização manual será excluída do espaço do casal. Se estiver sem internet, a exclusão poderá aguardar a reconexão. Isso não apaga alertas SOS anteriores.")},
+        confirmButton={
+            Button(onClick={
+                confirmingRemoveManual=false
+                ownManualLocation?.let { saved ->
+                    vm.action("Remoção da localização manual solicitada") { vm.repo.remove(saved) }
+                }
+            }) { Text("Apagar localização") }
+        },
+        dismissButton={TextButton(onClick={confirmingRemoveManual=false}){Text("Cancelar")}}
+    )
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("SOS e localização", style=MaterialTheme.typography.headlineMedium, fontWeight=FontWeight.Bold)
@@ -211,6 +227,10 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     if(!AndroidInteractions.notificationsAllowed(context)) Text("Ative as notificações do Android para acompanhar o aviso persistente do serviço.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
                 }
                 location?.let { current -> Text("Posição obtida em ${locationTime(current.capturedAt)}", style=MaterialTheme.typography.bodyMedium) } ?: Text("Ainda não há posição obtida neste aparelho.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
+                ownManualLocation?.let {
+                    Text("Sua última localização manual foi registrada em ${locationTime(it.number("capturedAt"))}.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick={confirmingRemoveManual=true},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text("Apagar minha localização manual") }
+                }
                 lastPartner?.let { Text("Última localização manual recebida em ${locationTime(it.number("capturedAt"))}. Não representa rastreamento ativo.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
             } }
         }
