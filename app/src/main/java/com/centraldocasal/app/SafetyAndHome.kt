@@ -106,14 +106,29 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             )) != null
         }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
+        val fresh = recentSosLocation(current)
+        if(fresh==null) {
+            vm.message.value="Esta posição está antiga ou inválida. Ative GPS/rede e tente novamente."
+            return
+        }
         vm.action(success) {
             require(!session.local && data.members.size==2) { "Conecte as duas contas antes de compartilhar uma localização." }
-            vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"latitude" to current.latitude,"longitude" to current.longitude,"capturedAt" to current.capturedAt,"mapUrl" to current.mapsUrl())))
+            vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf(
+                "ownerUid" to session.uid,"ownerName" to session.name,
+                "latitude" to fresh.latitude,"longitude" to fresh.longitude,
+                "capturedAt" to fresh.capturedAt,"mapUrl" to fresh.mapsUrl()
+            )))
         }
     }
     fun requestLocation(then: (SafetyLocation?) -> Unit = {}) {
         locating=true
-        SafetyLocationReader.request(context) { found -> locating=false; location=found; if(found==null) vm.message.value="Não foi possível obter uma posição. Ative GPS ou rede e tente novamente."; then(found) }
+        SafetyLocationReader.request(context) { found ->
+            locating=false
+            val fresh=recentSosLocation(found)
+            location=fresh
+            if(fresh==null) vm.message.value="Não há localização recente. Ative GPS ou rede e tente novamente."
+            then(fresh)
+        }
     }
     fun callPartner() {
         val number=phone.filter { it.isDigit() || it=='+' }
