@@ -192,6 +192,7 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
     var search by rememberSaveable { mutableStateOf("") }
     var byStore by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Entry?>(null) }
+    var buying by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var budget by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
@@ -230,7 +231,7 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
                 }
             }
         },
-        onEdit = { editing = it; feedback() },
+        onEdit = { editing = it; buying = true; feedback() },
         onUnmark = { entry ->
             vm.action("Item devolvido à lista") {
                 vm.repo.editBasket(market, basket.revision) { current ->
@@ -312,7 +313,7 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
             items(suggestions,key={it.id}) { suggestion -> MatchReviewCard(vm,data,suggestion,busy,onLinked={detail=it},onOpen={detail=it}) }
         }
     }
-    if(adding||editing!=null) ShoppingEditor(vm,basket,editing) { adding=false;editing=null }
+    if(adding||editing!=null) ShoppingEditor(vm,basket,editing, { adding=false; editing=null; buying=false }, startBought=buying)
     if(budget) {
         var amount by remember { mutableStateOf(BigDecimal.valueOf(basket.budget,2).toPlainString().replace('.',',')) }
         EditDialog("Orçamento de $market",{budget=false},{vm.action { val value=Money.cents(amount); vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) { it.copy(budget=value) };budget=false }},busy) { OutlinedTextField(amount,{amount=it},label={Text("Valor em R$")}) }
