@@ -2,6 +2,9 @@ name: Android and Firebase rules
 
 on:
   push:
+    branches:
+      - main
+      - develop
   pull_request:
 
 permissions:
