@@ -60,17 +60,36 @@ internal object SafetyLocationReader {
     fun request(context: Context, callback: (SafetyLocation?) -> Unit) {
         if (!permitted(context)) { callback(null); return }
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-        val known = providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }.maxByOrNull { it.time }
+        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        val known = (providers + LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .maxByOrNull { it.time }
         val delivered = AtomicBoolean(false)
-        fun result(location: Location?) { if (delivered.compareAndSet(false, true)) callback(location?.let { SafetyLocation(it.latitude, it.longitude, it.time) } ?: known?.let { SafetyLocation(it.latitude, it.longitude, it.time) }) }
-        val provider = providers.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
-        if (provider == null) { result(known); return }
-        runCatching {
-            manager.requestSingleUpdate(provider, object : LocationListener {
-                override fun onLocationChanged(location: Location) = result(location)
-            }, Looper.getMainLooper())
-        }.onFailure { result(known) }
+        fun result(point: Location?) {
+            if (delivered.compareAndSet(false, true)) {
+                val selected = point ?: known
+                callback(selected?.let { SafetyLocation(it.latitude, it.longitude, it.time) })
+            }
+        }
+        if (providers.isEmpty()) { result(known); return }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            providers.forEach { provider ->
+                runCatching {
+                    manager.getCurrentLocation(provider, null, context.mainExecutor) { point ->
+                        if (point != null) result(point)
+                    }
+                }
+            }
+        } else {
+            providers.forEach { provider ->
+                runCatching {
+                    manager.requestSingleUpdate(provider, object : LocationListener {
+                        override fun onLocationChanged(location: Location) = result(location)
+                    }, Looper.getMainLooper())
+                }
+            }
+        }
         Handler(Looper.getMainLooper()).postDelayed({ result(known) }, 15_000)
     }
 }
@@ -96,7 +115,15 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var location by remember { mutableStateOf<SafetyLocation?>(null) }
     var locating by remember { mutableStateOf(false) }
     var tracking by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("tracking", false)) }
-    val hasPermission = SafetyLocationReader.permitted(context)
+    var hasPermission by remember { mutableStateOf(SafetyLocationReader.permitted(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) hasPermission = SafetyLocationReader.permitted(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }
         .maxByOrNull { it.number("capturedAt") }?.takeIf { point ->
             recentSosLocation(SafetyLocation(
@@ -174,10 +201,10 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
-                    Text("Registra imediatamente o alerta; só inclui localização recente já obtida. O parceiro não receberá aviso garantido com o app fechado. Para emergências, utilize ligação direta.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
-                    Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Text("Precisa de ajuda?",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
+                    Text("Tenta enviar um alerta ao espaço do casal. Se já houver uma posição recente, ela será incluída. Não há garantia de entrega com o app fechado.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Pedir ajuda ao parceiro") }
+                    Text("Se a situação for urgente, ligue para o serviço de emergência.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
         }
@@ -196,18 +223,21 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         location?.let { current -> item { CoupleMapCard("sua localização",current.latitude,current.longitude,current.capturedAt) { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(current.mapsUrl()))) } } } }
         lastPartner?.let { partner -> val latitude=(partner.fields["latitude"] as? Number)?.toDouble(); val longitude=(partner.fields["longitude"] as? Number)?.toDouble(); if(latitude!=null&&longitude!=null) item { CoupleMapCard(partner.text("ownerName","seu parceiro"),latitude,longitude,partner.number("capturedAt")) { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(partner.text("mapUrl")))) } } } } ?: item { QuietCard("Mapa do parceiro","Quando seu parceiro tocar em “Atualizar e compartilhar agora” ou ativar o modo em tempo real, a localização aparecerá aqui no mapa.") {} }
         item {
-            ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) { Column(Modifier.padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                Text("SOS para seu parceiro", style=MaterialTheme.typography.titleMedium, color=MaterialTheme.colorScheme.onErrorContainer)
-                Text("O alerta é registrado sem esperar GPS. A entrega ao parceiro não é garantida se o app dele estiver fechado. WhatsApp e ligação são ações explícitas.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onErrorContainer)
-                OutlinedTextField(phone,{ phone=it },label={Text("Telefone do parceiro")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick={prefs.edit().putString("partnerPhone",phone.trim()).apply();vm.message.value="Telefone do parceiro salvo neste aparelho."}) { Text("Salvar") }
-                    OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
-                    OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
+            OutlinedCard(modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(20.dp)) {
+                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Text("Contatos de ajuda", style=MaterialTheme.typography.titleMedium)
+                    Text("WhatsApp e ligação só abrem quando você escolher uma ação.",
+                        style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(phone,{ phone=it },label={Text("Telefone do parceiro")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick={prefs.edit().putString("partnerPhone",phone.trim()).apply();vm.message.value="Telefone salvo neste aparelho."}) { Text("Salvar") }
+                        OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
+                        OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
+                    }
+                    TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para a polícia (190)") }
+                    Text("Localização compartilhada apenas com consentimento. O rastreamento atual funciona enquanto o app está aberto e não substitui serviços de emergência.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
-                TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
-            } }
+            }
         }
     }
 }
