@@ -32,10 +32,21 @@ import java.util.Locale
 
 private fun homeMoney(value: Long) = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal.valueOf(value, 2))
 
+/** O Hoje é pessoal. O espaço compartilhado não significa atribuição aos dois. */
+internal fun personalTodayTasks(records: List<Record>, day: LocalDate, name: String): List<Record> {
+    val first = name.trim().substringBefore(' ').lowercase(Locale.forLanguageTag("pt-BR"))
+    return records.filter { record ->
+        if (record.kind != "task" || !occurs(record, day)) return@filter false
+        val owner = record.text("owner", "Ambos").trim().lowercase(Locale.forLanguageTag("pt-BR"))
+        owner == "ambos" || owner == first || owner.substringBefore(' ') == first
+    }.sortedBy { if (it.flag("needsTimeReview")) "99:99" else it.text("time").ifBlank { "99:99" } }
+}
+
+
 @Composable
 internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, data: DataState, navigate: (String) -> Unit, selectTab: (String) -> Unit, requestLocationPermission: () -> Unit = {}) {
     val day = LocalDate.now()
-    val tasks = data.records.filter { it.kind == "task" && occurs(it, day) }.sortedBy { if (it.flag("needsTimeReview")) "99:99" else it.text("time").ifBlank { "99:99" } }
+    val tasks = personalTodayTasks(data.records, day, session.name)
     fun completed(task: Record) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
     val completedCount = tasks.count(::completed)
     val reviews = data.records.count { it.kind == "task" && (it.flag("needsReview") || it.flag("needsTimeReview")) }
@@ -53,9 +64,9 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("NOSSO DIA", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text("HOJE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text("Olá, ${session.name.substringBefore(' ').ifBlank { "vocês" }} ♡", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Uma vida mais leve, organizada a dois.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("O que precisa da sua atenção agora.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item { WeatherCard(requestLocationPermission) }
@@ -97,7 +108,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
                 if(pendingPurchases>0) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text("$pendingPurchases item(ns) aguardam decisão de compra",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium);TextButton(onClick={touch { selectTab("Compras")}}) { Text("Ver lista") } }
             }
         }
-        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Próximas atividades", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); TextButton(onClick = { touch { selectTab("Rotina") } }) { Text("Ver meu dia") } } }
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Suas próximas tarefas", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); TextButton(onClick = { touch { selectTab("Rotina") } }) { Text("Ver meu dia") } } }
         if (tasks.isEmpty()) item { HomePanel("Seu dia está livre") { Text("Nenhuma tarefa ativa para hoje.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         items((tasks.filterNot(::completed) + tasks.filter(::completed)).take(4), key = { it.id }) { task ->
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color(0xFFE0E5ED))) {
@@ -132,12 +143,6 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
                 }
             }
         }
-        data.records.firstOrNull { it.kind == "importSummary" }?.let { summary -> item {
-            HomePanel("Seu histórico de compras") {
-                Text("${summary.number("notes")} notas · ${(summary.fields["total"] as? Number)?.let { homeMoney(it.toLong()) } ?: "total a confirmar"}", style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { touch { navigate("Ano de compras") } }, contentPadding = PaddingValues(0.dp)) { Text("Explorar o ano") }
-            }
-        } }
         item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Nossa vida","Finanças", "Saúde", "Configurações").forEach { destination -> OutlinedButton(onClick = { touch { navigate(destination) } }) { Text(destination) } } } }
     }
 }
