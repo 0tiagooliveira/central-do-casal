@@ -15,6 +15,17 @@ class WeatherSourceTest {
         assertNotEquals(weatherCacheCell(-25.4283,-49.2731),weatherCacheCell(-23.5505,-46.6333))
     }
 
+    @Test fun apiCoordinatesAreRoundedToAboutOneKilometer() {
+        val rawLatitude = -25.428376
+        val rawLongitude = -49.273156
+        val coarse = weatherRequestCoordinates(rawLatitude,rawLongitude)
+        assertEquals("-25.43",coarse.first)
+        assertEquals("-49.27",coarse.second)
+        assertEquals(coarse,weatherRequestCoordinates(-25.4284,-49.2732))
+        assertFalse(coarse.first.contains("8376"))
+        assertFalse(coarse.second.contains("3156"))
+    }
+
     @Test fun parsesForecastAndTranslatesWeatherCodes(){
         val json="""{
           "current":{"temperature_2m":21.7,"apparent_temperature":20.3,"relative_humidity_2m":77,"wind_speed_10m":8.1,"weather_code":63},

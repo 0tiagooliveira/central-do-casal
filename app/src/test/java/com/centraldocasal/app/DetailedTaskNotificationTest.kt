@@ -99,6 +99,20 @@ class DetailedTaskNotificationTest {
         assertEquals(planned,health.nextAt)
     }
 
+    @Test fun foregroundRestorePreservesUnchangedPendingAlarm() {
+        val task=Record("resume-task","task",fields=mapOf(
+            "title" to "Separar mochila", "note" to "Conferir caderno",
+            "time" to "16:00","date" to LocalDate.now().plusDays(1).toString(),
+            "repeat" to "Única","owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val alarm=context.getSystemService(AlarmManager::class.java)
+        val before=shadowOf(alarm).peekNextScheduledAlarm()
+        assertNotNull(before)
+        Reminders.restore(context,forceRearm=false)
+        assertSame("Voltar ao app sem mudanças não deve recriar alarme",before,shadowOf(alarm).peekNextScheduledAlarm())
+    }
+
     @Test fun privateTaskDetailsOnLockScreenRequireExplicitOptIn() {
         val task=Record("privacy-task","task",fields=mapOf(
             "title" to "Consulta pessoal", "note" to "Informação privada",
@@ -116,6 +130,42 @@ class DetailedTaskNotificationTest {
         TaskAlarmReceiver().onReceive(context,intent)
         assertEquals(android.app.Notification.VISIBILITY_PUBLIC,shadowOf(manager).allNotifications.single().visibility)
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
+    }
+
+    @Test fun privateTaskKeepsFullDetailsInShadeButGenericPublicVersion() {
+        val task=Record("private-lock","task",true,mapOf(
+            "title" to "Consulta privada", "note" to "Informação sensível",
+            "time" to "16:00", "date" to LocalDate.now().plusDays(1).toString(),
+            "repeat" to "Única", "owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        TaskAlarmReceiver().onReceive(context,
+            Intent("com.centraldocasal.app.TASK_ALARM").putExtra("uid","local").putExtra("id",task.id))
+        val notice=shadowOf(manager).allNotifications.single()
+        assertEquals("Consulta privada",notice.extras.getCharSequence("android.title").toString())
+        assertNotNull(notice.publicVersion)
+        assertEquals("Lembrete de tarefa",notice.publicVersion.extras.getCharSequence("android.title").toString())
+        assertFalse(notice.publicVersion.extras.toString().contains("Informação sensível"))
+        assertFalse(notice.publicVersion.extras.toString().contains("Consulta privada"))
+    }
+
+    @Test fun recurringReminderKeepsNextAlarmEvenWhenAndroidBlocksDelivery() {
+        val day=LocalDate.now().plusDays(1)
+        val task=Record("blocked-recurring","task",fields=mapOf(
+            "title" to "Dar ração para a Mel", "note" to "Separar porção",
+            "time" to "16:00", "date" to day.toString(),
+            "repeat" to "Diária", "owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        shadowOf(manager).setNotificationsEnabled(false)
+        TaskAlarmReceiver().onReceive(context,Intent("com.centraldocasal.app.TASK_ALARM")
+            .putExtra("uid","local").putExtra("id",task.id).putExtra("scheduledDay",day.toString()))
+        assertTrue(shadowOf(manager).allNotifications.isEmpty())
+        val health=Reminders.diagnostics(context,"local")
+        assertNotNull("O Android bloqueou a entrega e o diagnóstico deve registrar isso.",health.lastDeliveryBlockedAt)
+        assertEquals(1,health.futureSchedules)
+        assertNotNull(health.nextAt)
+        assertTrue(health.nextAt!! >= day.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
     }
 
     @Test fun diagnosticsExplainWhyOneTaskDoesNotNotify() {
