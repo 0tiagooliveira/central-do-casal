@@ -41,6 +41,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
     val reviews = data.records.count { it.kind == "task" && (it.flag("needsReview") || it.flag("needsTimeReview")) }
     val unmatchedPurchases=data.records.count { it.kind=="matchSuggestion" }
     val pendingPurchases=data.baskets.values.sumOf { basket -> basket.entries.count { !it.bought } }
+    val careToday = careEventsForDay(data.records, day)
     val memories = data.records.count { it.kind == "quest" && !it.flag("cancelled") && (it.fields["completed"] as? List<*>)?.distinct()?.size == 2 }
     val converted=data.records.filter { it.kind=="plan" }.map { it.text("sourcePlanId") }.filter { it.isNotBlank() }.toSet()
     val projectCount=data.records.count { it.kind=="plan" || (it.kind=="importedPlan"&&it.id !in converted) }
@@ -61,6 +62,23 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryTile("", "${tasks.size}", "Tarefas de hoje · $completedCount concluídas", CalendarLine, accent, { touch { selectTab("Rotina") } }, Modifier.weight(1f))
                 SummaryTile("", "$pendingPurchases", "Itens nas compras", BasketLine, accent, { touch { selectTab("Compras") } }, Modifier.weight(1f))
+            }
+        }
+        if (careToday.isNotEmpty()) item {
+            HomePanel("Cuidados registrados hoje") {
+                Text("Registros do dia, sem metas ou pontuação.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    careKinds.forEach { kind ->
+                        val count = careToday.count { it.text("careType") == kind.id }
+                        if (count > 0) SuggestionChip(
+                            onClick = { touch { selectTab("Rotina") } },
+                            label = { Text("${kind.label}: $count") }
+                        )
+                    }
+                }
+                TextButton(onClick = { touch { selectTab("Rotina") } }, contentPadding=PaddingValues(0.dp)) {
+                    Text("Ver registros na Rotina")
+                }
             }
         }
         item {
