@@ -99,6 +99,20 @@ class DetailedTaskNotificationTest {
         assertEquals(planned,health.nextAt)
     }
 
+    @Test fun foregroundRestorePreservesUnchangedPendingAlarm() {
+        val task=Record("resume-task","task",fields=mapOf(
+            "title" to "Separar mochila", "note" to "Conferir caderno",
+            "time" to "16:00","date" to LocalDate.now().plusDays(1).toString(),
+            "repeat" to "Única","owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val alarm=context.getSystemService(AlarmManager::class.java)
+        val before=shadowOf(alarm).peekNextScheduledAlarm()
+        assertNotNull(before)
+        Reminders.restore(context,forceRearm=false)
+        assertSame("Voltar ao app sem mudanças não deve recriar alarme",before,shadowOf(alarm).peekNextScheduledAlarm())
+    }
+
     @Test fun privateTaskDetailsOnLockScreenRequireExplicitOptIn() {
         val task=Record("privacy-task","task",fields=mapOf(
             "title" to "Consulta pessoal", "note" to "Informação privada",
