@@ -59,7 +59,7 @@ class UiReviewTest {
         val basket=Basket("Mercado",budget=10000,entries=listOf(Entry(id="fixture-bought",title="Arroz fixture",estimated=1000,actual=1200,bought=true),Entry(id="fixture-pending",title="Feijão fixture",estimated=700)))
         var edited: Entry?=null
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { ShoppingSessionScreen(DataState(baskets=mapOf("Mercado" to basket)),SessionState(local=true),false,{edited=it},{},{},{},{},{},{},{},{},"Mercado",onQuickSave={edited=it}) } } }
-        compose.onNodeWithText("R$ 12,00").assertIsDisplayed()
+        compose.onAllNodesWithText("R$ 12,00").onFirst().assertIsDisplayed()
         capture("mercado-orcamento-fixture")
         compose.onNodeWithText("No mercado").performScrollTo().performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Adicionar ao carrinho")); compose.onNodeWithText("Adicionar ao carrinho").performClick()
@@ -169,11 +169,11 @@ class UiReviewTest {
         val vm=CentralViewModel(context); vm.repo.useLocal("Perfil fixture")
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}) } } }
         compose.onNodeWithTag("tab-Compras").performClick()
-        compose.onNodeWithText("Catálogo").performClick()
+        compose.onNodeWithText("Catálogo").performScrollTo().performClick()
         compose.onNodeWithText("Produto fixture").assertIsDisplayed().performClick()
         compose.onNodeWithText("Preparar item para lista").assertIsDisplayed()
         compose.onNodeWithText("Fechar").performClick()
-        compose.onNodeWithText("Histórico").performClick()
+        compose.onNodeWithText("Histórico").performScrollTo().performClick()
         compose.onNodeWithText("Loja fixture").assertIsDisplayed()
         compose.onNodeWithText("Nota sem detalhamento de produtos").assertIsDisplayed()
         org.junit.Assert.assertFalse(vm.repo.data.value.records.any { it.kind=="transaction" })
