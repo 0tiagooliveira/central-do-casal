@@ -12,10 +12,9 @@ import android.net.Uri
 import android.os.Looper
 import android.os.Handler
 import android.os.Build
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.bluetooth.BluetoothAdapter
 import android.provider.Settings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,7 +25,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -38,8 +36,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 
 internal data class SafetyLocation(val latitude: Double, val longitude: Double, val capturedAt: Long) {
     fun mapsUrl() = "https://maps.google.com/?q=$latitude,$longitude"
@@ -72,12 +68,12 @@ private fun locationTime(value: Long) = runCatching { DateTimeFormatter.ofPatter
 
 @Composable
 private fun CoupleMapCard(name: String, latitude: Double, longitude: Double, capturedAt: Long, onOpen: () -> Unit) {
-    val mapUrl=remember(latitude,longitude) { "https://www.openstreetmap.org/export/embed.html?bbox=${longitude-0.008},${latitude-0.006},${longitude+0.008},${latitude+0.006}&layer=mapnik&marker=$latitude,$longitude" }
     ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Text("Mapa de $name",style=MaterialTheme.typography.titleMedium)
-        Text("Atualizado em ${locationTime(capturedAt)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        AndroidView(factory={ viewContext -> WebView(viewContext).apply { settings.javaScriptEnabled=false; webViewClient=WebViewClient(); loadUrl(mapUrl) } },update={ it.loadUrl(mapUrl) },modifier=Modifier.fillMaxWidth().height(250.dp))
-        OutlinedButton(onClick=onOpen,modifier=Modifier.fillMaxWidth()) { Text("Abrir mapa em tela cheia") }
+        Text("Localização de $name",style=MaterialTheme.typography.titleMedium)
+        Text("Coordenadas: ${"%.5f".format(java.util.Locale.US, latitude)}, ${"%.5f".format(java.util.Locale.US, longitude)}",style=MaterialTheme.typography.bodySmall)
+        Text("Atualizada em ${locationTime(capturedAt)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("O mapa externo só recebe a localização quando você escolher abri-lo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick=onOpen,modifier=Modifier.fillMaxWidth()) { Text("Abrir mapa") }
     } }
 }
 
@@ -89,7 +85,34 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var phone by rememberSaveable(session.uid) { mutableStateOf(prefs.getString("partnerPhone", "").orEmpty()) }
     var location by remember { mutableStateOf<SafetyLocation?>(null) }
     var locating by remember { mutableStateOf(false) }
-    var tracking by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("tracking", false)) }
+    var sharingRequested by remember(session.uid) { mutableStateOf(false) }
+    var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(session.uid) {
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            clock = System.currentTimeMillis()
+        }
+    }
+    val myLive = data.liveLocations.firstOrNull { it.uid == session.uid && it.isCurrent(clock) }
+    val partnerLive = data.liveLocations.firstOrNull { it.uid != session.uid && it.isCurrent(clock) }
+    val canShare = !session.local && session.household.isNotBlank() && data.members.size == 2
+    fun stopSharing() {
+        context.startService(Intent(context, LiveLocationService::class.java).setAction(LiveLocationService.ACTION_STOP))
+        sharingRequested = false
+    }
+    fun startSharing() {
+        if (!canShare || !SafetyLocationReader.permitted(context)) {
+            vm.message.value = "Conecte as duas contas e permita localização antes de compartilhar."
+            return
+        }
+        val intent = Intent(context, LiveLocationService::class.java)
+            .setAction(LiveLocationService.ACTION_START)
+            .putExtra(LiveLocationService.EXTRA_UID, session.uid)
+            .putExtra(LiveLocationService.EXTRA_HOUSEHOLD, session.household)
+        runCatching { ContextCompat.startForegroundService(context, intent) }
+            .onSuccess { sharingRequested = true; vm.message.value = "Iniciando sessão de até 30 minutos. Confirme o aviso persistente do Android." }
+            .onFailure { vm.message.value = "O Android não permitiu iniciar o compartilhamento. Abra o app e confira as permissões." }
+    }
     val hasPermission = SafetyLocationReader.permitted(context)
     val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }.maxByOrNull { it.number("capturedAt") }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
@@ -122,23 +145,17 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             vm.repo.save(Record("sos-${session.uid}-${UUID.randomUUID()}","safetyAlert",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"createdAt" to System.currentTimeMillis(),"mapUrl" to (current?.mapsUrl().orEmpty()),"latitude" to (current?.latitude ?: 0.0),"longitude" to (current?.longitude ?: 0.0))))
         }
     }
-    LaunchedEffect(tracking, hasPermission, session.uid) {
-        while (tracking && hasPermission && isActive) {
-            requestLocation { it?.let { current -> if(!busy) publish(current, "Localização em tempo real atualizada") } }
-            delay(60_000)
-        }
-    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("SOS e localização", style=MaterialTheme.typography.headlineMedium, fontWeight=FontWeight.Bold)
-            Text("Acompanhem a localização um do outro com consentimento. O modo em tempo real atualiza enquanto o app está aberto.", style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Acompanhem a localização um do outro com consentimento. Uma sessão explícita atualiza enquanto o Android mantém o serviço ativo, inclusive com a tela fechada. Pode ser interrompida pelo sistema.", style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
-                    Text("Registra um alerta no espaço do casal e tenta incluir sua localização. WhatsApp e ligação ficam como ações separadas para você confirmar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                    Text("Registra um alerta no espaço do casal mesmo sem GPS. A localização será incluída quando disponível. Não substitui serviços de emergência.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Button(enabled=!busy && !locating,onClick={ if(hasPermission) requestLocation(::triggerSos) else triggerSos(null) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -149,14 +166,25 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 if (!hasPermission) Button(onClick=requestPermission, modifier=Modifier.fillMaxWidth()) { Text("Permitir localização enquanto uso o app") }
                 else {
                     Button(enabled=!locating && !busy,onClick={requestLocation { it?.let { publish(it) } }}, modifier=Modifier.fillMaxWidth()) { Text(if(locating) "Obtendo localização…" else "Atualizar e compartilhar agora") }
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) { Switch(tracking,{ tracking=it;prefs.edit().putBoolean("tracking",it).apply() });Column { Text("Compartilhar em tempo real",style=MaterialTheme.typography.bodyMedium);Text(if(tracking) "Atualiza a cada minuto enquanto este app estiver aberto" else "Desativado",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
+                    Text("Compartilhamento temporário",style=MaterialTheme.typography.titleMedium)
+                    Text("A cada ~15 segundos enquanto o Android permitir. Duração máxima: 30 minutos. Há uma notificação com botão Parar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (myLive != null) Text("Sessão ativa · última posição ${locationTime(myLive.capturedAt)}",style=MaterialTheme.typography.labelMedium)
+                    else if (sharingRequested) Text("Aguardando primeira posição. Confira a notificação do Android.",style=MaterialTheme.typography.labelMedium)
+                    if(myLive != null || sharingRequested) Button(onClick=::stopSharing,modifier=Modifier.fillMaxWidth()) { Text("Parar compartilhamento") }
+                    else Button(onClick=::startSharing,enabled=canShare,modifier=Modifier.fillMaxWidth()) { Text("Compartilhar por até 30 minutos") }
+                    if(!canShare) Text("Este recurso precisa de duas contas no mesmo espaço do casal.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(!AndroidInteractions.notificationsAllowed(context)) Text("Ative as notificações do Android para acompanhar o aviso persistente do serviço.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
                 }
                 location?.let { current -> Text("Posição obtida em ${locationTime(current.capturedAt)}", style=MaterialTheme.typography.bodyMedium) } ?: Text("Ainda não há posição obtida neste aparelho.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
-                lastPartner?.let { OutlinedButton(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(it.text("mapUrl")))) }},modifier=Modifier.fillMaxWidth()) { Text("Ver ${it.text("ownerName", "parceiro")} no mapa · ${locationTime(it.number("capturedAt"))}") } }
+                lastPartner?.let { Text("Última localização manual recebida em ${locationTime(it.number("capturedAt"))}. Não representa rastreamento ativo.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
             } }
         }
         location?.let { current -> item { CoupleMapCard("sua localização",current.latitude,current.longitude,current.capturedAt) { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(current.mapsUrl()))) } } } }
-        lastPartner?.let { partner -> val latitude=(partner.fields["latitude"] as? Number)?.toDouble(); val longitude=(partner.fields["longitude"] as? Number)?.toDouble(); if(latitude!=null&&longitude!=null) item { CoupleMapCard(partner.text("ownerName","seu parceiro"),latitude,longitude,partner.number("capturedAt")) { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(partner.text("mapUrl")))) } } } } ?: item { QuietCard("Mapa do parceiro","Quando seu parceiro tocar em “Atualizar e compartilhar agora” ou ativar o modo em tempo real, a localização aparecerá aqui no mapa.") {} }
+        partnerLive?.let { partner -> item {
+            CoupleMapCard("parceiro",partner.latitude,partner.longitude,partner.capturedAt) {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://maps.google.com/?q=${partner.latitude},${partner.longitude}"))) }
+            }
+        } } ?: item { QuietCard("Posição em tempo real indisponível","O parceiro precisa iniciar uma sessão válida no próprio aparelho. Posições antigas ou vindas apenas do cache não aparecem como atuais.") {} }
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) { Column(Modifier.padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("SOS para seu parceiro", style=MaterialTheme.typography.titleMedium, color=MaterialTheme.colorScheme.onErrorContainer)
@@ -167,7 +195,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                Button(enabled=!busy && !locating,onClick={ if(hasPermission) requestLocation(::triggerSos) else triggerSos(null) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }
