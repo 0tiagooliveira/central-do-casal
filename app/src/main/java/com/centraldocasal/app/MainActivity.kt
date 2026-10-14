@@ -636,7 +636,7 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
         if (kind == "task" && time.isNotBlank()) java.time.LocalTime.parse(time)
         if(kind == "task" && repeat == "Dias da semana") require(weekdays.isNotEmpty()) { "Selecione os dias da semana." }
         if(kind == "task" && taskReminder) require(timeReviewed && reviewed) { "Confirme os dados e o horário antes de habilitar lembretes." }
-        val provenance = initial?.fields?.filterKeys { it in setOf("source", "sourceHash", "sourceRecurrence", "original", "importedAt") } ?: emptyMap()
+        val provenance = initial?.fields?.filterKeys { it in setOf("source", "sourceHash", "sourceRecurrence", "original", "importedAt", "sourcePlanId", "sourceStepId") } ?: emptyMap()
         val fields: Map<String, Any?> = provenance + mapOf("title" to title.trim(), "note" to note.trim(), "date" to isoDate) + when (kind) {
             "task" -> mapOf("owner" to owner, "category" to category, "repeat" to repeat, "time" to time, "days" to weekdays.sorted(), "skipReminder" to !taskReminder, "needsReview" to !reviewed, "needsTimeReview" to !timeReviewed)
             "plan" -> mapOf("target" to Money.cents(amount), "horizon" to horizon)
