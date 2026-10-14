@@ -9,6 +9,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35])
 class HomeAssistantPreviewTest {
+    @Test fun staleOrFutureHomeAssistantSnapshotsCannotAuthorizeCommands() {
+        val now=1_800_000_000_000L
+        assertFalse(homeAssistantObservationFresh(0L,now))
+        assertTrue(homeAssistantObservationFresh(now-30_000L,now))
+        assertTrue(homeAssistantObservationFresh(now-120_000L,now))
+        assertFalse(homeAssistantObservationFresh(now-120_001L,now))
+        assertFalse(homeAssistantObservationFresh(now+1_000L,now))
+    }
+
     @Test fun onlyHttpsRootEndpointIsAllowed() {
         assertEquals("https://casa.example.org/api/states",
             HomeAssistantProbe.endpoint("https://casa.example.org").toString())
