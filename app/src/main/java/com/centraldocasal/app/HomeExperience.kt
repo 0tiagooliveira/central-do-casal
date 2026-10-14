@@ -128,9 +128,6 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
             }
         }
         if (reviews > 0) item { HomePanel("$reviews rotinas para revisar") { Text("Confirme os dados e horários antes dos lembretes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = { touch { navigate("Revisar rotinas") } }, contentPadding = PaddingValues(0.dp)) { Text("Revisar rotinas") } } }
-        val nextSteps=data.records.filter { it.kind=="plan" }.flatMap { plan -> plan.rows("steps").filter { it["done"]==false }.map { plan to it } }.take(3)
-        if(nextSteps.isNotEmpty()) item { Text("Próximos passos dos planos",style=MaterialTheme.typography.titleMedium) }
-        items(nextSteps,key={it.first.id+":"+it.second.str("id")}) { (plan,step) -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically) { Checkbox(false,{value -> touch { vm.action { vm.repo.savePlanStep(plan,step.str("id"),completed=value,expectedRevision=plan.number("stageRevision")) } } },enabled=!busy,modifier=Modifier.semantics { contentDescription="Concluir etapa: ${step.str("title")}" });Column(Modifier.weight(1f)) { Text(step.str("title"),style=MaterialTheme.typography.bodyMedium);Text(plan.text("title"),style=MaterialTheme.typography.bodySmall) } } } }
         data.baskets.values.filter { it.budget > 0 && it.entries.isNotEmpty() }.forEach { basket ->
             item(key = "budget-${basket.market}") {
                 val bought = basket.entries.filter { it.bought }
