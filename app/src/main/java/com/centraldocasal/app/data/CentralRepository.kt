@@ -435,7 +435,8 @@ class CentralRepository(context: Context) {
     }
 
     suspend fun remove(record: Record) {
-        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent")) { "Este histórico é preservado." }
+        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent", "safetyCheckIn")) { "Este histórico é preservado." }
+        if (record.kind == "safetyCheckIn") require(record.text("ownerUid") == session.value.uid) { "Só você pode remover sua localização manual." }
         if (session.value.local) { persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == record.id })); return }
         recordCollection(record.isPrivate).document(record.id).delete().await()
     }
