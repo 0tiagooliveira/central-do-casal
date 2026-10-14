@@ -82,13 +82,13 @@ class DetailedTaskNotificationTest {
         ))
         Reminders.schedule(context,"local",task,"Rhayra")
         val alarms=context.getSystemService(AlarmManager::class.java)
-        val before=shadowOf(alarms).nextScheduledAlarm
+        val before=shadowOf(alarms).peekNextScheduledAlarm
         assertNotNull(before)
         val planned=context.getSharedPreferences("central_task_alarm_cache",Context.MODE_PRIVATE)
             .getLong("planned_local:stable-task",0L)
         assertTrue(planned>System.currentTimeMillis())
         Reminders.schedule(context,"local",task,"Rhayra")
-        assertSame("Refrescar o Firestore não pode substituir o alarme pendente.",before,shadowOf(alarms).nextScheduledAlarm)
+        assertSame("Refrescar o Firestore não pode substituir o alarme pendente.",before,shadowOf(alarms).peekNextScheduledAlarm)
         assertEquals(planned,context.getSharedPreferences("central_task_alarm_cache",Context.MODE_PRIVATE)
             .getLong("planned_local:stable-task",0L))
         val health=Reminders.diagnostics(context,"local")
