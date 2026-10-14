@@ -421,6 +421,27 @@ class CentralRepository(context: Context) {
         }.await()
     }
 
+    /** Changes only the photo path, preserving concurrent title/date/note edits. */
+    suspend fun setMomentPhoto(record: Record, path: String) {
+        require(record.kind == "moment") { "Selecione uma lembrança." }
+        val user = session.value
+        require(!user.local && user.uid.isNotBlank()) { "Fotos exigem conta conectada." }
+        val prefix = if (record.isPrivate) "users/${user.uid}/moments/${record.id}/"
+                     else "households/${user.household}/moments/${record.id}/"
+        require(path.startsWith(prefix) && !path.contains("..")) { "Caminho da foto inválido." }
+        val ref = recordCollection(record.isPrivate).document(record.id)
+        db.runTransaction { tx ->
+            val saved = tx.get(ref)
+            require(saved.exists() && saved.getString("kind") == "moment" &&
+                saved.getBoolean("private") == record.isPrivate) { "Lembrança não encontrada ou mudou de visibilidade." }
+            tx.update(ref, mapOf(
+                "photoPath" to path,
+                "updatedBy" to user.uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            ))
+        }.await()
+    }
+
     suspend fun remove(record: Record) {
         require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent")) { "Este histórico é preservado." }
         if (session.value.local) { persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == record.id })); return }
