@@ -204,7 +204,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
-                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null })
+                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location)
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate)
@@ -584,7 +584,14 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             }
             Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(testInQuiet,{testInQuiet=it},modifier=Modifier.semantics { contentDescription="Permitir somente este teste durante o Sossego" }); Text("Permitir somente este teste durante o Sossego",style=MaterialTheme.typography.bodySmall) }
             FilledTonalButton(onClick = { vm.message.value=AndroidInteractions.sendTestNotification(context,session.uid,testInQuiet);notificationAllowed=AndroidInteractions.notificationsAllowed(context);testInQuiet=false },enabled=notificationAllowed) { Text("Enviar notificação de teste") }
-            Text("Teste manual com aviso genérico. Som e exibição dependem do Android e do Não Perturbe. Rotinas importadas continuam sem lembretes até sua confirmação.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("O teste confirma a permissão. Lembretes reais mostram tarefa, horário, responsável e observação. No Samsung, confira também a economia de bateria e o Não Perturbe.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            val alarmManager=remember { context.getSystemService(android.app.AlarmManager::class.java) }
+            val exactAlarmAllowed=Build.VERSION.SDK_INT<31 || alarmManager?.canScheduleExactAlarms()==true
+            Text(if(exactAlarmAllowed) "Avisos no horário: alarmes exatos disponíveis." else "Avisos no horário: alarme aproximado. O Android pode atrasá-los.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(Build.VERSION.SDK_INT>=31 && !exactAlarmAllowed) OutlinedButton(onClick={
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+context.packageName))) }
+                    .onFailure { vm.message.value="Ative Alarmes e lembretes no acesso especial aos aplicativos." }
+            }) { Text("Permitir alarmes no horário") }
         } }
         item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
