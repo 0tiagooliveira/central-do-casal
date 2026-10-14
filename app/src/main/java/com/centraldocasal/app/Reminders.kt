@@ -131,7 +131,6 @@ object Reminders {
     }
 
     private fun plan(context:Context,uid:String,id:String,date:LocalDate,time:LocalTime) {
-        val manager=context.getSystemService(AlarmManager::class.java) ?: return
         var instant=date.atTime(time).atZone(ZoneId.systemDefault()).toInstant()
         val p=prefs(context,uid)
         if(p.getBoolean("quiet",true)){
@@ -144,15 +143,7 @@ object Reminders {
         }
         val whenMillis=instant.toEpochMilli()
         if(whenMillis<=System.currentTimeMillis())return
-        try {
-            if(Build.VERSION.SDK_INT>=31 && manager.canScheduleExactAlarms()) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,whenMillis,pending(context,uid,id))
-            } else {
-                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,whenMillis,pending(context,uid,id))
-            }
-        } catch (_: SecurityException) {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,whenMillis,pending(context,uid,id))
-        }
+        arm(context,uid,id,whenMillis)
     }
 
     private fun cancelAlarm(context:Context,uid:String,id:String) {
@@ -204,6 +195,51 @@ object Reminders {
             deliver(context,uid,id)
             "Notificação de exemplo enviada. Verifique a bandeja do Android."
         } finally { forget(context,uid,id) }
+    }
+
+    /**
+     * Schedules a real OS-level broadcast two minutes from now; unlike the immediate preview
+     * this checks AlarmManager, background delivery and notification visibility on the device.
+     * It is intentionally independent of the user's quiet hours and has no Firebase writes.
+     */
+    fun scheduleDeliveryTest(context:Context,uid:String,profileName:String):String {
+        if(uid.isBlank())return "Entre na conta antes de testar."
+        if(!AndroidInteractions.notificationsAllowed(context))return "Ative as notificações do Android antes de testar."
+        if(!prefs(context,uid).getBoolean("enabled",true))return "Ative os lembretes de tarefas antes de testar."
+        val at=System.currentTimeMillis()+2*60_000L
+        val local=Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault())
+        val id="diagnostic-$at"
+        val task=Record(id=id,kind="task",fields=mapOf(
+            "title" to "Teste agendado da Central do Casal",
+            "note" to "Este aviso foi disparado por um alarme real do Android.",
+            "owner" to profileName.ifBlank { "Meu perfil" },
+            "date" to local.toLocalDate().toString(),
+            "time" to local.toLocalTime().withSecond(0).withNano(0).toString(),
+            "repeat" to "Única"
+        ))
+        cache(context,uid,task)
+        return try {
+            arm(context,uid,id,at)
+            val exact=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
+            "Teste agendado para ${local.toLocalTime().withSecond(0).withNano(0)}. Feche o app e aguarde dois minutos. ${if(exact) "Alarme exato autorizado." else "Alarme aproximado: o Android pode atrasar."}"
+        } catch (_:Exception) {
+            forget(context,uid,id)
+            "Não foi possível agendar o teste neste aparelho."
+        }
+    }
+
+    private fun arm(context:Context,uid:String,id:String,at:Long) {
+        val manager=context.getSystemService(AlarmManager::class.java)
+            ?: error("AlarmManager indisponível")
+        try {
+            if(Build.VERSION.SDK_INT>=31 && manager.canScheduleExactAlarms()) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+            }
+        } catch (_: SecurityException) {
+            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+        }
     }
 
     internal fun deliver(context:Context,uid:String,id:String) {

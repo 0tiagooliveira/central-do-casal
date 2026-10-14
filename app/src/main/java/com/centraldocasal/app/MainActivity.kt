@@ -585,6 +585,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(testInQuiet,{testInQuiet=it},modifier=Modifier.semantics { contentDescription="Permitir somente este teste durante o Sossego" }); Text("Permitir somente este teste durante o Sossego",style=MaterialTheme.typography.bodySmall) }
             FilledTonalButton(onClick = { vm.message.value=AndroidInteractions.sendTestNotification(context,session.uid,testInQuiet);notificationAllowed=AndroidInteractions.notificationsAllowed(context);testInQuiet=false },enabled=notificationAllowed) { Text("Enviar notificação de teste") }
             OutlinedButton(onClick={ vm.message.value=Reminders.sendDetailedTest(context,session.uid,session.name) },enabled=notificationAllowed) { Text("Testar aviso com detalhes da tarefa") }
+            OutlinedButton(onClick={ vm.message.value=Reminders.scheduleDeliveryTest(context,session.uid,session.name) },enabled=notificationAllowed && reminders) { Text("Testar agendamento real em 2 minutos") }
             Text("O teste confirma a permissão. Lembretes reais mostram tarefa, horário, responsável e observação. No Samsung, confira também a economia de bateria e o Não Perturbe.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             val alarmManager=remember { context.getSystemService(android.app.AlarmManager::class.java) }
             val exactAlarmAllowed=Build.VERSION.SDK_INT<31 || alarmManager?.canScheduleExactAlarms()==true
