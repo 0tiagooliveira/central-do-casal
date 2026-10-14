@@ -39,9 +39,6 @@ object Reminders {
     private fun key(uid: String, id: String) = "record_$uid:$id"
     private fun fingerprintKey(uid: String, id: String) = "fingerprint_$uid:$id"
     private fun plannedKey(uid: String, id: String) = "planned_$uid:$id"
-    private fun alarmAlreadyRegistered(context: Context, uid: String, id: String): Boolean =
-        PendingIntent.getBroadcast(context, 0, alarmIntent(context,uid,id),
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) != null
 
     private fun alarmIntent(context: Context, uid: String, id: String) =
         Intent(context, TaskAlarmReceiver::class.java).apply {
@@ -112,7 +109,7 @@ object Reminders {
             ))
         }.getOrNull()
 
-    fun schedule(context: Context, uid: String, record: Record, profileName: String = "", completedDay: LocalDate? = null) {
+    fun schedule(context: Context, uid: String, record: Record, profileName: String = "", completedDay: LocalDate? = null, forceRearm: Boolean = false) {
         if(uid.isBlank() || record.kind != "task") return
         val pref=prefs(context,uid)
         if(profileName.isNotBlank()) pref.edit().putString("profileName",profileName).apply()
@@ -138,9 +135,8 @@ object Reminders {
             pref.getBoolean("quiet",true).toString(),exact.toString(),
             ZoneId.systemDefault().id,record.toMap().toSortedMap().toString()).joinToString("|"))
             .hashCode().toString()
-        if(p.getString(fingerprintKey(uid,record.id),null)==fingerprint &&
-            p.getLong(plannedKey(uid,record.id),0L)>System.currentTimeMillis() &&
-            alarmAlreadyRegistered(context,uid,record.id)) return
+        if(!forceRearm && p.getString(fingerprintKey(uid,record.id),null)==fingerprint &&
+            p.getLong(plannedKey(uid,record.id),0L)>System.currentTimeMillis()) return
         cancelAlarm(context,uid,record.id)
         cache(context,uid,record)
         try {
@@ -178,7 +174,7 @@ object Reminders {
     }
     fun cancel(context:Context,uid:String,id:String,day:LocalDate) {
         cancelAlarm(context,uid,id)
-        read(context,uid,id)?.let { schedule(context,uid,it,completedDay=day) }
+        read(context,uid,id)?.let { schedule(context,uid,it,completedDay=day,forceRearm=true) }
     }
     fun cancelTask(context:Context,uid:String,id:String) {
         cancelAlarm(context,uid,id)
@@ -202,7 +198,7 @@ object Reminders {
         val uid=context.getSharedPreferences("central_local_v1",Context.MODE_PRIVATE).getString("activeUid","").orEmpty()
         if(uid.isBlank())return
         val ids=store(context).getStringSet("$ID_LIST:$uid",emptySet()).orEmpty().toList()
-        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it) } }
+        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it,forceRearm=true) } }
     }
     data class Diagnostics(
         val knownTasks: Int,
