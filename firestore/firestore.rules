@@ -195,7 +195,9 @@ service cloud.firestore {
         allow update: if member(hid) && ((validRecord(false) && validSafetyIdentity() && validSafetyUpdateOwner()
           && request.resource.data.kind == resource.data.kind
           && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse());
-        allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
+        allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction']
+          || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid)
+          || (resource.data.kind == 'safetyCheckIn' && resource.data.ownerUid == request.auth.uid));
       }
     }
     match /invites/{iid} {
