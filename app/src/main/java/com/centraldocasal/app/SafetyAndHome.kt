@@ -17,6 +17,8 @@ import android.provider.Settings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -174,26 +176,37 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     }
 }
 
-private fun providerPackage(provider: String) = when(provider) {
+private fun providerPackage(provider: String): String? = when(provider) {
     "Alexa" -> "com.amazon.dee.app"
     "Google Home" -> "com.google.android.apps.chromecast.app"
     "Smart Life / Tuya" -> "com.tuya.smartlife"
-    else -> "io.homeassistant.companion.android"
+    "Home Assistant" -> "io.homeassistant.companion.android"
+    else -> null
 }
+
+/** Cadastro real, sem simular telemetria nem comando de automação. */
+internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, room: String = "Todos"): List<Record> =
+    records.filter { it.kind == "smartDevice" }
+        .filter { includeArchived || !it.flag("archived") }
+        .filter { room == "Todos" || it.text("room", "Casa") == room }
+        .sortedWith(compareBy({ it.text("room", "Casa") }, { it.text("title") }))
 
 @Composable
 internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Boolean, requestNearby: () -> Unit = {}) {
     val context=LocalContext.current
     var adding by rememberSaveable { mutableStateOf(false) }
+    var editingDevice by remember { mutableStateOf<Record?>(null) }
+    var showArchived by rememberSaveable { mutableStateOf(false) }
     var paired by remember { mutableStateOf<List<String>>(emptyList()) }
     val nearbyAllowed=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
     fun refreshPaired() {
         paired=if(!nearbyAllowed) emptyList() else runCatching { BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }?.sorted().orEmpty() }.getOrDefault(emptyList())
     }
-    val devices=data.records.filter { it.kind=="smartDevice" }.sortedBy { it.text("room")+it.text("title") }
+    val devices = smartHomeDevices(data.records, showArchived)
+    val activeCount = smartHomeDevices(data.records, false).size
     var roomFilter by rememberSaveable { mutableStateOf("Todos") }
     val rooms = remember(devices) { listOf("Todos") + devices.map { it.text("room","Casa") }.distinct().sorted() }
-    val visibleDevices = devices.filter { roomFilter == "Todos" || it.text("room","Casa") == roomFilter }
+    val visibleDevices = smartHomeDevices(data.records, showArchived, roomFilter)
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
             item { Text("Nossa Casa",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text("Encontre aparelhos próximos, registre onde ficam e conclua o vínculo no provedor de cada marca.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -201,7 +214,11 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                 ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("Painel da casa",style=MaterialTheme.typography.titleMedium)
-                        Text("${devices.size} aparelho(s) cadastrados · ${rooms.size-1} cômodo(s)",style=MaterialTheme.typography.bodyMedium)
+                        Text("$activeCount aparelho(s) ativos · ${rooms.size-1} cômodo(s) exibidos",style=MaterialTheme.typography.bodyMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked=showArchived,onCheckedChange={showArchived=it;roomFilter="Todos"})
+                            Text("Mostrar aparelhos arquivados",style=MaterialTheme.typography.bodySmall)
+                        }
                         Text("Cadastro não é controle em tempo real. O estado ligado/desligado só aparecerá depois de uma integração autorizada com o provedor.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Cômodos",style=MaterialTheme.typography.labelLarge)
                         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -217,11 +234,84 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                 ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                     Text(device.text("title"),style=MaterialTheme.typography.titleMedium)
                     Text("${device.text("deviceType","Aparelho")} · ${device.text("room","Casa")} · ${device.text("provider")}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if(device.text("provider")=="Bluetooth" && device.text("state")=="paired") "Pareado ao Bluetooth; controle remoto não confirmado." else "Cadastrado; conexão e controle não confirmados.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(onClick={ val launch=context.packageManager.getLaunchIntentForPackage(providerPackage(device.text("provider"))); if(launch==null) vm.message.value="Instale ou abra ${device.text("provider")} neste aparelho para concluir o vínculo." else context.startActivity(launch) }) { Text("Abrir ${device.text("provider")}") }
+                    Text(when {
+                        device.flag("archived") -> "Arquivado; não é controlado pela Central."
+                        device.text("provider")=="Bluetooth" && device.text("state")=="paired" -> "Pareado ao Bluetooth; controle remoto não confirmado."
+                        else -> "Cadastrado; conexão e controle não confirmados."
+                    },style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    val provider = device.text("provider")
+                    if (provider == "Bluetooth") {
+                        OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))}) { Text("Abrir Bluetooth") }
+                    } else if (providerPackage(provider) != null) {
+                        OutlinedButton(onClick={
+                            val packageName = providerPackage(provider)
+                            val launch = packageName?.let(context.packageManager::getLaunchIntentForPackage)
+                            if (launch == null) vm.message.value="Instale ou abra $provider neste aparelho para concluir o vínculo."
+                            else runCatching { context.startActivity(launch) }.onFailure { vm.message.value="Não foi possível abrir $provider neste aparelho." }
+                        }) { Text("Abrir $provider") }
+                    } else {
+                        Text("Provedor não integrado. Verifique o aplicativo oficial do aparelho.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick={editingDevice=device},enabled=!busy) { Text("Editar") }
+                        TextButton(onClick={
+                            val archived = !device.flag("archived")
+                            vm.action(if(archived) "Aparelho arquivado" else "Aparelho restaurado") {
+                                vm.repo.save(device.copy(fields=device.fields + ("archived" to archived)))
+                            }
+                        },enabled=!busy) { Text(if(device.flag("archived")) "Restaurar" else "Arquivar") }
+                    }
                 } }
             }
         }
+    }
+    editingDevice?.let { device ->
+        var editTitle by remember(device.id) { mutableStateOf(device.text("title")) }
+        var editRoom by remember(device.id) { mutableStateOf(device.text("room", "Casa")) }
+        var editType by remember(device.id) { mutableStateOf(device.text("deviceType", "Outro")) }
+        var editProvider by remember(device.id) { mutableStateOf(device.text("provider")) }
+        AlertDialog(
+            onDismissRequest={editingDevice=null},
+            title={Text("Editar aparelho")},
+            text={
+                Column(Modifier.heightIn(max=460.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(editTitle,{editTitle=it},label={Text("Nome")},singleLine=true)
+                    OutlinedTextField(editRoom,{editRoom=it},label={Text("Cômodo")},singleLine=true)
+                    Text("Tipo",style=MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf("Luz","Tomada","TV","Assistente","Outro").forEach { kind ->
+                            FilterChip(selected=editType==kind,onClick={editType=kind},label={Text(kind)})
+                        }
+                    }
+                    Text("Provedor",style=MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf("Home Assistant","Alexa","Google Home","Smart Life / Tuya","Bluetooth").forEach { kind ->
+                            FilterChip(selected=editProvider==kind,onClick={editProvider=kind},label={Text(kind)})
+                        }
+                    }
+                    Text("Trocar o provedor não conecta o dispositivo automaticamente. Será necessário confirmar no aplicativo oficial.",style=MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton={
+                Button(
+                    enabled=!busy && editTitle.trim().length in 2..100 && editRoom.trim().length in 1..60,
+                    onClick={
+                        val changedProvider = editProvider != device.text("provider")
+                        val changes = mapOf(
+                            "title" to editTitle.trim(),
+                            "room" to editRoom.trim(),
+                            "deviceType" to editType,
+                            "provider" to editProvider
+                        ) + if(changedProvider) mapOf("state" to "pending") else emptyMap()
+                        vm.action("Aparelho atualizado") {
+                            vm.repo.save(device.copy(fields=device.fields + changes))
+                        }
+                        editingDevice=null
+                    }
+                ) { Text("Salvar") }
+            },
+            dismissButton={TextButton(onClick={editingDevice=null}) { Text("Cancelar") }}
+        )
     }
     if(adding) {
         var title by rememberSaveable { mutableStateOf("") }; var room by rememberSaveable { mutableStateOf("Casa") }; var provider by rememberSaveable { mutableStateOf("Home Assistant") }; var deviceType by rememberSaveable { mutableStateOf("Luz") }

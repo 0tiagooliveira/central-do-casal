@@ -9,6 +9,13 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+    <!-- Android 11+: declarative package visibility for explicit provider app hand-off. -->
+    <queries>
+        <package android:name="com.amazon.dee.app" />
+        <package android:name="com.google.android.apps.chromecast.app" />
+        <package android:name="com.tuya.smartlife" />
+        <package android:name="io.homeassistant.companion.android" />
+    </queries>
     <application android:name=".CentralApplication" android:allowBackup="false" android:label="@string/app_name" android:icon="@drawable/ic_central" android:theme="@style/AppTheme" android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
