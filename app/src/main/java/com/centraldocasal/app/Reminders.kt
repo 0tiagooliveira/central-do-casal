@@ -40,16 +40,17 @@ object Reminders {
     private fun fingerprintKey(uid: String, id: String) = "fingerprint_$uid:$id"
     private fun plannedKey(uid: String, id: String) = "planned_$uid:$id"
 
-    private fun alarmIntent(context: Context, uid: String, id: String) =
+    private fun alarmIntent(context: Context, uid: String, id: String, scheduledDay: LocalDate? = null) =
         Intent(context, TaskAlarmReceiver::class.java).apply {
             action = ACTION
             data = Uri.parse("central-reminder://task/${Uri.encode(uid)}/${Uri.encode(id)}")
             putExtra("uid", uid)
             putExtra("id", id)
+            scheduledDay?.let { putExtra("scheduledDay", it.toString()) }
         }
 
-    private fun pending(context: Context, uid: String, id: String) =
-        PendingIntent.getBroadcast(context, 0, alarmIntent(context, uid, id),
+    private fun pending(context: Context, uid: String, id: String, scheduledDay: LocalDate? = null) =
+        PendingIntent.getBroadcast(context, 0, alarmIntent(context, uid, id, scheduledDay),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     private fun prefs(context: Context, uid: String) =
@@ -174,7 +175,7 @@ object Reminders {
         }
         val whenMillis=instant.toEpochMilli()
         if(whenMillis<=System.currentTimeMillis())return 0L
-        arm(context,uid,id,whenMillis)
+        arm(context,uid,id,whenMillis,date)
         return whenMillis
     }
 
@@ -280,7 +281,7 @@ object Reminders {
         ))
         cache(context,uid,task)
         return try {
-            arm(context,uid,id,at)
+            arm(context,uid,id,at,local.toLocalDate())
             val exact=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
             "Teste agendado para ${local.toLocalTime().withSecond(0).withNano(0)}. Feche o app e aguarde dois minutos. ${if(exact) "Alarme exato autorizado." else "Alarme aproximado: o Android pode atrasar."}"
         } catch (_:Exception) {
@@ -289,28 +290,28 @@ object Reminders {
         }
     }
 
-    private fun arm(context:Context,uid:String,id:String,at:Long) {
+    private fun arm(context:Context,uid:String,id:String,at:Long,scheduledDay:LocalDate) {
         val manager=context.getSystemService(AlarmManager::class.java)
             ?: error("AlarmManager indisponível")
         try {
             if(Build.VERSION.SDK_INT>=31 && manager.canScheduleExactAlarms()) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id,scheduledDay))
             } else {
-                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id,scheduledDay))
             }
         } catch (_: SecurityException) {
             manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pending(context,uid,id))
         }
     }
 
-    internal fun deliver(context:Context,uid:String,id:String) {
+    internal fun deliver(context:Context,uid:String,id:String,scheduledDay:LocalDate=LocalDate.now()) {
         val active=context.getSharedPreferences("central_local_v1",Context.MODE_PRIVATE).getString("activeUid","")
         if(active!=uid)return
         val task=read(context,uid,id) ?: return
         val pref=prefs(context,uid)
         if(!pref.getBoolean("enabled",true))return
         val time=runCatching{LocalTime.parse(task.text("time"))}.getOrNull() ?:return
-        val date=LocalDate.now()
+        val date=scheduledDay
         if(!AndroidInteractions.notificationsAllowed(context))return
         val manager=context.getSystemService(NotificationManager::class.java) ?: return
         ensureChannel(context)
@@ -322,6 +323,7 @@ object Reminders {
         val intent=Intent(context,MainActivity::class.java).apply {
             putExtra("taskId",id)
             putExtra("taskDate",date.toString())
+            putExtra("taskUid",uid)
             flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val tap=PendingIntent.getActivity(context,(uid+id).hashCode(),intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -357,7 +359,10 @@ class TaskAlarmReceiver:BroadcastReceiver() {
         if(intent.action!= "com.centraldocasal.app.TASK_ALARM")return
         val uid=intent.getStringExtra("uid") ?:return
         val id=intent.getStringExtra("id") ?:return
-        Reminders.deliver(context,uid,id)
+        val scheduledDay=intent.getStringExtra("scheduledDay")
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: LocalDate.now()
+        Reminders.deliver(context,uid,id,scheduledDay)
     }
 }
 
