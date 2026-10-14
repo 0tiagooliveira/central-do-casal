@@ -210,7 +210,25 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
         ProductDetailScreen(vm,busy,product,data,onDismiss={detail=null},onAdd={ selected -> editing=catalogDraft(selected,data.records).let { if(product.kind=="catalogItem") it.copy(sourceBaseId=product.id) else it };detail=null },onReceipt={receiptDetail=it})
         return
     }
-    if(section=="Lista") ShoppingSessionScreen(data,session,busy,{editing=it},{adding=true},{budget=true},{section="Catálogo"},annual,{section="Histórico"},{preparing=true},{closing=true},{market=it},market,::feedback,onQuickSave={ entry -> vm.action { vm.repo.editBasket(market,basket.revision) { current -> require(current.entries.any { it.id==entry.id }) { "Este item mudou. Atualize a lista." }; current.copy(entries=current.entries.map { if(it.id==entry.id) entry else it }) }; feedback() } },onReview={ section="Revisar" })
+    if(section=="Lista") ShoppingSessionScreen(data,session,busy,{editing=it},{adding=true},{budget=true},{section="Catálogo"},annual,{section="Histórico"},{preparing=true},{closing=true},{market=it},market,::feedback,onQuickSave={ entry -> vm.action { vm.repo.editBasket(market,basket.revision) { current -> require(current.entries.any { it.id==entry.id }) { "Este item mudou. Atualize a lista." }; current.copy(entries=current.entries.map { if(it.id==entry.id) entry else it }) }; feedback() } },onReview={ section="Revisar" },onQuickAdd={ title ->
+        vm.action("Adicionado à lista") {
+            vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) { current ->
+                require(current.entries.size < 200) { "Limite de 200 itens nesta lista." }
+                require(current.entries.none { it.title.trim().equals(title.trim(), ignoreCase=true) }) { "Este item já está na lista." }
+                current.copy(entries = current.entries + Entry(
+                    title = title.trim(),
+                    unit = "un",
+                    plannedMilli = 1000L,
+                    actualMilli = 1000L,
+                    estimateKnown = false,
+                    unitReviewed = true,
+                    quantityReviewed = true,
+                    recipient = "Casa",
+                    group = "Essenciais"
+                ))
+            }
+        }
+    })
     else LazyColumn(Modifier.fillMaxSize(), contentPadding=PaddingValues(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             val title=when(section) { "Catálogo" -> "Produtos para a sua lista"; "Histórico" -> "Histórico que ajuda a decidir"; else -> "Revisar vínculos" }
