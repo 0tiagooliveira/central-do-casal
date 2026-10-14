@@ -174,12 +174,20 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     }
 }
 
-private fun providerPackage(provider: String) = when(provider) {
+private fun providerPackage(provider: String): String? = when(provider) {
     "Alexa" -> "com.amazon.dee.app"
     "Google Home" -> "com.google.android.apps.chromecast.app"
     "Smart Life / Tuya" -> "com.tuya.smartlife"
-    else -> "io.homeassistant.companion.android"
+    "Home Assistant" -> "io.homeassistant.companion.android"
+    else -> null
 }
+
+/** Cadastro real, sem simular telemetria nem comando de automação. */
+internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, room: String = "Todos"): List<Record> =
+    records.filter { it.kind == "smartDevice" }
+        .filter { includeArchived || !it.flag("archived") }
+        .filter { room == "Todos" || it.text("room", "Casa") == room }
+        .sortedWith(compareBy({ it.text("room", "Casa") }, { it.text("title") }))
 
 @Composable
 internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Boolean, requestNearby: () -> Unit = {}) {
