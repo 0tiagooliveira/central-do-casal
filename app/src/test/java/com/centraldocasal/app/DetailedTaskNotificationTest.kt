@@ -118,6 +118,32 @@ class DetailedTaskNotificationTest {
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
     }
 
+    @Test fun reminderKeepsTheOriginalScheduledDayEvenWhenDeliveredLater() {
+        val day = LocalDate.now().plusDays(1)
+        val task=Record("dated-reminder","task",fields=mapOf(
+            "title" to "Reservar almoço",
+            "time" to "16:00","date" to day.toString(),
+            "repeat" to "Única","owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val event=Intent("com.centraldocasal.app.TASK_ALARM")
+            .putExtra("uid","local").putExtra("id","dated-reminder")
+            .putExtra("scheduledDay",day.toString())
+        TaskAlarmReceiver().onReceive(context,event)
+        val notice=shadowOf(manager).allNotifications.single()
+        val target=shadowOf(notice.contentIntent).savedIntent
+        assertEquals("dated-reminder",target.getStringExtra("taskId"))
+        assertEquals(day.toString(),target.getStringExtra("taskDate"))
+        assertEquals("local",target.getStringExtra("taskUid"))
+    }
+
+    @Test fun reminderTargetRejectsAnotherSignedInAccount() {
+        assertTrue(reminderMatchesSession("local","local"))
+        assertTrue(reminderMatchesSession("local",""))
+        assertFalse(reminderMatchesSession("local","other"))
+        assertFalse(reminderMatchesSession("","local"))
+    }
+
     @Test fun profileNameChangeEnablesNewOwnerAlarm() {
         val task = Record("profile-task", "task", fields = mapOf(
             "title" to "Buscar a Rhayra", "owner" to "Rhayra",
