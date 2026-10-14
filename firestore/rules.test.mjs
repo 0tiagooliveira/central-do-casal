@@ -113,6 +113,10 @@ test('SOS identity belongs to authenticated writer and partner cannot rewrite a 
  await assertFails(updateDoc(doc(bob,'households/home/records/own-checkin'),{
    ownerUid:'bob',ownerName:'bob',updatedBy:'bob',updatedAt:serverTimestamp()
  }));
+ await assertFails(deleteDoc(doc(bob,'households/home/records/own-checkin')));
+ await assertSucceeds(deleteDoc(ref));
+ const afterDelete=await assertSucceeds(getDoc(ref));
+ if(afterDelete.exists()) throw new Error('Check-in was not deleted');
 });
 test('live location is scoped to owner, household, valid coordinates and expiry', async () => {
  const point=(uid,lat=-25.0,lon=-49.0)=>({
