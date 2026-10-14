@@ -554,6 +554,8 @@ private fun HealthScreen(vm: CentralViewModel, data: DataState) {
 
 @Composable
 internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: DataState, export: () -> Unit, notify: () -> Unit, navigate: (String) -> Unit = {}, photo: () -> Unit = {}) {
+    var section by rememberSaveable { mutableStateOf("Início") }
+    var revealDiagnostics by rememberSaveable { mutableStateOf(false) }
     var partnerEmail by rememberSaveable { mutableStateOf("") }; var code by rememberSaveable { mutableStateOf("") }; var invite by remember { mutableStateOf("") }; var leaving by remember { mutableStateOf(false) }
     val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("reminders_${session.uid}", android.content.Context.MODE_PRIVATE)
     var reminders by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("enabled", true)) }
@@ -585,7 +587,22 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
+        if (section == "Início") {
+            item {
+                Text("Configurações", style = MaterialTheme.typography.headlineMedium)
+                Text("Tudo no seu lugar, sem opções demais.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            item {
+                TextButton(onClick = { section = "Início" }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("‹  Voltar às configurações")
+                }
+                Text(section, style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+        if (section == "Início") item {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     PersonalPortrait(experience.photo,session.name)
@@ -597,7 +614,51 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 }
             }
         }
-        item { Panel("Do seu jeito", "Pequenos detalhes que fazem diferença.") {
+        if (section == "Início") {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf(
+                        Triple("Conta e casal", "Perfil, conexão de vocês e acesso", "♡"),
+                        Triple("Lembretes", "Avisos, horários e notificações", "◷"),
+                        Triple("Aparência", "Animações, vibração e sons", "✦"),
+                        Triple("Privacidade", "Dados, exportação e segurança", "◇"),
+                        Triple("Avançado", "Atualizações, integrações e diagnósticos", "⚙")
+                    ).forEach { (name, subtitle, symbol) ->
+                        Card(
+                            onClick = { section = name },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(20.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 17.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(symbol, modifier = Modifier.padding(12.dp),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, style = MaterialTheme.typography.titleMedium)
+                                    Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("›", style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (section == "Aparência") item { Panel("Do seu jeito", "Pequenos detalhes que fazem diferença.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Vibrações leves ao tocar",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(haptics,{ haptics=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("haptics",it).apply();AndroidInteractions.haptic(view,it) },modifier=Modifier.semantics { contentDescription="Vibrações leves ao tocar" }) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Animações suaves",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(motion,{ motion=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("motion",it).apply() },modifier=Modifier.semantics { contentDescription="Animações suaves" }) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Sons ao tocar",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(sounds,{ sounds=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("sounds",it).apply();AndroidInteractions.clickSound(view,it) },modifier=Modifier.semantics { contentDescription="Sons ao tocar" }) }
@@ -605,9 +666,9 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             TextButton(onClick = { AndroidInteractions.haptic(view,haptics) },enabled=haptics) { Text("Sentir a vibração de teste") }
             Text("A resposta tátil respeita a configuração do Android. Sua foto fica somente neste aparelho.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         } }
-        if (!session.local && session.household.isBlank()) {
+        if (section == "Conta e casal" && !session.local && session.household.isBlank()) {
             item { Panel("Vamos conectar vocês?", "Crie o espaço ou aceite o convite que recebeu.") { Button(onClick = { vm.action { vm.repo.createHouse() } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Criar nosso espaço") }; HorizontalDivider(Modifier.padding(vertical = 6.dp)); Field("Código recebido", code, { code = it }); OutlinedButton(onClick = { vm.action { vm.repo.accept(code) } }, enabled = !busy && code.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Aceitar convite") } } }
-        } else if (!session.local) {
+        } else if (section == "Conta e casal" && !session.local) {
             item { Panel("Nosso espaço", when(data.members.size) { 2 -> "Vocês dois estão conectados"; 1 -> "Falta só conectar seu parceiro"; else -> "Confirmando participantes…" }) {
                 if (data.members.size == 1) {
                     Field("E-mail do parceiro", partnerEmail, { partnerEmail = it })
@@ -627,7 +688,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 TextButton(onClick = { leaving = true }, enabled = !busy) { Text("Sair deste espaço", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } }
         }
-        item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
+        if (section == "Lembretes") item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r,session.name) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { enabled ->
@@ -640,7 +701,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                     reminderDiagnosticRefresh++
                 }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
         } }
-        item { Panel("Notificações e permissões", if(notificationAllowed) "Notificações permitidas pelo Android" else "Notificações ainda bloqueadas no Android") {
+        if (section == "Lembretes") item { Panel("Notificações e permissões", if(notificationAllowed) "Notificações permitidas pelo Android" else "Notificações ainda bloqueadas no Android") {
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 if(!notificationAllowed && Build.VERSION.SDK_INT>=33) Button(onClick = notify) { Text("Permitir notificações") }
                 OutlinedButton(onClick = { context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.packageName)) }) { Text("Configurar no Android") }
@@ -659,6 +720,10 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                     prefs.edit().putBoolean("showDetailsOnLockScreen",it).apply()
                 })
             }
+            TextButton(onClick = { revealDiagnostics = !revealDiagnostics }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (revealDiagnostics) "Ocultar diagnóstico técnico" else "Diagnóstico técnico e permissões avançadas")
+            }
+            if (revealDiagnostics) {
             val diagnosis=remember(session.uid,data.records,reminderDiagnosticRefresh,notificationAllowed) {
                 Reminders.diagnostics(context,session.uid)
             }
@@ -738,9 +803,10 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+context.packageName))) }
                     .onFailure { vm.message.value="Ative Alarmes e lembretes no acesso especial aos aplicativos." }
             }) { Text("Permitir alarmes no horário") }
+            }
         } }
-        item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-        data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
+        if (section == "Privacidade") item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        if (section == "Avançado") data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
             val uri=android.net.Uri.parse(release.text("url")); val trusted=uri.scheme == "https" && uri.host == "drive.google.com"
             Panel("Atualizações", if(release.number("minimumVersionCode") > BuildConfig.VERSION_CODE) "Atualização importante disponível" else if(release.number("versionCode") > BuildConfig.VERSION_CODE) "Atualização opcional disponível" else "Você está com a versão atual") {
                 Text(if(session.local) "Este espaço salva somente no aparelho. A atualização do aplicativo preserva seus registros locais." else "Produtos, preços e registros atualizam pela nuvem. Uma nova instalação só é necessária quando o aplicativo mudar.", style = MaterialTheme.typography.bodySmall)
@@ -748,12 +814,12 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 Text("${BuildConfig.VERSION_NAME} instalada", style = MaterialTheme.typography.labelSmall)
             }
         } }
-        if(data.records.any { it.kind == "sourceReview" }) item { TextButton(onClick = { reviews = !reviews }) { Text(if(reviews) "Recolher pontos a confirmar" else "Ver pontos a confirmar dos arquivos") } }
-        if(reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
-        item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
-        item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
-        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if(section == "Avançado" && data.records.any { it.kind == "sourceReview" }) item { TextButton(onClick = { reviews = !reviews }) { Text(if(reviews) "Recolher pontos a confirmar" else "Ver pontos a confirmar dos arquivos") } }
+        if(section == "Avançado" && reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
+        if (section == "Privacidade") item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
+        if (section == "Avançado") item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
+        if (section == "Avançado") item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (section == "Conta e casal") item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Sair do espaço?") }, text = { Text("Sua conta perde acesso aos registros compartilhados. Seus registros privados permanecem na sua conta. O histórico do espaço é preservado.") }, confirmButton = { Button(onClick = { vm.action { Reminders.cancelAll(vm.getApplication(), session.uid); vm.repo.leaveHouse(); leaving = false } }) { Text("Sair do espaço") } }, dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancelar") } })
 }
