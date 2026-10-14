@@ -14,8 +14,6 @@ import android.os.Handler
 import android.os.Build
 import android.bluetooth.BluetoothAdapter
 import android.provider.Settings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +26,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -46,6 +43,14 @@ import kotlinx.coroutines.isActive
 internal data class SafetyLocation(val latitude: Double, val longitude: Double, val capturedAt: Long) {
     fun mapsUrl() = "https://maps.google.com/?q=$latitude,$longitude"
 }
+
+/** A location is optional, but if included in SOS it must be physically plausible and fresh. */
+internal fun recentSosLocation(location: SafetyLocation?, now: Long = System.currentTimeMillis()): SafetyLocation? =
+    location?.takeIf {
+        it.latitude.isFinite() && it.longitude.isFinite() &&
+            it.latitude in -90.0..90.0 && it.longitude in -180.0..180.0 &&
+            it.capturedAt > 0L && now - it.capturedAt in 0L..90_000L
+    }
 
 internal object SafetyLocationReader {
     fun permitted(context: Context) = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -74,11 +79,10 @@ private fun locationTime(value: Long) = runCatching { DateTimeFormatter.ofPatter
 
 @Composable
 private fun CoupleMapCard(name: String, latitude: Double, longitude: Double, capturedAt: Long, onOpen: () -> Unit) {
-    val mapUrl=remember(latitude,longitude) { "https://www.openstreetmap.org/export/embed.html?bbox=${longitude-0.008},${latitude-0.006},${longitude+0.008},${latitude+0.006}&layer=mapnik&marker=$latitude,$longitude" }
     ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text("Mapa de $name",style=MaterialTheme.typography.titleMedium)
         Text("Atualizado em ${locationTime(capturedAt)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        AndroidView(factory={ viewContext -> WebView(viewContext).apply { settings.javaScriptEnabled=false; webViewClient=WebViewClient(); loadUrl(mapUrl) } },update={ it.loadUrl(mapUrl) },modifier=Modifier.fillMaxWidth().height(250.dp))
+        Text("Por privacidade, o mapa externo só recebe as coordenadas quando você escolhe abri-lo.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick=onOpen,modifier=Modifier.fillMaxWidth()) { Text("Abrir mapa em tela cheia") }
     } }
 }
@@ -93,7 +97,14 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var locating by remember { mutableStateOf(false) }
     var tracking by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("tracking", false)) }
     val hasPermission = SafetyLocationReader.permitted(context)
-    val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }.maxByOrNull { it.number("capturedAt") }
+    val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }
+        .maxByOrNull { it.number("capturedAt") }?.takeIf { point ->
+            recentSosLocation(SafetyLocation(
+                (point.fields["latitude"] as? Number)?.toDouble() ?: Double.NaN,
+                (point.fields["longitude"] as? Number)?.toDouble() ?: Double.NaN,
+                point.number("capturedAt")
+            )) != null
+        }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
         vm.action(success) {
             require(!session.local && data.members.size==2) { "Conecte as duas contas antes de compartilhar uma localização." }
@@ -118,10 +129,20 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         runCatching { context.startActivity(intent) }.onFailure { vm.message.value="Não foi possível abrir o WhatsApp neste aparelho." }
     }
     fun triggerSos(current: SafetyLocation?) {
-        vm.action("SOS registrado no espaço do casal", timeoutMs=45_000) {
-            require(!session.local && data.members.size==2) { "Conecte as duas contas antes de enviar um SOS." }
-            if(current!=null) vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"latitude" to current.latitude,"longitude" to current.longitude,"capturedAt" to current.capturedAt,"mapUrl" to current.mapsUrl())))
-            vm.repo.save(Record("sos-${session.uid}-${UUID.randomUUID()}","safetyAlert",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"createdAt" to System.currentTimeMillis(),"mapUrl" to (current?.mapsUrl().orEmpty()),"latitude" to (current?.latitude ?: 0.0),"longitude" to (current?.longitude ?: 0.0))))
+        val fresh = recentSosLocation(current)
+        vm.action("SOS registrado no espaço. Entrega ao outro celular não confirmada.", timeoutMs=45_000) {
+            require(!session.local && data.members.size==2) { "Conecte as duas contas antes de registrar um SOS." }
+            // The alert is written first; neither permission nor GPS/network location blocks it.
+            vm.repo.save(Record("sos-${session.uid}-${UUID.randomUUID()}","safetyAlert",fields=mapOf(
+                "ownerUid" to session.uid,"ownerName" to session.name,"createdAt" to System.currentTimeMillis(),
+                "mapUrl" to fresh?.mapsUrl().orEmpty(),
+                "latitude" to (fresh?.latitude ?: 0.0),"longitude" to (fresh?.longitude ?: 0.0)
+            )))
+            if(fresh!=null) vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf(
+                "ownerUid" to session.uid,"ownerName" to session.name,
+                "latitude" to fresh.latitude,"longitude" to fresh.longitude,
+                "capturedAt" to fresh.capturedAt,"mapUrl" to fresh.mapsUrl()
+            )))
         }
     }
     LaunchedEffect(tracking, hasPermission, session.uid) {
@@ -139,8 +160,8 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
-                    Text("Registra um alerta no espaço do casal e tenta incluir sua localização. WhatsApp e ligação ficam como ações separadas para você confirmar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                    Text("Registra imediatamente o alerta; só inclui localização recente já obtida. O parceiro não receberá aviso garantido com o app fechado. Para emergências, utilize ligação direta.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Button(enabled=!busy && !locating,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -162,14 +183,14 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) { Column(Modifier.padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("SOS para seu parceiro", style=MaterialTheme.typography.titleMedium, color=MaterialTheme.colorScheme.onErrorContainer)
-                Text("Um SOS grava o alerta no espaço compartilhado e tenta incluir a localização. WhatsApp e ligação só abrem quando você escolher uma dessas ações.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onErrorContainer)
+                Text("O alerta é registrado sem esperar GPS. A entrega ao parceiro não é garantida se o app dele estiver fechado. WhatsApp e ligação são ações explícitas.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onErrorContainer)
                 OutlinedTextField(phone,{ phone=it },label={Text("Telefone do parceiro")},singleLine=true,modifier=Modifier.fillMaxWidth())
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick={prefs.edit().putString("partnerPhone",phone.trim()).apply();vm.message.value="Telefone do parceiro salvo neste aparelho."}) { Text("Salvar") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
+                Button(enabled=!busy && !locating,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }
