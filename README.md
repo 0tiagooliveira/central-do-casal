@@ -1,12 +1,14 @@
 # Central do Casal
 
+**Estado de desenvolvimento:** [versão DEV, testes, limitações e roteiro de atualização](docs/ESTADO_ATUAL.md).
+
 Aplicativo Android nativo em Kotlin, Jetpack Compose e Material 3 para organização compartilhada: rotina, compras, planos, memórias, casa inteligente e segurança.
 
 ## Recursos atuais
 
-- Compras organizadas por pessoa, grupo, subgrupo, prioridade e cômodo; histórico de preço por produto e revisão de vínculos de notas fiscais.
-- Rotinas pessoais e compartilhadas, recorrência por dia da semana e lembretes locais.
-- SOS com ligação, WhatsApp, alerta sonoro/vibração e compartilhamento de localização entre os membros do espaço.
+- Compras organizadas por pessoa, grupo, subgrupo, prioridade e cômodo; histórico de preço por produto e revisão de vínculos de notas fiscais. Etapas de Planos podem gerar itens nas listas por ação explícita, com deduplicação.
+- Rotinas pessoais e compartilhadas, recorrência por dia da semana e lembretes locais; registro real de cuidados de Lucca e Mel, com histórico e autoria.
+- SOS experimental com registro de alerta; WhatsApp e discador são ações **separadas e explícitas**, sem ligação automática. Notificações sensíveis não expõem nome/localização na tela bloqueada.
 - Tela de segurança mostra o mapa do parceiro quando ambos estão autenticados, pertencem ao mesmo espaço e ativam o compartilhamento. A atualização ocorre enquanto o aplicativo permanece aberto.
 - Cadastro de aparelhos de casa inteligente e organização por cômodo.
 

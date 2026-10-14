@@ -1,3 +1,5 @@
+> **ARQUIVO HISTÓRICO (versão 0.2.0).** Para a versão atual 0.3.x, consulte [docs/ESTADO_ATUAL.md](docs/ESTADO_ATUAL.md). Os testes descritos abaixo não certificam o HEAD atual.
+
 # Validação 0.2.0
 
 Versão Android `0.2.0`, versionCode 5, pacote `com.centraldocasal.app`. O agente principal confirmou build, testes atuais e assinatura. O APK 0.2.0 foi atualizado no mesmo link do Drive. A leitura posterior confirmou tamanho de 17.990.136 bytes e a pasta de destino. O aviso de atualização versionCode 5 e o SHA-256 também foram verificados no Firebase.
