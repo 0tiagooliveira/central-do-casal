@@ -36,7 +36,7 @@ private fun planSteps(plan:Record):List<Map<*,*>> = (plan.fields["steps"] as? Li
 private fun chaptersComplete(plan:Record):Boolean = planSteps(plan).let { it.isNotEmpty() && it.all { step -> step["done"]==true } }
 
 @Composable
-internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCreate: () -> Unit, onEdit: (Record) -> Unit, onContribution: (Record) -> Unit, onStartImported: ((Record) -> Unit)? = null) {
+internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCreate: () -> Unit, onEdit: (Record) -> Unit, onContribution: (Record) -> Unit, onStartImported: ((Record) -> Unit)? = null, onOpenLinked: (String) -> Unit = {}) {
     var filter by rememberSaveable { mutableStateOf("Todas") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var showAreas by rememberSaveable { mutableStateOf(false) }
@@ -54,7 +54,7 @@ internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCrea
         };return
     }
     if (selected != null) {
-        PlanDetail(selected, planProgress(selected, data.records), busy, vm, { selectedId = null }, { onEdit(selected) }, { onContribution(selected) })
+        PlanDetail(selected, planProgress(selected, data.records), busy, vm, { selectedId = null }, { onEdit(selected) }, { onContribution(selected) }, onOpenLinked)
         return
     }
     fun visible(record: Record) = when (filter) { "Pessoais" -> record.isPrivate; "Compartilhadas" -> !record.isPrivate; else -> true }
@@ -108,9 +108,13 @@ private fun PlanProgressBar(value: Float) {
     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), gapSize = 0.dp, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
 }
 
+private data class PlanStepAction(val id: String, val title: String)
+
 @Composable
-private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: CentralViewModel, onBack: () -> Unit, onEdit: () -> Unit, onContribution: () -> Unit) {
+private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: CentralViewModel, onBack: () -> Unit, onEdit: () -> Unit, onContribution: () -> Unit, onOpenLinked: (String) -> Unit) {
     val data by vm.repo.data.collectAsStateWithLifecycle()
+    var shoppingStep by remember { mutableStateOf<PlanStepAction?>(null) }
+    var routineStep by remember { mutableStateOf<PlanStepAction?>(null) }
     var sourceOpen by rememberSaveable(plan.id) { mutableStateOf(false) }
     val origin=data.records.firstOrNull { it.kind=="importedPlan"&&it.id==plan.text("sourcePlanId") }
     var stepTitle by rememberSaveable(plan.id) { mutableStateOf("") }
@@ -135,14 +139,35 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
         if(origin!=null) item { TextButton(onClick={sourceOpen=!sourceOpen}) { Text(if(sourceOpen) "Recolher projeto de origem" else "Consultar projeto de origem") };if(sourceOpen) ImportedPlanCard(origin) }
         item { Column(verticalArrangement = Arrangement.spacedBy(5.dp)) { Text("Capítulos deste plano", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${steps.count { it["done"] == true }} de ${steps.size} etapas confirmadas por vocês", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         items(steps, key = { (it["id"] as? String).orEmpty() }) { step ->
+            val currentStepId = (step["id"] as? String).orEmpty()
+            val currentStepTitle = (step["title"] as? String).orEmpty()
+            val linkedBasket = data.baskets.values.firstOrNull { basket -> basket.entries.any { it.sourcePlanId == plan.id && it.sourceStepId == currentStepId } }
+            val linkedTask = data.records.firstOrNull { it.kind == "task" && it.text("sourcePlanId") == plan.id && it.text("sourceStepId") == currentStepId }
+            val shoppingLinked = linkedBasket != null
+            val routineLinked = linkedTask != null
             OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    PlanAccentIcon(if(step["done"]==true) Icons.Default.Check else CalendarLine)
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                        Text((step["title"] as? String).orEmpty(),style=MaterialTheme.typography.titleMedium)
-                        Text(if(step["done"]==true) "Etapa confirmada" else "Um passo de cada vez",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                        PlanAccentIcon(if(step["done"]==true) Icons.Default.Check else CalendarLine)
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Text(currentStepTitle,style=MaterialTheme.typography.titleMedium)
+                            Text(if(step["done"]==true) "Etapa confirmada" else "Um passo de cada vez",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Checkbox(step["done"]==true,{done->vm.action { vm.repo.savePlanStep(plan,currentStepId,completed=done,expectedRevision=plan.number("stageRevision")) }},enabled=!busy)
                     }
-                    Checkbox(step["done"]==true,{done->vm.action { vm.repo.savePlanStep(plan,step["id"] as String,completed=done,expectedRevision=plan.number("stageRevision")) }},enabled=!busy)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (shoppingLinked) {
+                            TextButton(onClick = { onOpenLinked("Compras:${linkedBasket?.market.orEmpty()}") }) { Icon(BasketLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está em ${linkedBasket?.market ?: "Compras"}") }
+                        } else {
+                            TextButton(onClick = { shoppingStep = PlanStepAction(currentStepId,currentStepTitle) }, enabled=!busy) { Icon(BasketLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Enviar para Compras") }
+                        }
+                        if (routineLinked) {
+                            TextButton(onClick = { onOpenLinked("Rotina:${linkedTask?.text("date").orEmpty()}") }) { Icon(CalendarLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Já está na Rotina") }
+                        } else {
+                            TextButton(onClick = { routineStep = PlanStepAction(currentStepId,currentStepTitle) }, enabled=!busy) { Icon(CalendarLine,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Agendar na Rotina") }
+                        }
+                    }
+                    if(shoppingLinked || routineLinked) Text("O vínculo não conclui esta etapa automaticamente.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -157,4 +182,114 @@ private fun PlanDetail(plan: Record, progress: PlanProgress, busy: Boolean, vm: 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
+    shoppingStep?.let { step ->
+        PlanStepShoppingDialog(
+            plan = plan,
+            step = step,
+            vm = vm,
+            busy = busy,
+            onDismiss = { shoppingStep = null },
+            onSaved = { market ->
+                shoppingStep = null
+                onOpenLinked("Compras:$market")
+            }
+        )
+    }
+    routineStep?.let { step ->
+        PlanStepRoutineDialog(
+            plan = plan,
+            step = step,
+            vm = vm,
+            busy = busy,
+            onDismiss = { routineStep = null },
+            onSaved = { date ->
+                routineStep = null
+                onOpenLinked("Rotina:$date")
+            }
+        )
+    }
+}
+
+@Composable
+private fun PlanStepShoppingDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: (String) -> Unit) {
+    var market by rememberSaveable(step.id) { mutableStateOf("Mercado") }
+    var sharePrivate by rememberSaveable(step.id) { mutableStateOf(false) }
+    val session = vm.repo.session.value
+    val needsShareConfirmation = plan.isPrivate && !session.local
+    AlertDialog(
+        onDismissRequest = { if(!busy) onDismiss() },
+        title = { Text("Enviar para Compras") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(step.title, style = MaterialTheme.typography.titleMedium)
+                Text("A etapa vira um item para revisar. Quantidade, unidade e preço continuam a confirmar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ChoiceStrip(listOf("Mercado","Açougue"), market, { market = it })
+                if(needsShareConfirmation) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(sharePrivate,{sharePrivate=it})
+                        Text("Compartilhar o título desta etapa privada na lista do casal.",style=MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !busy && (!needsShareConfirmation || sharePrivate),
+                onClick = {
+                    vm.action("Etapa enviada para Compras") {
+                        vm.repo.linkPlanStepToBasket(plan.id,step.id,step.title,market)
+                        onSaved(market)
+                    }
+                }
+            ) { Text("Adicionar à lista") }
+        },
+        dismissButton = { TextButton(onClick=onDismiss,enabled=!busy) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun PlanStepRoutineDialog(plan: Record, step: PlanStepAction, vm: CentralViewModel, busy: Boolean, onDismiss: () -> Unit, onSaved: (String) -> Unit) {
+    val formatter = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy") }
+    var date by rememberSaveable(step.id) { mutableStateOf(LocalDate.now().format(formatter)) }
+    var time by rememberSaveable(step.id) { mutableStateOf("") }
+    var owner by rememberSaveable(step.id) { mutableStateOf("Ambos") }
+    var category by rememberSaveable(step.id) { mutableStateOf("Rotina") }
+    var visibility by rememberSaveable(step.id) { mutableStateOf(if(plan.isPrivate) "Só para mim" else "Compartilhada") }
+    val parsedDate = runCatching { LocalDate.parse(date,formatter) }.getOrNull()
+    val validTime = time.isBlank() || runCatching { java.time.LocalTime.parse(time) }.isSuccess
+    AlertDialog(
+        onDismissRequest = { if(!busy) onDismiss() },
+        title = { Text("Agendar na Rotina") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(step.title,style=MaterialTheme.typography.titleMedium)
+                OutlinedTextField(date,{date=it},label={Text("Data (dd/mm/aaaa)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(time,{time=it},label={Text("Horário opcional (HH:mm)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                Text("Responsável",style=MaterialTheme.typography.labelLarge)
+                ChoiceStrip(listOf("Tiago","Rhayra","Ambos"),owner,{owner=it})
+                Text("Área",style=MaterialTheme.typography.labelLarge)
+                ChoiceStrip(listOf("Pessoal","Casa","Lucca","Rotina"),category,{category=it})
+                Text("Visibilidade",style=MaterialTheme.typography.labelLarge)
+                ChoiceStrip(listOf("Compartilhada","Só para mim"),visibility,{visibility=it})
+                if(plan.isPrivate && visibility=="Compartilhada") Text("Ao salvar, o título desta etapa privada ficará visível no espaço do casal.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                if(parsedDate==null) Text("Confira a data.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                if(!validTime) Text("Use horário no formato HH:mm.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                Text("Criar a tarefa não conclui a etapa do plano.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !busy && parsedDate != null && validTime,
+                onClick = {
+                    val iso = requireNotNull(parsedDate).toString()
+                    vm.action("Etapa agendada na Rotina") {
+                        val task = vm.repo.createPlanStepTask(plan.id,step.id,step.title,iso,owner,category,time.trim(),visibility=="Só para mim")
+                        Reminders.schedule(vm.getApplication(),vm.repo.session.value.uid,task)
+                        onSaved(iso)
+                    }
+                }
+            ) { Text("Criar tarefa") }
+        },
+        dismissButton = { TextButton(onClick=onDismiss,enabled=!busy) { Text("Cancelar") } }
+    )
 }

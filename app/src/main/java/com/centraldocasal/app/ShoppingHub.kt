@@ -185,8 +185,9 @@ internal fun planningPriceSignal(record: Record, records: List<Record>): String?
 }
 
 @Composable
-internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: SessionState, busy: Boolean, annual: () -> Unit) {
-    var market by rememberSaveable { mutableStateOf("Mercado") }
+internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: SessionState, busy: Boolean, annual: () -> Unit, requestedMarket: String? = null) {
+    var market by rememberSaveable { mutableStateOf(requestedMarket?.takeIf { it in listOf("Mercado","Açougue") } ?: "Mercado") }
+    LaunchedEffect(requestedMarket) { if(requestedMarket in listOf("Mercado","Açougue")) market = requestedMarket!! }
     var section by rememberSaveable { mutableStateOf("Lista") }
     var search by rememberSaveable { mutableStateOf("") }
     var byStore by rememberSaveable { mutableStateOf(false) }

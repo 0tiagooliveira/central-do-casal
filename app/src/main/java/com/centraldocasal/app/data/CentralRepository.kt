@@ -309,6 +309,107 @@ class CentralRepository(context: Context) {
             result
         }.await()
     }
+    /** Idempotently links one plan step to a shared/local shopping basket. */
+    suspend fun linkPlanStepToBasket(planId: String, stepId: String, title: String, market: String) {
+        require(planId.isNotBlank() && stepId.isNotBlank()) { "Origem do plano inválida." }
+        require(title.trim().isNotEmpty() && title.trim().length <= 200) { "Etapa inválida." }
+        require(market in listOf("Mercado", "Açougue")) { "Escolha Mercado ou Açougue." }
+        val itemId = "plan-${planId}-${stepId}"
+        fun linked(old: Basket): Basket {
+            if (old.entries.any { it.sourcePlanId == planId && it.sourceStepId == stepId }) return old
+            require(old.entries.size < 200) { "Use até 200 itens por lista." }
+            val entry = Entry(
+                id = itemId,
+                title = title.trim(),
+                unit = "un",
+                plannedMilli = 1000,
+                actualMilli = 1000,
+                estimated = 0,
+                actual = null,
+                bought = false,
+                estimateKnown = false,
+                unitReviewed = false,
+                quantityReviewed = false,
+                storageRoom = "Casa",
+                recipient = "Casa",
+                group = "Outro",
+                priority = "Normal",
+                sourcePlanId = planId,
+                sourceStepId = stepId
+            )
+            return old.copy(entries = old.entries + entry)
+        }
+        val user = session.value
+        require(user.uid.isNotBlank()) { "Entre na sua conta." }
+        val otherMarket = if (market == "Mercado") "Açougue" else "Mercado"
+        fun hasLink(basket: Basket) = basket.entries.any { it.sourcePlanId == planId && it.sourceStepId == stepId }
+        if (user.local) {
+            val old = data.value.baskets[market] ?: Basket(market)
+            if (hasLink(old)) return
+            require(!hasLink(data.value.baskets[otherMarket] ?: Basket(otherMarket))) {
+                "Esta etapa já está na outra lista de compras."
+            }
+            val next = linked(old)
+            persistLocal(data.value.copy(baskets = data.value.baskets + (market to next.copy(revision = old.revision + 1))))
+            return
+        }
+        require(user.household.isNotBlank()) { "Conecte o espaço do casal antes de usar uma lista compartilhada." }
+        val baskets = db.collection("households").document(user.household).collection("baskets")
+        val ref = baskets.document(market)
+        val otherRef = baskets.document(otherMarket)
+        db.runTransaction { tx ->
+            val snap = tx.get(ref)
+            val otherSnap = tx.get(otherRef)
+            val old = snap.data?.let(Basket::from) ?: Basket(market)
+            if (!hasLink(old)) {
+                val other = otherSnap.data?.let(Basket::from) ?: Basket(otherMarket)
+                require(!hasLink(other)) { "Esta etapa já está na outra lista de compras." }
+                val next = linked(old)
+                tx.set(ref, next.copy(revision = old.revision + 1).toMap())
+            }
+        }.await()
+    }
+
+    /** Creates at most one routine task for a plan step, preserving the origin. */
+    suspend fun createPlanStepTask(planId: String, stepId: String, title: String, date: String, owner: String, category: String, time: String, isPrivate: Boolean): Record {
+        require(planId.isNotBlank() && stepId.isNotBlank()) { "Origem do plano inválida." }
+        val cleanTitle = title.trim()
+        require(cleanTitle.isNotEmpty() && cleanTitle.length <= 200) { "Etapa inválida." }
+        java.time.LocalDate.parse(date)
+        require(owner in setOf("Tiago", "Rhayra", "Ambos")) { "Escolha o responsável." }
+        require(category in setOf("Pessoal","Casa","Lucca","Rotina")) { "Escolha a área da tarefa." }
+        if (time.isNotBlank()) java.time.LocalTime.parse(time)
+        val id = "plan-task-${planId}-${stepId}"
+        val task = Record(id, "task", isPrivate, mapOf(
+            "title" to cleanTitle,
+            "note" to "Criada a partir de uma etapa de plano.",
+            "date" to date,
+            "owner" to owner,
+            "category" to category,
+            "repeat" to "Única",
+            "time" to time,
+            "skipReminder" to time.isBlank(),
+            "needsReview" to false,
+            "needsTimeReview" to false,
+            "sourcePlanId" to planId,
+            "sourceStepId" to stepId
+        ))
+        val user = session.value
+        require(user.uid.isNotBlank()) { "Entre na sua conta." }
+        if (user.local) return planLocalMutex.withLock {
+            require(data.value.records.none { it.kind == "task" && it.text("sourcePlanId") == planId && it.text("sourceStepId") == stepId }) { "Esta etapa já está na Rotina." }
+            persistLocal(data.value.copy(records = data.value.records + task))
+            task
+        }
+        require(auth.currentUser?.uid == user.uid) { "Entre novamente para criar a tarefa." }
+        val ref = recordCollection(isPrivate).document(id)
+        return db.runTransaction { tx ->
+            require(!tx.get(ref).exists()) { "Esta etapa já está na Rotina." }
+            tx.set(ref, task.toMap() + mapOf("updatedBy" to user.uid, "updatedAt" to FieldValue.serverTimestamp()))
+            task
+        }.await()
+    }
+
     suspend fun remove(record: Record) {
         require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent")) { "Este histórico é preservado." }
         if (session.value.local) { persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == record.id })); return }

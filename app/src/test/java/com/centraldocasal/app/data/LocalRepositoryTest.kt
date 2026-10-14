@@ -71,6 +71,51 @@ class LocalRepositoryTest {
         second.close()
     }
 
+    @Test fun planStepShoppingLinkIsIdempotentAndKeepsOrigin() = runBlocking {
+        val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
+        repo.linkPlanStepToBasket("plan-a", "step-a", "Comprar papel de parede", "Mercado")
+        repo.linkPlanStepToBasket("plan-a", "step-a", "Comprar papel de parede", "Mercado")
+        val entries = repo.data.value.baskets.getValue("Mercado").entries
+        assertEquals(1, entries.size)
+        val linked = entries.single()
+        assertEquals("plan-a", linked.sourcePlanId)
+        assertEquals("step-a", linked.sourceStepId)
+        assertFalse(linked.estimateKnown)
+        assertFalse(linked.unitReviewed)
+        assertFalse(linked.quantityReviewed)
+        repo.close()
+    }
+
+    @Test fun planStepCannotBeDuplicatedAcrossMarketAndButcherBaskets() = runBlocking {
+        val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
+        repo.linkPlanStepToBasket("plan-b", "step-b", "Etapa de teste", "Mercado")
+        try {
+            repo.linkPlanStepToBasket("plan-b", "step-b", "Etapa de teste", "Açougue")
+            fail("Uma etapa não pode entrar duas vezes em listas diferentes.")
+        } catch (expected: IllegalArgumentException) {
+            assertEquals(1, repo.data.value.baskets.getValue("Mercado").entries.count {
+                it.sourcePlanId == "plan-b" && it.sourceStepId == "step-b"
+            })
+            assertTrue(repo.data.value.baskets["Açougue"]?.entries.isNullOrEmpty())
+        }
+        repo.close()
+    }
+
+    @Test fun planStepRoutineLinkCreatesOnlyOneTaskAndKeepsOrigin() = runBlocking {
+        val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
+        val task = repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "Casa", "", true)
+        assertEquals("plan-a", task.text("sourcePlanId"))
+        assertEquals("step-a", task.text("sourceStepId"))
+        assertTrue(task.isPrivate)
+        try {
+            repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "Casa", "", true)
+            fail("A mesma etapa não pode criar duas tarefas.")
+        } catch (expected: IllegalArgumentException) {
+            assertEquals(1, repo.data.value.records.count { it.kind == "task" && it.text("sourcePlanId") == "plan-a" && it.text("sourceStepId") == "step-a" })
+        }
+        repo.close()
+    }
+
     @Test fun staleEditDoesNotOverwriteNewerList() = runBlocking {
         val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
         repo.editBasket("Açougue", null) { it.copy(budget = 10000) }
