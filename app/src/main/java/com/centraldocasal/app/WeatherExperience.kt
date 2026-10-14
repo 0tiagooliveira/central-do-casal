@@ -15,6 +15,10 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import kotlin.math.roundToInt
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 internal data class WeatherSnapshot(
     val temperature: Double,
@@ -24,7 +28,8 @@ internal data class WeatherSnapshot(
     val todayHigh: Double,
     val todayLow: Double,
     val rainChance: Int?,
-    val description: String
+    val description: String,
+    val fetchedAtMillis: Long = System.currentTimeMillis()
 )
 
 internal fun weatherDescription(code: Int): String = when(code) {
@@ -42,7 +47,14 @@ internal fun weatherDescription(code: Int): String = when(code) {
 }
 
 /** Open-Meteo forecast API: data CC BY 4.0, coordinates sent only after explicit user action. */
+internal fun weatherCacheCell(latitude: Double, longitude: Double): Pair<Int,Int> =
+    (latitude * 100).roundToInt() to (longitude * 100).roundToInt()
+
 internal object WeatherSource {
+    private data class Cache(val cell: Pair<Int,Int>, val savedAt: Long, val forecast: WeatherSnapshot)
+    @Volatile private var lastForecast: Cache? = null
+    private const val CACHE_MILLIS = 15 * 60 * 1000L
+
     fun parse(json: String): WeatherSnapshot {
         val root=JSONObject(json)
         if(root.optBoolean("error",false)) error("Previsão indisponível")
@@ -61,6 +73,9 @@ internal object WeatherSource {
     }
     suspend fun fetch(latitude:Double,longitude:Double):WeatherSnapshot = withContext(Dispatchers.IO) {
         require(latitude in -90.0..90.0 && longitude in -180.0..180.0)
+        val now=System.currentTimeMillis()
+        val cell=weatherCacheCell(latitude,longitude)
+        lastForecast?.takeIf { it.cell==cell && now-it.savedAt in 0L..CACHE_MILLIS }?.let { return@withContext it.forecast }
         val lat=String.format(Locale.US,"%.3f",latitude)
         val lon=String.format(Locale.US,"%.3f",longitude)
         val url=URL("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=auto")
@@ -71,7 +86,9 @@ internal object WeatherSource {
             connection.requestMethod="GET"
             connection.setRequestProperty("Accept","application/json")
             if(connection.responseCode!=200)error("Resposta de previsão: ${connection.responseCode}")
-            parse(connection.inputStream.bufferedReader().use { it.readText() })
+            val snapshot=parse(connection.inputStream.bufferedReader().use { it.readText() })
+            lastForecast=Cache(cell,System.currentTimeMillis(),snapshot)
+            snapshot
         } finally { connection.disconnect() }
     }
 }
@@ -89,6 +106,7 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit) {
             val data=weather
             if(data!=null) {
                 Text("${data.temperature.toInt()} °C · ${data.description}",style=MaterialTheme.typography.titleLarge)
+                Text("Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(data.fetchedAtMillis))} · atualizado sob demanda",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Sensação de ${data.feelsLike.toInt()} °C · Mín. ${data.todayLow.toInt()} °C · Máx. ${data.todayHigh.toInt()} °C")
                 Text("Umidade ${data.humidity}% · Vento ${data.wind.toInt()} km/h" +
                     (data.rainChance?.let { " · Chance de chuva $it%" } ?: ""),style=MaterialTheme.typography.bodySmall)
@@ -121,7 +139,7 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit) {
             TextButton(onClick={
                 context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))
             },contentPadding=PaddingValues(0.dp)) { Text("Previsão: Open-Meteo · CC BY 4.0",style=MaterialTheme.typography.labelSmall) }
-            Text("A consulta envia uma localização aproximada ao Open-Meteo. Não salvamos essa localização no Firebase.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("A consulta envia uma localização aproximada ao Open-Meteo. Não salvamos essa localização no Firebase. Consultas da mesma região em até 15 minutos usam cache temporário em memória.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
