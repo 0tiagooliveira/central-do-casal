@@ -12,11 +12,24 @@ service cloud.firestore {
     }
     function validRecord(isPrivate) {
       return request.resource.data.private == isPrivate
-        && request.resource.data.kind in ['task','occurrence','plan','contribution','moment','transaction','health','quest','safetyCheckIn','safetyAlert','smartDevice']
+        && request.resource.data.kind in ['task','occurrence','plan','contribution','moment','transaction','health','quest','safetyCheckIn','safetyAlert','smartDevice','careEvent']
         && (isPrivate || request.resource.data.kind != 'health')
         && (!isPrivate || !(request.resource.data.kind in ['safetyCheckIn','safetyAlert','smartDevice']))
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
+    }
+    function validCareEvent() {
+      let event = request.resource.data;
+      return event.keys().hasAll(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
+        && event.keys().hasOnly(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
+        && event.kind == 'careEvent'
+        && event.careType in ['diaper','bath','petFood']
+        && ((event.careType in ['diaper','bath'] && event.subject == 'Lucca')
+          || (event.careType == 'petFood' && event.subject == 'Mel'))
+        && event.actorUid == request.auth.uid
+        && event.actorName is string && event.actorName.size() <= 100
+        && event.occurredAt is int && event.occurredAt > 0
+        && event.date is string && event.date.size() == 10;
     }
     function inviteJoin(hid) {
       let inv = get(/databases/$(database)/documents/invites/$(resource.data.inviteId));
@@ -34,9 +47,9 @@ service cloud.firestore {
       allow create, update: if own(uid) && validProfile(uid);
       match /records/{rid} {
         allow read: if own(uid);
-        allow create: if own(uid) && validRecord(true) && request.resource.data.kind != 'quest';
-        allow update: if own(uid) && validRecord(true) && request.resource.data.kind == resource.data.kind && resource.data.kind != 'contribution';
-        allow delete: if own(uid) && resource.data.kind in ['task','occurrence','plan','moment','transaction','health'];
+        allow create: if own(uid) && validRecord(true) && request.resource.data.kind != 'quest' && (request.resource.data.kind != 'careEvent' || validCareEvent());
+        allow update: if own(uid) && validRecord(true) && request.resource.data.kind == resource.data.kind && !(resource.data.kind in ['contribution','careEvent']);
+        allow delete: if own(uid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction','health'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
       }
     }
     match /households/{hid} {
@@ -128,10 +141,10 @@ service cloud.firestore {
             && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
             && next.data.generation != basket.data.generation && next.data.revision == basket.data.revision + 1;
         }
-        allow create: if member(hid) && ((validRecord(false) && (request.resource.data.kind != 'quest' || newQuest())) || receipt());
+        allow create: if member(hid) && ((validRecord(false) && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
         allow update: if member(hid) && ((validRecord(false) && request.resource.data.kind == resource.data.kind
-          && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert'])) || questResponse());
-        allow delete: if member(hid) && resource.data.kind in ['task','occurrence','plan','moment','transaction'];
+          && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse());
+        allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
       }
     }
     match /invites/{iid} {
