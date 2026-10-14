@@ -1,0 +1,93 @@
+name: Android DEV APK
+
+# Ativado quando codigo Android chegar. A branch ainda nao possui o projeto.
+on:
+  push:
+    branches:
+      - codex/duas-janelas-v46
+      - develop
+      - 'feature/**'
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - gradlew
+      - gradlew.bat
+      - gradle.properties
+      - 'build.gradle*'
+      - 'settings.gradle*'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - gradlew
+      - gradlew.bat
+      - gradle.properties
+      - 'build.gradle*'
+      - 'settings.gradle*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: APK de teste e testes unitarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Instalar Android SDK 36
+        run: sdkmanager --install "platforms;android-36" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compilar APK debug
+        run: |
+          test -f ./gradlew || (echo 'Falta gradlew no projeto Android.' && exit 1)
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --max-workers=2 :app:assembleDebug
+
+      # Teste existente de Planos ja apresentou 1 falha. Nao mascarar.
+      - name: Executar testes unitarios
+        id: unit_tests
+        continue-on-error: true
+        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest
+
+      - name: SHA-256 do APK
+        if: always()
+        shell: bash
+        run: |
+          find app/build/outputs/apk/debug -name '*.apk' -type f -exec sha256sum {} \; 2>/dev/null || true
+
+      - name: Anexar APK DEV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-do-casal-apk-dev
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Anexar resultados dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-do-casal-testes
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Reportar falha real dos testes
+        if: steps.unit_tests.outcome == 'failure'
+        run: |
+          echo 'Algum teste falhou. APK permanece disponivel para QA, mas esta versao nao esta aprovada.'
+          exit 1
