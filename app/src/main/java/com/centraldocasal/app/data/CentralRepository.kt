@@ -341,20 +341,32 @@ class CentralRepository(context: Context) {
         }
         val user = session.value
         require(user.uid.isNotBlank()) { "Entre na sua conta." }
+        val otherMarket = if (market == "Mercado") "Açougue" else "Mercado"
+        fun hasLink(basket: Basket) = basket.entries.any { it.sourcePlanId == planId && it.sourceStepId == stepId }
         if (user.local) {
             val old = data.value.baskets[market] ?: Basket(market)
+            if (hasLink(old)) return
+            require(!hasLink(data.value.baskets[otherMarket] ?: Basket(otherMarket))) {
+                "Esta etapa já está na outra lista de compras."
+            }
             val next = linked(old)
-            if (next === old) return
             persistLocal(data.value.copy(baskets = data.value.baskets + (market to next.copy(revision = old.revision + 1))))
             return
         }
         require(user.household.isNotBlank()) { "Conecte o espaço do casal antes de usar uma lista compartilhada." }
-        val ref = db.collection("households").document(user.household).collection("baskets").document(market)
+        val baskets = db.collection("households").document(user.household).collection("baskets")
+        val ref = baskets.document(market)
+        val otherRef = baskets.document(otherMarket)
         db.runTransaction { tx ->
             val snap = tx.get(ref)
+            val otherSnap = tx.get(otherRef)
             val old = snap.data?.let(Basket::from) ?: Basket(market)
-            val next = linked(old)
-            if (next !== old) tx.set(ref, next.copy(revision = old.revision + 1).toMap())
+            if (!hasLink(old)) {
+                val other = otherSnap.data?.let(Basket::from) ?: Basket(otherMarket)
+                require(!hasLink(other)) { "Esta etapa já está na outra lista de compras." }
+                val next = linked(old)
+                tx.set(ref, next.copy(revision = old.revision + 1).toMap())
+            }
         }.await()
     }
 
