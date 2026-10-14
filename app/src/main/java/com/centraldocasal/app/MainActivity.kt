@@ -94,6 +94,13 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         readReminderIntent(intent)
     }
+    override fun onResume() {
+        super.onResume()
+        // Depois de voltar de Permissões/Alarmes e lembretes, reavaliar os
+        // alarmes locais, mas não recriar os que continuam válidos.
+        Reminders.restore(this,forceRearm=false)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(statusBarStyle=SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT))
         readReminderIntent(intent)
