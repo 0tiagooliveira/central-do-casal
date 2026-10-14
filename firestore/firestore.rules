@@ -18,6 +18,23 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
     }
+    // Apenas quem gravou pode se declarar como origem de um SOS/check-in.
+    function validSafetyIdentity() {
+      let info = request.resource.data;
+      return !(info.kind in ['safetyAlert','safetyCheckIn'])
+        || (info.ownerUid == request.auth.uid
+          && info.ownerName is string && info.ownerName.size() <= 100
+          && info.latitude is number && info.latitude >= -90 && info.latitude <= 90
+          && info.longitude is number && info.longitude >= -180 && info.longitude <= 180
+          && info.mapUrl is string && info.mapUrl.size() <= 256
+          && (info.kind != 'safetyAlert' || (info.createdAt is int && info.createdAt > 0))
+          && (info.kind != 'safetyCheckIn' || (info.capturedAt is int && info.capturedAt > 0)));
+    }
+    function validSafetyUpdateOwner() {
+      return resource.data.kind != 'safetyCheckIn'
+        || (resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid);
+    }
     function validCareEvent() {
       let event = request.resource.data;
       return event.keys().hasAll(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
@@ -174,8 +191,9 @@ service cloud.firestore {
             && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
             && next.data.generation != basket.data.generation && next.data.revision == basket.data.revision + 1;
         }
-        allow create: if member(hid) && ((validRecord(false) && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
-        allow update: if member(hid) && ((validRecord(false) && request.resource.data.kind == resource.data.kind
+        allow create: if member(hid) && ((validRecord(false) && validSafetyIdentity() && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
+        allow update: if member(hid) && ((validRecord(false) && validSafetyIdentity() && validSafetyUpdateOwner()
+          && request.resource.data.kind == resource.data.kind
           && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse());
         allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
       }
