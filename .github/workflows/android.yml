@@ -1,25 +1,82 @@
 name: Android and Firebase rules
-on: [push, pull_request]
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-      - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/setup-node@v4
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - run: chmod +x gradlew
-      - run: ./gradlew :app:assembleDebug :app:testDebugUnitTest
-      - run: npm ci --no-audit --no-fund
-      - run: npm run test:rules
-      - uses: actions/upload-artifact@v4
+
+      # GitHub-hosted Ubuntu runners already provide the Android command-line SDK.
+      # Avoid android-actions/setup-android here because it failed before our code ran.
+      - name: Prepare Android SDK 36
+        shell: bash
+        run: |
+          set -e
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "${SDKMANAGER}" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          test -n "${SDKMANAGER}" && test -x "${SDKMANAGER}"
+          echo "sdkmanager=${SDKMANAGER}"
+          yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          "${SDKMANAGER}" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Build APK and run Android/JVM tests
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest
+
+      - name: Install Firebase test dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run Firestore security rules tests
+        run: npm run test:rules
+
+      - name: Upload DEV APK
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: Central-do-Casal-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Android test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Central-do-Casal-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14

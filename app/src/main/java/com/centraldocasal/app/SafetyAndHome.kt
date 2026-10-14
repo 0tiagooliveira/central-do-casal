@@ -82,11 +82,11 @@ private fun CoupleMapCard(name: String, latitude: Double, longitude: Double, cap
 }
 
 @Composable
-internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: DataState, busy: Boolean, requestPermission: () -> Unit, requestCallPermission: () -> Unit) {
+internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: DataState, busy: Boolean, requestPermission: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(session.uid) { context.getSharedPreferences("safety_${session.uid}", Context.MODE_PRIVATE) }
-    val suggestedPartnerPhone=when { session.name.contains("rhayra",true) -> "41998263223"; session.name.contains("tiago",true) -> "41987153914"; else -> "" }
-    var phone by rememberSaveable(session.uid) { mutableStateOf(prefs.getString("partnerPhone", suggestedPartnerPhone).orEmpty()) }
+    // Telefone é configurado voluntariamente neste aparelho; nunca é embutido no código-fonte.
+    var phone by rememberSaveable(session.uid) { mutableStateOf(prefs.getString("partnerPhone", "").orEmpty()) }
     var location by remember { mutableStateOf<SafetyLocation?>(null) }
     var locating by remember { mutableStateOf(false) }
     var tracking by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("tracking", false)) }
@@ -105,8 +105,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     fun callPartner() {
         val number=phone.filter { it.isDigit() || it=='+' }
         if(number.length<8) { vm.message.value="Informe e salve o telefone do parceiro para a ligação rápida."; return }
-        if(ContextCompat.checkSelfPermission(context,Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED) { requestCallPermission(); return }
-        runCatching { context.startActivity(Intent(Intent.ACTION_CALL,Uri.parse("tel:$number"))) }.onFailure { vm.message.value="Não foi possível iniciar a ligação neste aparelho." }
+        runCatching { context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$number"))) }.onFailure { vm.message.value="Não foi possível abrir o discador neste aparelho." }
     }
     fun messagePartner(current: SafetyLocation?) {
         val number=phone.filter { it.isDigit() }
@@ -122,8 +121,6 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             if(current!=null) vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"latitude" to current.latitude,"longitude" to current.longitude,"capturedAt" to current.capturedAt,"mapUrl" to current.mapsUrl())))
             vm.repo.save(Record("sos-${session.uid}-${UUID.randomUUID()}","safetyAlert",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"createdAt" to System.currentTimeMillis(),"mapUrl" to (current?.mapsUrl().orEmpty()),"latitude" to (current?.latitude ?: 0.0),"longitude" to (current?.longitude ?: 0.0))))
         }
-        messagePartner(current)
-        callPartner()
     }
     LaunchedEffect(tracking, hasPermission, session.uid) {
         while (tracking && hasPermission && isActive) {
@@ -140,8 +137,8 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
-                    Text("Envia um alerta ao parceiro, tenta incluir sua localização, abre o WhatsApp e inicia a ligação para o telefone salvo.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "SOS: alertar, WhatsApp e ligar") }
+                    Text("Registra um alerta no espaço do casal e tenta incluir sua localização. WhatsApp e ligação ficam como ações separadas para você confirmar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
+                    Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -163,14 +160,14 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) { Column(Modifier.padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("SOS para seu parceiro", style=MaterialTheme.typography.titleMedium, color=MaterialTheme.colorScheme.onErrorContainer)
-                Text("Um SOS grava o alerta no espaço compartilhado, tenta incluir a localização e abre o WhatsApp com uma mensagem pronta, além da ligação rápida.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onErrorContainer)
+                Text("Um SOS grava o alerta no espaço compartilhado e tenta incluir a localização. WhatsApp e ligação só abrem quando você escolher uma dessas ações.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onErrorContainer)
                 OutlinedTextField(phone,{ phone=it },label={Text("Telefone do parceiro")},singleLine=true,modifier=Modifier.fillMaxWidth())
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick={prefs.edit().putString("partnerPhone",phone.trim()).apply();vm.message.value="Telefone do parceiro salvo neste aparelho."}) { Text("Salvar") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "SOS: alertar e ligar") }
+                Button(enabled=!busy && !locating,onClick={ if(!hasPermission) requestPermission() else requestLocation(::triggerSos) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(if(locating) "Obtendo posição…" else "Registrar SOS") }
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }

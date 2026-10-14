@@ -1,8 +1,8 @@
-# Pendências reais — 0.1.3-preview
+# Pendências reais — estado atual 0.3.22-dev
 
 ## Validação e distribuição
 
-- Build, 110 testes, assinatura e checksum da 0.1.3 foram confirmados pelo agente principal em `VALIDACAO.md`. O APK foi entregue no Drive com metadados verificados; o ZIP de fonte sanitizado está pronto localmente e aguarda aprovação de envio.
+- A versão de código atual é `0.3.22-dev` (`versionCode 30`). As validações registradas em `VALIDACAO.md` pertencem a versões anteriores e não certificam esta revisão. O CI da versão atual precisa concluir build, testes Android/JVM e testes de regras Firestore.
 - Instalação física, sincronização em dois aparelhos/duas contas, concorrência offline, reconexão, reinício/bateria, teclado, fontes grandes e TalkBack: ainda não certificados.
 - Sons, vibração e notificações: implementação do sistema e testes manuais disponíveis; comportamento físico pendente de verificação.
 - Assinatura de produção e Play Store: não configuradas. Distribuição de desenvolvimento.
@@ -16,7 +16,7 @@
 - Três destinos de Jornada e quatro cartões iniciais implementados. Mapa integral, álbum sincronizado, cápsulas com duplo consentimento, selos e arquivo integral de memórias incompletos.
 - Login Google, exclusão completa de conta, política de retenção, App Check, Crashlytics, rate limits, backend privilegiado, auditoria e migrações não concluídos.
 - Sophia/backend/voz, Alexa/Avant, Poup+, Notion, calendários/clima externos e hardware doméstico dependem de serviços legítimos não integrados. Nenhuma proposta importada os ativa automaticamente.
-- SOS, Volta Segura e rastreamento não implementados. Não usar como serviço de emergência.
+- SOS e compartilhamento de localização têm implementação experimental: alerta Firestore, localização enquanto o app permanece aberto, WhatsApp e discador em ações explícitas. Ainda faltam validação em dois aparelhos, retenção/expiração dos registros e robustez de entrega. Volta Segura com sessão temporária completa ainda não está implementada. Não usar o app como substituto de serviços de emergência.
 
 ## Ferramentas
 

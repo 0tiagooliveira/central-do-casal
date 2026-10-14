@@ -3,7 +3,6 @@ package com.centraldocasal.app
 import android.Manifest
 import android.app.Application
 import android.content.Intent
-import android.widget.Toast
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -62,9 +61,6 @@ class MainActivity : ComponentActivity() {
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { allowed ->
         androidx.lifecycle.ViewModelProvider(this)[CentralViewModel::class.java].message.value = if(allowed.values.any { it }) "Localização permitida enquanto você usa o app." else "A localização não foi permitida. Nenhuma posição será compartilhada."
     }
-    private val callPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (!allowed) Toast.makeText(this, "Permita chamadas para usar a ligação rápida ao parceiro.", Toast.LENGTH_LONG).show()
-    }
     private val nearbyPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { allowed ->
         androidx.lifecycle.ViewModelProvider(this)[CentralViewModel::class.java].message.value = if(allowed.values.any { it }) "Acesso a aparelhos próximos permitido." else "O acesso a aparelhos próximos não foi permitido."
     }
@@ -96,7 +92,7 @@ class MainActivity : ComponentActivity() {
             val experience=rememberExperience(profile.uid)
             CompositionLocalProvider(LocalExperience provides experience) {
             CentralTheme(profile.name) {
-                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, call = { callPermission.launch(Manifest.permission.CALL_PHONE) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false})
+                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false})
             }
             }
         }
@@ -131,7 +127,7 @@ private fun displayDate(value: String) = runCatching { LocalDate.parse(value).fo
 private fun dateInput(value: String) = LocalDate.parse(value, dateFormat).toString()
 
 @Composable
-fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, call: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}) {
+fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}) {
     val session by vm.repo.session.collectAsStateWithLifecycle()
     val data by vm.repo.data.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -215,7 +211,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Saúde" -> HealthScreen(vm, data)
                     "Configurações" -> SettingsScreen(vm, session, data, export, notify, navigate = { route = it }, photo = photo)
                     "Casa" -> HomeDevicesScreen(vm, data, busy, requestNearby=nearby)
-                    "Segurança" -> SafetyScreen(vm, session, data, busy, requestPermission=location, requestCallPermission=call)
+                    "Segurança" -> SafetyScreen(vm, session, data, busy, requestPermission=location)
                     "Sophia" -> IntegrationScreen(route, data)
                 } } }
             }
@@ -589,7 +585,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         if(reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
         item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
         item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
-        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion, Google login e SOS ainda indisponíveis. Lembretes podem atrasar por bateria; não são alertas de emergência.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Sair do espaço?") }, text = { Text("Sua conta perde acesso aos registros compartilhados. Seus registros privados permanecem na sua conta. O histórico do espaço é preservado.") }, confirmButton = { Button(onClick = { vm.action { Reminders.cancelAll(vm.getApplication(), session.uid); vm.repo.leaveHouse(); leaving = false } }) { Text("Sair do espaço") } }, dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancelar") } })
