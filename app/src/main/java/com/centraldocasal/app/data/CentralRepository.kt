@@ -17,7 +17,10 @@ import java.util.UUID
 
 data class SessionState(val uid: String = "", val name: String = "", val email: String = "", val local: Boolean = false, val household: String = "", val verified: Boolean = false)
 data class LiveLocation(val uid: String, val latitude: Double, val longitude: Double, val capturedAt: Long, val expiresAt: Long, val sessionEndsAt: Long) {
-    fun isCurrent(now: Long): Boolean = now < expiresAt && now < sessionEndsAt && capturedAt > 0 && now - capturedAt < 180_000L
+    fun isCurrent(now: Long): Boolean =
+        now < expiresAt && now < sessionEndsAt &&
+        capturedAt > 0 && now - capturedAt in -10_000L..89_999L &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0
 }
 data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList(), val liveLocations: List<LiveLocation> = emptyList())
 
