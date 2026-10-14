@@ -1,0 +1,38 @@
+name: Publicar regras de fotos
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: "Digite PUBLICAR_FOTOS para autorizar apos QA em dois dispositivos"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  storage-rules:
+    if: ${{ inputs.confirmacao == 'PUBLICAR_FOTOS' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verify Firestore and Storage rules before deploy
+        run: npm run test:rules
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Publish only Storage security rules
+        run: npx firebase-tools deploy --only storage --project central-do-casal --non-interactive
