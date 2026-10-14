@@ -107,6 +107,44 @@ test('members can share house devices and safety state while strangers and priva
  await assertFails(setDoc(doc(db('bob'),'households/home/records/forged-checkin'),safety('alice','safetyCheckIn')));
  await assertFails(setDoc(doc(db('alice'),'households/home/records/invalid-coordinates'),{...safety('alice','safetyAlert'),latitude:92}));
 });
+test('live location is scoped to owner, household, valid coordinates and expiry', async () => {
+ const point=(uid,lat=-25.0,lon=-49.0)=>({
+   ownerUid:uid,latitude:lat,longitude:lon,capturedAt:Timestamp.now(),
+   updatedAt:serverTimestamp(),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),
+   sessionEndsAt:Timestamp.fromMillis(Date.now()+1800000)
+ });
+ const ref=doc(db('alice'),'households/home/liveLocations/alice');
+ await assertSucceeds(setDoc(ref,point('alice')));
+ await assertSucceeds(getDoc(doc(db('bob'),'households/home/liveLocations/alice')));
+ await assertFails(getDoc(doc(db('eve'),'households/home/liveLocations/alice')));
+ await assertFails(setDoc(ref,point('bob')));
+ await assertFails(setDoc(ref,point('alice',100,0)));
+ await assertFails(setDoc(ref,{...point('alice'),expiresAt:Timestamp.fromMillis(Date.now()+86400000)}));
+ // É permitido atualizar a posição na mesma sessão, sem estender o prazo.
+ await assertSucceeds(updateDoc(ref,{
+   latitude:-24.5,capturedAt:Timestamp.now(),
+   expiresAt:Timestamp.fromMillis(Date.now()+60000),updatedAt:serverTimestamp()
+ }));
+ // O cliente não pode prolongar ou encurtar silenciosamente uma sessão existente.
+ await assertFails(updateDoc(ref,{
+   sessionEndsAt:Timestamp.fromMillis(Date.now()+25*60000),
+   updatedAt:serverTimestamp()
+ }));
+ // Um fix mais antigo não pode substituir a última posição recebida.
+ await assertFails(updateDoc(ref,{
+   capturedAt:Timestamp.fromMillis(Date.now()-30000),
+   updatedAt:serverTimestamp()
+ }));
+ // Publicar uma localização "atual" por mais de 90 s também é proibido.
+ await assertFails(updateDoc(ref,{
+   expiresAt:Timestamp.fromMillis(Date.now()+120000),
+   updatedAt:serverTimestamp()
+ }));
+ await assertFails(deleteDoc(doc(db('bob'),'households/home/liveLocations/alice')));
+ await assertSucceeds(deleteDoc(ref));
+ await assertFails(setDoc(doc(db('bob'),'households/home/liveLocations/alice'),point('bob')));
+});
 test('member cannot store private flag in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/private'),record('alice','task',true)));});
 test('care events require genuine authorship and only the author can undo',async()=> {
  const care=(uid,type='diaper',subject='Lucca')=>({

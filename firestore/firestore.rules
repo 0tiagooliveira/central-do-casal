@@ -89,6 +89,36 @@ service cloud.firestore {
           && request.resource.data.members == resource.data.members.removeAll([request.auth.uid])
           && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == '')
       );
+      match /liveLocations/{ownerUid} {
+        allow get, list: if member(hid);
+        function validLiveLocation() {
+          let loc = request.resource.data;
+          return request.auth.uid == ownerUid
+            && loc.keys().hasAll(['ownerUid','latitude','longitude','capturedAt','updatedAt','expiresAt','sessionEndsAt'])
+            && loc.keys().hasOnly(['ownerUid','latitude','longitude','capturedAt','updatedAt','expiresAt','sessionEndsAt'])
+            && loc.ownerUid == ownerUid
+            && loc.latitude is number && loc.latitude >= -90 && loc.latitude <= 90
+            && loc.longitude is number && loc.longitude >= -180 && loc.longitude <= 180
+            && loc.capturedAt is timestamp
+            && loc.capturedAt >= request.time - duration.value(2,'m')
+            && loc.capturedAt <= request.time + duration.value(1,'m')
+            && loc.updatedAt == request.time
+            && loc.expiresAt is timestamp && loc.expiresAt > request.time
+            && loc.expiresAt <= request.time + duration.value(90,'s')
+            && loc.sessionEndsAt is timestamp && loc.sessionEndsAt > request.time
+            && loc.sessionEndsAt <= request.time + duration.value(31,'m');
+        }
+        // Uma escrita de localização NÃO renova a duração da sessão.
+        // Reiniciar após o limite exige encerrar a sessão antiga e iniciar uma nova.
+        function validLiveUpdate() {
+          return resource.data.ownerUid == ownerUid
+            && request.resource.data.sessionEndsAt == resource.data.sessionEndsAt
+            && request.resource.data.capturedAt >= resource.data.capturedAt;
+        }
+        allow create: if member(hid) && validLiveLocation();
+        allow update: if member(hid) && validLiveLocation() && validLiveUpdate();
+        allow delete: if member(hid) && own(ownerUid) && resource.data.ownerUid == ownerUid;
+      }
       match /baskets/{market} {
         allow read: if member(hid);
         allow create, update: if member(hid) && market in ['Mercado', 'Açougue']

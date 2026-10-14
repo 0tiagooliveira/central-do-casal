@@ -23,7 +23,13 @@ internal fun effectiveProfileName(documentName: String?, authName: String?): Str
         ?: authName?.trim()?.takeIf { it.isNotBlank() }
         ?: "Meu perfil"
 
-data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList())
+data class LiveLocation(val uid: String, val latitude: Double, val longitude: Double, val capturedAt: Long, val expiresAt: Long, val sessionEndsAt: Long) {
+    fun isCurrent(now: Long): Boolean =
+        now < expiresAt && now < sessionEndsAt &&
+        capturedAt > 0 && now - capturedAt in -10_000L..89_999L &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0
+}
+data class DataState(val records: List<Record> = emptyList(), val baskets: Map<String, Basket> = emptyMap(), val sync: String = "", val error: String? = null, val members: List<String> = emptyList(), val liveLocations: List<LiveLocation> = emptyList())
 
 /** One repository owns persistence. Local data never silently migrate into a cloud household. */
 class CentralRepository(context: Context) {
@@ -118,6 +124,24 @@ class CentralRepository(context: Context) {
             if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
             if (error != null) fail("catalogLinks", error)
             else if (snap != null) { if (!snap.metadata.isFromCache) access.confirm("catalogLinks"); sharedLinks = snap.documents.mapNotNull(::readRecord); publish() }
+        }
+        listeners += house.collection("liveLocations").addSnapshotListener(MetadataChanges.INCLUDE) { snap, error ->
+            if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
+            if (error != null) fail("liveLocations", error)
+            else if (snap != null) {
+                // Nunca exibir localização em cache como se fosse confirmação recente do servidor.
+                val locations = if (snap.metadata.isFromCache) emptyList() else snap.documents.mapNotNull { doc ->
+                    val lat = doc.getDouble("latitude") ?: return@mapNotNull null
+                    val lon = doc.getDouble("longitude") ?: return@mapNotNull null
+                    val captured = doc.getTimestamp("capturedAt")?.toDate()?.time ?: return@mapNotNull null
+                    val expires = doc.getTimestamp("expiresAt")?.toDate()?.time ?: return@mapNotNull null
+                    val end = doc.getTimestamp("sessionEndsAt")?.toDate()?.time ?: return@mapNotNull null
+                    if (doc.id != doc.getString("ownerUid") || lat !in -90.0..90.0 || lon !in -180.0..180.0) null
+                    else LiveLocation(doc.id, lat, lon, captured, expires, end)
+                }
+                mutableData.value = mutableData.value.copy(liveLocations = locations)
+                publish()
+            }
         }
         listeners += house.collection("baskets").addSnapshotListener(MetadataChanges.INCLUDE) { snap, error ->
             if (epoch != listenerEpoch || session.value.uid != uid || session.value.household != household) return@addSnapshotListener
@@ -422,7 +446,8 @@ class CentralRepository(context: Context) {
     }
 
     suspend fun remove(record: Record) {
-        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent")) { "Este histórico é preservado." }
+        require(record.kind in setOf("task", "occurrence", "plan", "moment", "transaction", "health", "careEvent", "safetyCheckIn")) { "Este histórico é preservado." }
+        if (record.kind == "safetyCheckIn") require(record.text("ownerUid") == session.value.uid) { "Só você pode remover sua localização manual." }
         if (session.value.local) { persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == record.id })); return }
         recordCollection(record.isPrivate).document(record.id).delete().await()
     }
