@@ -38,6 +38,9 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class SafetyLocation(val latitude: Double, val longitude: Double, val capturedAt: Long) {
+    fun isFresh(now: Long): Boolean =
+        latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
+        now - capturedAt in 0L..90_000L
     fun mapsUrl() = "https://maps.google.com/?q=$latitude,$longitude"
 }
 
@@ -50,9 +53,21 @@ internal object SafetyLocationReader {
         if (!permitted(context)) { callback(null); return }
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-        val known = providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }.maxByOrNull { it.time }
+        val now = System.currentTimeMillis()
+        val known = providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .filter { SafetyLocation(it.latitude, it.longitude, it.time).isFresh(now) }
+            .maxByOrNull { it.time }
         val delivered = AtomicBoolean(false)
-        fun result(location: Location?) { if (delivered.compareAndSet(false, true)) callback(location?.let { SafetyLocation(it.latitude, it.longitude, it.time) } ?: known?.let { SafetyLocation(it.latitude, it.longitude, it.time) }) }
+        fun result(location: Location?) {
+            if (delivered.compareAndSet(false, true)) {
+                val timestamp = System.currentTimeMillis()
+                val candidate = location?.let { SafetyLocation(it.latitude, it.longitude, it.time) }
+                    ?.takeIf { it.isFresh(timestamp) }
+                    ?: known?.let { SafetyLocation(it.latitude, it.longitude, it.time) }
+                        ?.takeIf { it.isFresh(timestamp) }
+                callback(candidate)
+            }
+        }
         val provider = providers.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
         if (provider == null) { result(known); return }
         runCatching {
@@ -116,6 +131,10 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val hasPermission = SafetyLocationReader.permitted(context)
     val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }.maxByOrNull { it.number("capturedAt") }
     fun publish(current: SafetyLocation, success: String = "Localização atualizada para seu parceiro") {
+        if (!current.isFresh(System.currentTimeMillis())) {
+            vm.message.value = "Posição antiga. Obtenha a localização novamente antes de compartilhar."
+            return
+        }
         vm.action(success) {
             require(!session.local && data.members.size==2) { "Conecte as duas contas antes de compartilhar uma localização." }
             vm.repo.save(Record("checkin-${session.uid}","safetyCheckIn",fields=mapOf("ownerUid" to session.uid,"ownerName" to session.name,"latitude" to current.latitude,"longitude" to current.longitude,"capturedAt" to current.capturedAt,"mapUrl" to current.mapsUrl())))
@@ -155,7 +174,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
                     Text("Registra o alerta imediatamente, sem esperar pelo GPS. Inclui posição recente apenas se já tiver sido obtida. Não substitui serviços de emergência.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy,onClick={ triggerSos(location?.takeIf { current -> System.currentTimeMillis() - current.capturedAt in 0L..90_000L }) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS agora") }
+                    Button(enabled=!busy,onClick={ triggerSos(location?.takeIf { current -> current.isFresh(System.currentTimeMillis()) }) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS agora") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
