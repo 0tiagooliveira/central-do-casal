@@ -409,6 +409,7 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
     var planned by remember { mutableStateOf(quantityInput(entry?.plannedMilli ?: 1000)) }; var actualQty by remember { mutableStateOf(quantityInput(entry?.actualMilli ?: 1000)) }
     var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought ?: false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
+    var advanced by rememberSaveable(entry?.id) { mutableStateOf(false) }
     EditDialog(if (entry == null) "Novo item" else "Ficha do produto", dismiss, save = { vm.action {
         require(title.isNotBlank()) { "Informe o produto." }
         require(unit in listOf("un", "kg", "g", "L", "mL", "pacote")) { "Escolha a unidade antes de salvar." }
@@ -417,11 +418,31 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
         if (bought) item.real()
         vm.repo.editBasket(basket.market, basket.revision.takeIf { vm.repo.data.value.baskets.containsKey(basket.market) }) { it.copy(entries = it.entries.filterNot { e -> e.id == id } + item) }; dismiss()
     } }, busy = busy) {
-        Field("Produto", title, { title = it }); Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it }); Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it }); Field("Subgrupo opcional", subgroup, { subgroup=it }); Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it }); Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it }); if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it }); Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
-        Field("Quantidade prevista", planned, { planned = it }); Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
-        Text("Preço por $unit. Para 500 g a R$ 0,04/g, use quantidade 500; para 0,5 kg a R$ 40/kg, use 0,5.", style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" }); Text("Foi comprado") }
-        if (bought) { Field("Quantidade comprada", actualQty, { actualQty = it }); Field("Preço real por unidade (R$)", real, { real = it }) }
+        Field("Produto", title, { title = it })
+        Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
+        Field("Quantidade prevista", planned, { planned = it })
+        Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" })
+            Text("Já coloquei no carrinho")
+        }
+        if (bought) {
+            Field("Quantidade comprada", actualQty, { actualQty = it })
+            Field("Preço real por unidade (R$)", real, { real = it })
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        TextButton(onClick = { advanced = !advanced }) {
+            Text(if (advanced) "Ocultar detalhes" else "Organização, cômodo e prioridade")
+        }
+        if (advanced) {
+            Text("Opcional: personalize apenas o que você precisa.", style = MaterialTheme.typography.bodySmall)
+            Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it })
+            Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it })
+            Field("Subgrupo opcional", subgroup, { subgroup=it })
+            Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it })
+            Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it })
+            if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it })
+        }
         if (entry != null && basket.entries.any { it.id==entry.id }) TextButton(onClick = { vm.action { vm.repo.editBasket(basket.market, basket.revision) { it.copy(entries = it.entries.filterNot { e -> e.id == id }) }; dismiss() } }, enabled = !busy) { Text("Remover da sessão atual") }
     }
 }
