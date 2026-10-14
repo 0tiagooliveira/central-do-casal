@@ -16,6 +16,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -245,6 +246,7 @@ internal fun WeatherCard(
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var showPrivacy by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val current = weather
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
@@ -296,7 +298,7 @@ internal fun WeatherCard(
                         Text("✦  Leitura inteligente do tempo",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        insights.forEach { insight ->
+                        insights.take(if (expanded) 3 else 1).forEach { insight ->
                             Text(insight.title, style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold)
                             Text(insight.detail, style = MaterialTheme.typography.bodySmall,
@@ -307,6 +309,13 @@ internal fun WeatherCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Text(if (expanded) "Mostrar menos" else "Ver previsão por hora e próximos dias")
+                }
+                if (expanded) {
                 val upcoming = current.hours.filter { it.time >= LocalDateTime.now().minusMinutes(30) }.take(9)
                 if (upcoming.isNotEmpty()) {
                     Text("Próximas horas", style = MaterialTheme.typography.titleMedium)
@@ -358,6 +367,7 @@ internal fun WeatherCard(
                 HorizontalDivider()
                 Text("${current.humidity}% de umidade  ·  vento ${current.wind.roundToInt()} km/h",
                     style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     "Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(current.fetchedAtMillis))}. Previsões podem mudar.",
                     style = MaterialTheme.typography.labelSmall,
