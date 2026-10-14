@@ -184,6 +184,15 @@ private fun providerPackage(provider: String): String? = when(provider) {
     else -> null
 }
 
+/** Evita registros repetidos por NOME no inventário; nome Bluetooth não comprova identidade única. */
+internal fun bluetoothNameRegistered(records: List<Record>, name: String): Boolean {
+    val normalized = name.trim()
+    return normalized.isNotEmpty() && records.any { device ->
+        device.kind == "smartDevice" && device.text("provider") == "Bluetooth" &&
+            device.text("bluetoothName", device.text("title")).trim().equals(normalized, ignoreCase = true)
+    }
+}
+
 /** Cadastro real, sem simular telemetria nem comando de automação. */
 internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, room: String = "Todos"): List<Record> =
     records.filter { it.kind == "smartDevice" }
@@ -227,7 +236,18 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                     }
                 }
             }
-            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra apenas aparelhos que este celular já pareou. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text("Nenhum aparelho pareado encontrado. Use as configurações Bluetooth para parear primeiro.",style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(onClick={ vm.action("Aparelho Bluetooth registrado") { vm.repo.save(Record("device-${UUID.randomUUID()}","smartDevice",fields=mapOf("title" to name,"room" to "Casa","provider" to "Bluetooth","state" to "paired","bluetoothName" to name))) } },enabled=!busy) { Text("Vincular") } } } }};Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))}) { Text("Bluetooth") };OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))}) { Text("Wi‑Fi") } };Button(onClick={ val launch=context.packageManager.getLaunchIntentForPackage("com.amazon.dee.app");if(launch==null) vm.message.value="Instale o aplicativo Alexa para concluir o vínculo." else context.startActivity(launch) },modifier=Modifier.fillMaxWidth()) { Text("Abrir Alexa e concluir vínculo") } } } }
+            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text("Nenhum aparelho pareado encontrado. Use as configurações Bluetooth para parear primeiro.",style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
+    onClick={
+        vm.action("Aparelho Bluetooth registrado") {
+            require(!bluetoothNameRegistered(vm.repo.data.value.records, name)) {
+                "Este nome Bluetooth já está cadastrado. Veja a ficha existente."
+            }
+            vm.repo.save(Record("device-${UUID.randomUUID()}","smartDevice",
+                fields=mapOf("title" to name,"room" to "Casa","provider" to "Bluetooth","state" to "paired","bluetoothName" to name)))
+        }
+    },
+    enabled=!busy && !bluetoothNameRegistered(data.records, name)
+) { Text(if(bluetoothNameRegistered(data.records, name)) "Já cadastrado" else "Cadastrar") } } } }};Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))}) { Text("Bluetooth") };OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))}) { Text("Wi‑Fi") } };Button(onClick={ val launch=context.packageManager.getLaunchIntentForPackage("com.amazon.dee.app");if(launch==null) vm.message.value="Instale o aplicativo Alexa para concluir o vínculo." else context.startActivity(launch) },modifier=Modifier.fillMaxWidth()) { Text("Abrir Alexa e concluir vínculo") } } } }
             item { Button(onClick={adding=true},modifier=Modifier.fillMaxWidth()) { Text("Adicionar aparelho") } }
             if(visibleDevices.isEmpty()) item { Text(if(devices.isEmpty()) "Nenhum aparelho cadastrado. Comece pela luz, tomada, Alexa ou central que vocês usam." else "Nenhum aparelho cadastrado neste cômodo.",style=MaterialTheme.typography.bodyMedium) }
             items(visibleDevices,key={it.id}) { device ->
