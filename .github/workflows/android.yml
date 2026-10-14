@@ -41,9 +41,14 @@ jobs:
         run: |
           set -e
           echo "ANDROID_HOME=${ANDROID_HOME}"
-          command -v sdkmanager
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "${SDKMANAGER}" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          test -n "${SDKMANAGER}" && test -x "${SDKMANAGER}"
+          echo "sdkmanager=${SDKMANAGER}"
+          yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          "${SDKMANAGER}" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build APK and run Android/JVM tests
         run: |
