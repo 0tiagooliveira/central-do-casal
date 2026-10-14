@@ -71,6 +71,43 @@ object Reminders {
         return owner.lowercase() == mine || owner.substringBefore(' ').equals(mine.substringBefore(' '), true)
     }
 
+    /** The same eligibility rules used for scheduling, exposed per task for troubleshooting. */
+    internal fun blockReason(record: Record, profileName: String, now: Instant = Instant.now()): String? {
+        if (record.kind != "task") return "Não é uma tarefa."
+        if (record.flag("needsReview")) return "Confirme os dados importados desta tarefa."
+        if (record.flag("needsTimeReview")) return "Confirme o horário desta tarefa."
+        if (record.flag("skipReminder")) return "A opção Permitir lembrete está desligada nesta tarefa."
+        val time = runCatching { LocalTime.parse(record.text("time")) }.getOrNull()
+            ?: return "Informe um horário válido (HH:mm)."
+        val start = runCatching { LocalDate.parse(record.text("date")) }.getOrNull()
+            ?: return "Confirme a data inicial desta tarefa."
+        if (!belongs(record, profileName)) return "Esta tarefa está atribuída a outro responsável."
+        if (record.text("repeat") !in setOf("Diária", "Semanal", "Dias da semana", "Mensal", "Primeiro domingo após dia 8") &&
+            !start.atTime(time).atZone(ZoneId.systemDefault()).toInstant().isAfter(now)) {
+            return "A data ou o horário desta tarefa já passou."
+        }
+        return null
+    }
+
+    data class TaskCheck(val title: String, val status: String, val plannedAt: Long?)
+
+    /** Reads only local scheduling metadata. A planned alarm is not a delivery guarantee. */
+    fun inspect(context: Context, uid: String, record: Record, profileName: String): TaskCheck {
+        val title = record.text("title").ifBlank { "Tarefa sem título" }
+        val reason = blockReason(record, profileName)
+        if (reason != null) return TaskCheck(title, reason, null)
+        if (!prefs(context, uid).getBoolean("enabled", true)) return TaskCheck(title, "Lembretes desligados neste aparelho.", null)
+        val p = store(context)
+        val time = p.getLong(plannedKey(uid,record.id),0L)
+        if (time <= System.currentTimeMillis()) return TaskCheck(title,"Sem alarme futuro confirmado no aparelho. Use Reagendar tarefas.",null)
+        if (!AndroidInteractions.notificationsAllowed(context)) return TaskCheck(title,"Alarme programado, mas notificações bloqueadas no Android.",time)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (manager?.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            return TaskCheck(title,"Alarme programado, mas canal Tarefas com detalhes está bloqueado.",time)
+        }
+        return TaskCheck(title,"Programado no aparelho; entrega ainda não verificada.",time)
+    }
+
     private fun cache(context: Context, uid: String, record: Record) {
         val p = store(context)
         val names = p.getStringSet("$ID_LIST:$uid", emptySet()).orEmpty().toMutableSet()
@@ -123,8 +160,7 @@ object Reminders {
         val pref=prefs(context,uid)
         if(profileName.isNotBlank()) pref.edit().putString("profileName",profileName).apply()
         val name=profileName.ifBlank { pref.getString("profileName","").orEmpty() }
-        if(record.flag("skipReminder") || record.flag("needsReview") || record.flag("needsTimeReview") ||
-           !pref.getBoolean("enabled",true) || !belongs(record,name)) {
+        if(!pref.getBoolean("enabled",true) || blockReason(record,name)!=null) {
             cancelAlarm(context,uid,record.id)
             forget(context,uid,record.id)
             return
