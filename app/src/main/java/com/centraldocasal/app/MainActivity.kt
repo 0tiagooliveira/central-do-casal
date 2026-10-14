@@ -479,13 +479,14 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
 }
 
 @Composable
-internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?, dismiss: () -> Unit) {
+internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?, dismiss: () -> Unit, startBought: Boolean = false) {
     val id = remember { entry?.id ?: java.util.UUID.randomUUID().toString() }
+    var advanced by rememberSaveable(id) { mutableStateOf(false) }
     val roomChoices=listOf("Cozinha", "Banheiro", "Lavanderia", "Pets", "Casa")
     var title by remember { mutableStateOf(entry?.title ?: "") }; var unit by remember { mutableStateOf(entry?.unit ?: "un") }; var storageRoom by remember { mutableStateOf(entry?.storageRoom?.takeIf { it.isNotBlank() } ?: entry?.let { suggestedStorageRoom(it.title,it.category) } ?: "Casa") }; var customRoom by remember { mutableStateOf(entry?.storageRoom?.takeIf { it.isNotBlank() && it !in roomChoices }.orEmpty()) }
     var recipient by remember { mutableStateOf(entry?.recipient?.ifBlank { "Casa" } ?: "Casa") }; var needGroup by remember { mutableStateOf(entry?.group?.ifBlank { "Essenciais" } ?: "Essenciais") }; var subgroup by remember { mutableStateOf(entry?.subgroup.orEmpty()) }; var priority by remember { mutableStateOf(entry?.priority?.ifBlank { "Normal" } ?: "Normal") }
     var planned by remember { mutableStateOf(quantityInput(entry?.plannedMilli ?: 1000)) }; var actualQty by remember { mutableStateOf(quantityInput(entry?.actualMilli ?: 1000)) }
-    var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought ?: false) }
+    var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought == true || startBought) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     EditDialog(if (entry == null) "Novo item" else "Ficha do produto", dismiss, save = { vm.action {
         require(title.isNotBlank()) { "Informe o produto." }
@@ -495,12 +496,41 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
         if (bought) item.real()
         vm.repo.editBasket(basket.market, basket.revision.takeIf { vm.repo.data.value.baskets.containsKey(basket.market) }) { it.copy(entries = it.entries.filterNot { e -> e.id == id } + item) }; dismiss()
     } }, busy = busy) {
-        Field("Produto", title, { title = it }); Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it }); Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it }); Field("Subgrupo opcional", subgroup, { subgroup=it }); Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it }); Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it }); if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it }); Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
-        Field("Quantidade prevista", planned, { planned = it }); Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
-        Text("Preço por $unit. Para 500 g a R$ 0,04/g, use quantidade 500; para 0,5 kg a R$ 40/kg, use 0,5.", style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" }); Text("Foi comprado") }
-        if (bought) { Field("Quantidade comprada", actualQty, { actualQty = it }); Field("Preço real por unidade (R$)", real, { real = it }) }
-        if (entry != null && basket.entries.any { it.id==entry.id }) TextButton(onClick = { vm.action { vm.repo.editBasket(basket.market, basket.revision) { it.copy(entries = it.entries.filterNot { e -> e.id == id }) }; dismiss() } }, enabled = !busy) { Text("Remover da sessão atual") }
+        Field("Produto", title, { title = it })
+        Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
+        Field("Quantidade", planned, { planned = it })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" })
+            Text("Já coloquei no carrinho", style = MaterialTheme.typography.bodyMedium)
+        }
+        if (bought) {
+            Field("Quantidade comprada", actualQty, { actualQty = it })
+            Field("Preço real por ${unit} (R$)", real, { real = it })
+            if (real.isBlank()) Text("Informe o preço para registrar a compra.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(if (advanced) "Ocultar opções do produto" else "Mais opções do produto")
+        }
+        if (advanced) {
+            Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient = it })
+            Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup = it })
+            Field("Subgrupo opcional", subgroup, { subgroup = it })
+            Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority = it })
+            Choice("Onde guardar", roomChoices + "Outro", if (storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it })
+            if (storageRoom == "Outro") Field("Nome do cômodo", customRoom, { customRoom = it })
+            Field("Preço previsto por unidade (opcional, R$)", estimated, { estimated = it })
+            if (entry != null && basket.entries.any { it.id == entry.id }) {
+                TextButton(onClick = {
+                    vm.action {
+                        vm.repo.editBasket(basket.market, basket.revision) {
+                            it.copy(entries = it.entries.filterNot { e -> e.id == id })
+                        }
+                        dismiss()
+                    }
+                }, enabled = !busy) { Text("Remover item da lista") }
+            }
+        }
     }
 }
 
