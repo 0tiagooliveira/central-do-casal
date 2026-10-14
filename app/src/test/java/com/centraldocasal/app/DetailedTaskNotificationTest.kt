@@ -81,6 +81,9 @@ class DetailedTaskNotificationTest {
             "owner" to "Rhayra"
         ))
         Reminders.schedule(context,"local",task,"Rhayra")
+        val channel=manager.getNotificationChannel("central-tasks-v2")
+        assertNotNull("O canal precisa existir antes do disparo para configurar no Android.", channel)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH,channel.importance)
         val alarms=context.getSystemService(AlarmManager::class.java)
         val before=shadowOf(alarms).peekNextScheduledAlarm()
         assertNotNull(before)
