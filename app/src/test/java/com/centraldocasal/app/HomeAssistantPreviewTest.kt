@@ -26,6 +26,24 @@ class HomeAssistantPreviewTest {
         }
     }
 
+    @Test fun controlUsesRealServiceEndpointAndRejectsSensitiveDevices() {
+        assertEquals("https://casa.example.org/api/services/light/turn_on",
+            HomeAssistantProbe.commandEndpoint("https://casa.example.org","light.sala",true).toString())
+        assertEquals("https://casa.example.org:8123/api/services/switch/turn_off",
+            HomeAssistantProbe.commandEndpoint("https://casa.example.org:8123","switch.tomada",false).toString())
+        for(id in listOf("lock.front_door","cover.garage","alarm_control_panel.home",
+            "climate.bedroom","automation.open_door","light.bad/path","switch.foo?all=1")) {
+            try {
+                HomeAssistantProbe.commandEndpoint("https://casa.example.org",id,true)
+                fail("Entidade sensível ou malformada não pode ser controlada: " + id)
+            } catch (expected: IllegalArgumentException) { /* bloqueado */ }
+        }
+        try {
+            HomeAssistantProbe.commandEndpoint("http://casa.example.org","light.sala",true)
+            fail("Credenciais não podem ser enviadas por HTTP.")
+        } catch (expected: IllegalArgumentException) { /* TLS obrigatório */ }
+    }
+
     @Test fun parsedStatesExcludePeopleLocationAndOtherSensitiveDomains() {
         val result=HomeAssistantProbe.parseStates(
             """[

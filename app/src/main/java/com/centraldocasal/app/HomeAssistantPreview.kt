@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -41,6 +42,45 @@ internal object HomeAssistantProbe {
         }
         require(uri.port in -1..65535 && uri.port != 0) { "Porta inválida." }
         return URI("https", null, uri.host, uri.port, "/api/states", null, null).toURL()
+    }
+
+    /** Narrow allowlist. Never expose locks, garage doors, cameras or scenes as generic switches. */
+    fun commandEndpoint(raw: String, entityId: String, turnOn: Boolean): URL {
+        require(Regex("^(light|switch)\\.[a-z0-9_]+$").matches(entityId)) {
+            "Só luzes e tomadas identificadas podem ser controladas."
+        }
+        val validated = endpoint(raw).toURI()
+        val service = if (turnOn) "turn_on" else "turn_off"
+        val path = "/api/services/" + entityId.substringBefore('.') + "/" + service
+        return URI("https", null, validated.host, validated.port, path, null, null).toURL()
+    }
+
+    /** Requires an explicit, one-off human command and keeps the credential only in RAM. */
+    suspend fun command(base: String, bearer: String, entityId: String, turnOn: Boolean) = withContext(Dispatchers.IO) {
+        require(bearer.length in 20..4096 && bearer.none { it == '\r' || it == '\n' }) {
+            "Credencial inválida."
+        }
+        val conn = commandEndpoint(base, entityId, turnOn).openConnection() as HttpURLConnection
+        try {
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.setRequestProperty("Authorization", "Bearer " + bearer)
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+                it.write(JSONObject().put("entity_id",entityId).toString())
+            }
+            val statusCode = conn.responseCode
+            require(statusCode == 200 || statusCode == 201) {
+                if (statusCode == 401 || statusCode == 403) "Acesso recusado pelo Home Assistant."
+                else "O Home Assistant não confirmou o comando (HTTP " + statusCode + ")."
+            }
+        } finally {
+            conn.disconnect()
+        }
     }
 
     fun parseStates(json: String): List<HomeAssistantEntity> {
@@ -102,11 +142,13 @@ internal fun HomeAssistantPreviewCard() {
     var entities by remember { mutableStateOf<List<HomeAssistantEntity>>(emptyList()) }
     var status by remember { mutableStateOf("Nenhuma conexão consultada neste aparelho.") }
     var loading by remember { mutableStateOf(false) }
+    var pendingCommand by remember { mutableStateOf<Pair<HomeAssistantEntity,Boolean>?>(null) }
+    var commandCredential by remember { mutableStateOf("") }
 
     ElevatedCard(Modifier.fillMaxWidth(),shape=androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Text("Home Assistant · consulta real",style=MaterialTheme.typography.titleMedium)
-            Text("Leitura experimental dos aparelhos já conectados ao seu Home Assistant. Não liga, desliga nem altera dispositivos.",style=MaterialTheme.typography.bodySmall)
+            Text("Consulta real de estados e controle manual experimental de luzes/tomadas, sempre com confirmação. Outros dispositivos permanecem somente leitura.",style=MaterialTheme.typography.bodySmall)
             OutlinedTextField(
                 value=baseUrl,onValueChange={baseUrl=it},
                 label={Text("Endereço HTTPS da sua instância")},
@@ -145,10 +187,70 @@ internal fun HomeAssistantPreviewCard() {
                         Text(entity.title,style=MaterialTheme.typography.bodyMedium)
                         Text(entity.id,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(entity.state,style=MaterialTheme.typography.bodyMedium)
+                    Column {
+                        Text(entity.state,style=MaterialTheme.typography.bodyMedium)
+                        if(entity.domain in listOf("light","switch") &&
+                            entity.state in listOf("on","off")) {
+                            TextButton(
+                                onClick={pendingCommand=entity to (entity.state!="on")},
+                                enabled=!loading
+                            ) { Text(if(entity.state=="on") "Desligar" else "Ligar") }
+                        }
+                    }
                 }
             }
             if(entities.size>20)Text("Mais ${entities.size-20} dispositivo(s). Exibição limitada nesta primeira versão.",style=MaterialTheme.typography.bodySmall)
         }
+    }
+    pendingCommand?.let { (device, turnOn) ->
+        AlertDialog(
+            onDismissRequest={
+                if(!loading) { pendingCommand=null; commandCredential="" }
+            },
+            title={Text(if(turnOn) "Confirmar: ligar" else "Confirmar: desligar")},
+            text={
+                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Text(device.title,style=MaterialTheme.typography.titleMedium)
+                    Text("Entidade: " + device.id,style=MaterialTheme.typography.bodySmall)
+                    Text("O comando será enviado somente após confirmar. Não controla alarmes, fechaduras nem outros dispositivos sensíveis.",style=MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        commandCredential,{commandCredential=it},
+                        label={Text("Token Home Assistant para este comando")},
+                        visualTransformation=PasswordVisualTransformation(),
+                        singleLine=true,modifier=Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton={
+                Button(
+                    enabled=!loading && commandCredential.length in 20..4096,
+                    onClick={
+                        val credential=commandCredential
+                        val base=baseUrl
+                        commandCredential=""
+                        pendingCommand=null
+                        loading=true
+                        scope.launch {
+                            try {
+                                HomeAssistantProbe.command(base,credential,device.id,turnOn)
+                                val refreshed=HomeAssistantProbe.read(base,credential)
+                                entities=refreshed
+                                val state=refreshed.firstOrNull { it.id==device.id }?.state
+                                status=if(state==(if(turnOn) "on" else "off")) {
+                                    "Estado confirmado na consulta: " + device.title + " " + (if(turnOn) "ligado." else "desligado.")
+                                } else {
+                                    "Comando aceito pelo Home Assistant; estado ainda não confirmado. Consulte novamente."
+                                }
+                            } catch (_:Exception) {
+                                status="Não foi possível confirmar o comando. Verifique conexão e permissões no Home Assistant."
+                            } finally { loading=false }
+                        }
+                    }
+                ) { Text("Confirmar comando") }
+            },
+            dismissButton={
+                TextButton(onClick={pendingCommand=null;commandCredential=""},enabled=!loading) { Text("Cancelar") }
+            }
+        )
     }
 }
