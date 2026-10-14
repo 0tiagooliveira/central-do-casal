@@ -1,12 +1,17 @@
 package com.centraldocasal.app
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,6 +70,8 @@ internal object WeatherSource {
     @Volatile private var lastForecast: Cache? = null
     private const val CACHE_MILLIS = 15 * 60 * 1000L
 
+    fun lastKnown(): WeatherSnapshot? = lastForecast?.takeIf { System.currentTimeMillis()-it.savedAt in 0L..CACHE_MILLIS }?.forecast
+
     fun parse(json: String): WeatherSnapshot {
         val root=JSONObject(json)
         if(root.optBoolean("error",false)) error("Previsão indisponível")
@@ -113,64 +120,91 @@ internal object WeatherSource {
     }
 }
 
+
 @Composable
 internal fun WeatherCard(requestLocationPermission: () -> Unit) {
-    val context=LocalContext.current
-    val scope=rememberCoroutineScope()
-    var weather by remember { mutableStateOf<WeatherSnapshot?>(null) }
+    val context = LocalContext.current
+    val owner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    var allowed by remember { mutableStateOf(SafetyLocationReader.permitted(context)) }
+    var weather by remember { mutableStateOf(WeatherSource.lastKnown()) }
     var loading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text("Tempo onde você está",style=MaterialTheme.typography.titleMedium)
-            val data=weather
-            if(data!=null) {
-                Text("${data.temperature.toInt()} °C · ${data.description}",style=MaterialTheme.typography.titleLarge)
-                Text("Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(data.fetchedAtMillis))} · atualizado sob demanda",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Sensação de ${data.feelsLike.toInt()} °C · Mín. ${data.todayLow.toInt()} °C · Máx. ${data.todayHigh.toInt()} °C")
-                Text("Umidade ${data.humidity}% · Vento ${data.wind.toInt()} km/h" +
-                    (data.rainChance?.let { " · Chance de chuva $it%" } ?: ""),style=MaterialTheme.typography.bodySmall)
-                if (data.tomorrowHigh != null && data.tomorrowLow != null) {
-                    HorizontalDivider()
-                    Text("Amanhã", style = MaterialTheme.typography.titleSmall)
-                    Text("Mín. ${data.tomorrowLow.roundToInt()} °C · Máx. ${data.tomorrowHigh.roundToInt()} °C" +
-                        (data.tomorrowRainChance?.let { " · Chuva: até $it% de probabilidade" } ?: ""),
-                        style = MaterialTheme.typography.bodySmall)
-                    if ((data.tomorrowRainChance ?: 0) >= 60) {
-                        Text("Pode chover amanhã. Confira a previsão antes de organizar os deslocamentos.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    var error by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) allowed = SafetyLocationReader.permitted(context)
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
+    suspend fun obtainWeather() {
+        if (!SafetyLocationReader.permitted(context) || loading) return
+        loading = true
+        error = null
+        try {
+            val coordinate = suspendCancellableCoroutine<SafetyLocation?> { continuation ->
+                SafetyLocationReader.request(context) { result ->
+                    if (continuation.isActive) continuation.resume(result)
+                }
+            }
+            val current = coordinate?.takeIf { point ->
+                System.currentTimeMillis() - point.capturedAt in 0L..3_600_000L
+            }
+            if (current == null) {
+                error = "Não foi possível localizar este aparelho. Confira a permissão e o GPS."
+            } else {
+                weather = WeatherSource.fetch(current.latitude, current.longitude)
+            }
+        } catch (_: Exception) {
+            error = "Previsão temporariamente indisponível. Toque para tentar de novo."
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(allowed) {
+        if (allowed && WeatherSource.lastKnown() == null) obtainWeather()
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .40f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("PREVISÃO DE HOJE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    val data = weather
+                    if (data != null) {
+                        Text("${data.temperature.roundToInt()}° · ${data.description}",
+                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text("Mín. ${data.todayLow.roundToInt()}°   Máx. ${data.todayHigh.roundToInt()}°" +
+                            (data.rainChance?.let { "   Chuva $it%" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall)
+                    } else if (loading) {
+                        Text("Buscando o tempo…", style = MaterialTheme.typography.titleMedium)
+                    } else {
+                        Text(if (allowed) "Tempo indisponível" else "Veja o tempo da sua região",
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
-            } else {
-                Text("Consulte a previsão para sua localização, somente quando desejar.",style=MaterialTheme.typography.bodySmall)
-            }
-            if(message!=null) Text(message.orEmpty(),color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick={
-                    if(!SafetyLocationReader.permitted(context)) {
-                        message="Permita a localização e toque novamente para consultar."
-                        requestLocationPermission()
-                    } else {
-                        loading=true
-                        message=null
-                        SafetyLocationReader.request(context) { coordinate ->
-                            if(coordinate==null || System.currentTimeMillis()-coordinate.capturedAt > 60*60*1000L) {
-                                loading=false
-                                message="Não encontramos uma localização recente. Ative a localização e tente novamente."
-                            } else scope.launch {
-                                runCatching { WeatherSource.fetch(coordinate.latitude,coordinate.longitude) }
-                                    .onSuccess { weather=it }
-                                    .onFailure { message="Não foi possível buscar a previsão agora. Confira sua conexão." }
-                                loading=false
-                            }
-                        }
+                if (!allowed) {
+                    TextButton(onClick = requestLocationPermission) { Text("Ativar") }
+                } else {
+                    TextButton(onClick = { scope.launch { obtainWeather() } }, enabled = !loading) {
+                        Text(if (loading) "…" else "Atualizar")
                     }
-                },enabled=!loading) { Text(if(loading) "Consultando…" else if(data!=null) "Atualizar tempo" else "Ver previsão") }
+                }
             }
-            TextButton(onClick={
-                context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))
-            },contentPadding=PaddingValues(0.dp)) { Text("Previsão: Open-Meteo · CC BY 4.0",style=MaterialTheme.typography.labelSmall) }
-            Text("Enviamos ao Open-Meteo apenas coordenadas arredondadas a 2 casas decimais (cerca de 1 km). Não salvamos localização da previsão no Firebase. A mesma região utiliza cache em memória por até 15 minutos.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if (error != null) Text(error.orEmpty(),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (weather != null && (weather?.tomorrowRainChance ?: 0) >= 60) {
+                Text("Amanhã pode chover. Vale conferir antes de sair.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
