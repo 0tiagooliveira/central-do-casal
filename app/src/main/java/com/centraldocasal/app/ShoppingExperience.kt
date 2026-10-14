@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.centraldocasal.app.data.DataState
 import com.centraldocasal.app.data.SessionState
@@ -61,11 +63,20 @@ internal fun ShoppingSessionScreen(
     market: String,
     onFeedback: () -> Unit = {},
     onQuickSave: (Entry) -> Unit = {},
-    onReview: () -> Unit = {}
+    onReview: () -> Unit = {},
+    onQuickAdd: (String) -> Unit = {}
 ) {
     val basket = data.baskets[market] ?: remember(market) { Basket(market) }
     var mode by rememberSaveable { mutableStateOf("Planejar") }
     var search by rememberSaveable { mutableStateOf("") }
+    var quickName by rememberSaveable(market) { mutableStateOf("") }
+    fun addQuick() {
+        val title = quickName.trim()
+        if (title.isNotEmpty() && !busy) {
+            onQuickAdd(title)
+            quickName = ""
+        }
+    }
     val motion = LocalExperience.current.motion
     val cart = basket.entries.filter { it.bought }
     val pending = basket.entries.filterNot { it.bought }
@@ -100,6 +111,33 @@ internal fun ShoppingSessionScreen(
                     }
                 })
                 ChoiceStrip(listOf("Mercado", "Açougue"), market, onSelect = { option -> feedback { onMarket(option); search = "" } })
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .36f)),
+                shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("O que falta comprar?", style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            quickName, { quickName = it },
+                            placeholder = { Text("Ex.: Chocolate, leite, pão") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { addQuick() }),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Button(onClick = ::addQuick, enabled = quickName.isNotBlank() && !busy,
+                            contentPadding = PaddingValues(horizontal = 14.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = "Adicionar à lista")
+                        }
+                    }
+                    Text("Adicione pelo nome. Quantidade, preço e categorias podem ser ajustados depois.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         item {
