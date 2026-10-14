@@ -773,8 +773,15 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         if(reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
         item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
         item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
-        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (details) Text("Previsão meteorológica: dados Open-Meteo (CC BY 4.0). O serviço recebe somente coordenadas aproximadas e não armazenamos a posição da previsão no Firebase.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        item {
+            TextButton(onClick = { details = !details }) {
+                Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão")
+            }
+            if (details) {
+                Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Previsão meteorológica: dados Open-Meteo (CC BY 4.0). O serviço recebe somente coordenadas aproximadas e não armazenamos a posição da previsão no Firebase.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Sair do espaço?") }, text = { Text("Sua conta perde acesso aos registros compartilhados. Seus registros privados permanecem na sua conta. O histórico do espaço é preservado.") }, confirmButton = { Button(onClick = { vm.action { Reminders.cancelAll(vm.getApplication(), session.uid); vm.repo.leaveHouse(); leaving = false } }) { Text("Sair do espaço") } }, dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancelar") } })
