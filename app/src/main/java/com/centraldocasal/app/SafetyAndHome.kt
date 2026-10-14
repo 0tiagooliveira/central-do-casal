@@ -161,7 +161,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Text("SOS rápido",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onErrorContainer,fontWeight=FontWeight.Bold)
                     Text("Registra imediatamente o alerta; só inclui localização recente já obtida. O parceiro não receberá aviso garantido com o app fechado. Para emergências, utilize ligação direta.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer)
-                    Button(enabled=!busy && !locating,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
+                    Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
                     Text("Configure ou altere o telefone do parceiro abaixo.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -190,7 +190,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy && !locating,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
+                Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }
