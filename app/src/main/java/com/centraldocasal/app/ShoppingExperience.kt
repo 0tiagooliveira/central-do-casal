@@ -171,7 +171,7 @@ internal fun ShoppingSessionScreen(
         }
         if (mode == "Modo Mercado") item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("No mercado · ¤{pending.size} faltando".replace("¤","$"), style = MaterialTheme.typography.titleMedium)
+                Text("No mercado · ${pending.size} faltando", style = MaterialTheme.typography.titleMedium)
                 Text("Toque no item, confira preço e quantidade e coloque no carrinho.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
