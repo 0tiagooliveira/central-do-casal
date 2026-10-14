@@ -118,6 +118,42 @@ class DetailedTaskNotificationTest {
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
     }
 
+    @Test fun privateTaskKeepsFullDetailsInShadeButGenericPublicVersion() {
+        val task=Record("private-lock","task",true,mapOf(
+            "title" to "Consulta privada", "note" to "Informação sensível",
+            "time" to "16:00", "date" to LocalDate.now().plusDays(1).toString(),
+            "repeat" to "Única", "owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        TaskAlarmReceiver().onReceive(context,
+            Intent("com.centraldocasal.app.TASK_ALARM").putExtra("uid","local").putExtra("id",task.id))
+        val notice=shadowOf(manager).allNotifications.single()
+        assertEquals("Consulta privada",notice.extras.getCharSequence("android.title").toString())
+        assertNotNull(notice.publicVersion)
+        assertEquals("Lembrete de tarefa",notice.publicVersion.extras.getCharSequence("android.title").toString())
+        assertFalse(notice.publicVersion.extras.toString().contains("Informação sensível"))
+        assertFalse(notice.publicVersion.extras.toString().contains("Consulta privada"))
+    }
+
+    @Test fun recurringReminderKeepsNextAlarmEvenWhenAndroidBlocksDelivery() {
+        val day=LocalDate.now().plusDays(1)
+        val task=Record("blocked-recurring","task",fields=mapOf(
+            "title" to "Dar ração para a Mel", "note" to "Separar porção",
+            "time" to "16:00", "date" to day.toString(),
+            "repeat" to "Diária", "owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        shadowOf(manager).setNotificationsEnabled(false)
+        TaskAlarmReceiver().onReceive(context,Intent("com.centraldocasal.app.TASK_ALARM")
+            .putExtra("uid","local").putExtra("id",task.id).putExtra("scheduledDay",day.toString()))
+        assertTrue(shadowOf(manager).allNotifications.isEmpty())
+        val health=Reminders.diagnostics(context,"local")
+        assertNotNull("O Android bloqueou a entrega e o diagnóstico deve registrar isso.",health.lastDeliveryBlockedAt)
+        assertEquals(1,health.futureSchedules)
+        assertNotNull(health.nextAt)
+        assertTrue(health.nextAt!! >= day.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+    }
+
     @Test fun diagnosticsExplainWhyOneTaskDoesNotNotify() {
         val future = LocalDate.now().plusDays(2).toString()
         val ordinary=Record("eligible","task",fields=mapOf(
