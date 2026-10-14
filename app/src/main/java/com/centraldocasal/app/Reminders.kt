@@ -37,6 +37,9 @@ object Reminders {
 
     private fun store(context: Context) = context.getSharedPreferences(CACHE, Context.MODE_PRIVATE)
     private fun key(uid: String, id: String) = "record_$uid:$id"
+    private fun fingerprintKey(uid: String, id: String) = "fingerprint_$uid:$id"
+    private fun plannedKey(uid: String, id: String) = "planned_$uid:$id"
+
     private fun alarmIntent(context: Context, uid: String, id: String) =
         Intent(context, TaskAlarmReceiver::class.java).apply {
             action = ACTION
@@ -84,7 +87,7 @@ object Reminders {
         val p = store(context)
         val names = p.getStringSet("$ID_LIST:$uid", emptySet()).orEmpty().toMutableSet()
         names.remove(id)
-        p.edit().remove(key(uid,id)).putStringSet("$ID_LIST:$uid", names).apply()
+        p.edit().remove(key(uid,id)).remove(fingerprintKey(uid,id)).remove(plannedKey(uid,id)).putStringSet("$ID_LIST:$uid", names).apply()
     }
 
     private fun read(context: Context, uid: String, id: String): Record? =
@@ -106,31 +109,50 @@ object Reminders {
             ))
         }.getOrNull()
 
-    fun schedule(context: Context, uid: String, record: Record, profileName: String = "", completedDay: LocalDate? = null) {
+    fun schedule(context: Context, uid: String, record: Record, profileName: String = "", completedDay: LocalDate? = null, forceRearm: Boolean = false) {
         if(uid.isBlank() || record.kind != "task") return
         val pref=prefs(context,uid)
         if(profileName.isNotBlank()) pref.edit().putString("profileName",profileName).apply()
         val name=profileName.ifBlank { pref.getString("profileName","").orEmpty() }
-        cancelAlarm(context,uid,record.id)
         if(record.flag("skipReminder") || record.flag("needsReview") || record.flag("needsTimeReview") ||
            !pref.getBoolean("enabled",true) || !belongs(record,name)) {
+            cancelAlarm(context,uid,record.id)
             forget(context,uid,record.id)
             return
         }
         val time=runCatching { LocalTime.parse(record.text("time")) }.getOrNull()
         val start=runCatching { LocalDate.parse(record.text("date")) }.getOrNull()
-        if(time==null || start==null) { forget(context,uid,record.id);return }
+        if(time==null || start==null) { cancelAlarm(context,uid,record.id);forget(context,uid,record.id);return }
         val today=maxOf(LocalDate.now(),start)
         val upcoming=(0..366).asSequence().map { today.plusDays(it.toLong()) }.firstOrNull {
             it!=completedDay && occurs(record,it) &&
                 it.atTime(time).atZone(ZoneId.systemDefault()).toInstant().isAfter(Instant.now())
         }
-        if(upcoming==null){forget(context,uid,record.id);return}
+        if(upcoming==null){cancelAlarm(context,uid,record.id);forget(context,uid,record.id);return}
+        val p=store(context)
+        val exact=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
+        val fingerprint=(listOf(upcoming.toString(),time.toString(),name,
+            pref.getBoolean("quiet",true).toString(),exact.toString(),
+            ZoneId.systemDefault().id,record.toMap().toSortedMap().toString()).joinToString("|"))
+            .hashCode().toString()
+        if(!forceRearm && p.getString(fingerprintKey(uid,record.id),null)==fingerprint &&
+            p.getLong(plannedKey(uid,record.id),0L)>System.currentTimeMillis()) return
+        cancelAlarm(context,uid,record.id)
         cache(context,uid,record)
-        plan(context,uid,record.id,upcoming,time)
+        try {
+            val scheduledAt=plan(context,uid,record.id,upcoming,time)
+            if(scheduledAt>0L) {
+                p.edit().putString(fingerprintKey(uid,record.id),fingerprint)
+                    .putLong(plannedKey(uid,record.id),scheduledAt)
+                    .apply()
+            } else forget(context,uid,record.id)
+        } catch (_:Exception) {
+            forget(context,uid,record.id)
+            p.edit().putLong("lastScheduleFailed:$uid",System.currentTimeMillis()).apply()
+        }
     }
 
-    private fun plan(context:Context,uid:String,id:String,date:LocalDate,time:LocalTime) {
+    private fun plan(context:Context,uid:String,id:String,date:LocalDate,time:LocalTime):Long {
         var instant=date.atTime(time).atZone(ZoneId.systemDefault()).toInstant()
         val p=prefs(context,uid)
         if(p.getBoolean("quiet",true)){
@@ -142,8 +164,9 @@ object Reminders {
             }
         }
         val whenMillis=instant.toEpochMilli()
-        if(whenMillis<=System.currentTimeMillis())return
+        if(whenMillis<=System.currentTimeMillis())return 0L
         arm(context,uid,id,whenMillis)
+        return whenMillis
     }
 
     private fun cancelAlarm(context:Context,uid:String,id:String) {
@@ -151,7 +174,7 @@ object Reminders {
     }
     fun cancel(context:Context,uid:String,id:String,day:LocalDate) {
         cancelAlarm(context,uid,id)
-        read(context,uid,id)?.let { schedule(context,uid,it,completedDay=day) }
+        read(context,uid,id)?.let { schedule(context,uid,it,completedDay=day,forceRearm=true) }
     }
     fun cancelTask(context:Context,uid:String,id:String) {
         cancelAlarm(context,uid,id)
@@ -175,8 +198,37 @@ object Reminders {
         val uid=context.getSharedPreferences("central_local_v1",Context.MODE_PRIVATE).getString("activeUid","").orEmpty()
         if(uid.isBlank())return
         val ids=store(context).getStringSet("$ID_LIST:$uid",emptySet()).orEmpty().toList()
-        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it) } }
+        ids.forEach { id -> read(context,uid,id)?.let { schedule(context,uid,it,forceRearm=true) } }
     }
+    data class Diagnostics(
+        val knownTasks: Int,
+        val futureSchedules: Int,
+        val nextAt: Long?,
+        val lastDeliveredAt: Long?,
+        val lastFailedAt: Long?,
+        val notificationsAllowed: Boolean,
+        val taskChannelAllowed: Boolean,
+        val exactAlarmsAllowed: Boolean
+    )
+
+    fun diagnostics(context: Context, uid: String): Diagnostics {
+        val p=store(context)
+        val now=System.currentTimeMillis()
+        val ids=p.getStringSet("$ID_LIST:$uid",emptySet()).orEmpty()
+        val planned=ids.map { p.getLong(plannedKey(uid,it),0L) }.filter { it>now }
+        val channel=context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(CHANNEL)
+        return Diagnostics(
+            knownTasks=ids.size,
+            futureSchedules=planned.size,
+            nextAt=planned.minOrNull(),
+            lastDeliveredAt=p.getLong("lastDelivered:$uid",0L).takeIf { it>0L },
+            lastFailedAt=p.getLong("lastScheduleFailed:$uid",0L).takeIf { it>0L },
+            notificationsAllowed=AndroidInteractions.notificationsAllowed(context),
+            taskChannelAllowed=channel?.importance != NotificationManager.IMPORTANCE_NONE,
+            exactAlarmsAllowed=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
+        )
+    }
+
     /** Manual device-only test: uses the same channel and payload as real tasks. */
     fun sendDetailedTest(context:Context,uid:String,profileName:String):String {
         if(uid.isBlank())return "Entre na conta para testar."
@@ -273,11 +325,17 @@ object Reminders {
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setVisibility(if(pref.getBoolean("showDetailsOnLockScreen",false)) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(tap)
             .setAutoCancel(true)
             .build()
-        manager.notify((uid+id).hashCode(),notice)
+        try {
+            manager.notify((uid+id).hashCode(),notice)
+            store(context).edit().putLong("lastDelivered:$uid",System.currentTimeMillis()).apply()
+        } catch (_:SecurityException) {
+            store(context).edit().putLong("lastScheduleFailed:$uid",System.currentTimeMillis()).apply()
+            return
+        }
         // The next occurrence is computed locally; no Firebase call in a background receiver.
         if(task.text("repeat") in listOf("Diária","Semanal","Dias da semana","Mensal","Primeiro domingo após dia 8")) {
             schedule(context,uid,task,completedDay=date)
@@ -298,7 +356,9 @@ class TaskAlarmReceiver:BroadcastReceiver() {
 
 class TaskBootReceiver:BroadcastReceiver() {
     override fun onReceive(context:Context,intent:Intent) {
-        if(intent.action==Intent.ACTION_BOOT_COMPLETED || intent.action==Intent.ACTION_MY_PACKAGE_REPLACED) Reminders.restore(context)
+        if(intent.action in setOf(Intent.ACTION_BOOT_COMPLETED,Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED,Intent.ACTION_TIMEZONE_CHANGED,
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)) Reminders.restore(context)
     }
 }
 

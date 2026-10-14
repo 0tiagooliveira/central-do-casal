@@ -74,6 +74,47 @@ class DetailedTaskNotificationTest {
             .getStringSet("tasks:local", emptySet()).orEmpty().contains(diagnostic))
     }
 
+    @Test fun refreshingUnchangedTaskPreservesItsPendingAlarm() {
+        val task=Record("stable-task","task",fields=mapOf(
+            "title" to "Buscar a Rhayra", "time" to "16:00",
+            "date" to LocalDate.now().plusDays(1).toString(), "repeat" to "Única",
+            "owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val alarms=context.getSystemService(AlarmManager::class.java)
+        val before=shadowOf(alarms).peekNextScheduledAlarm()
+        assertNotNull(before)
+        val planned=context.getSharedPreferences("central_task_alarm_cache",Context.MODE_PRIVATE)
+            .getLong("planned_local:stable-task",0L)
+        assertTrue(planned>System.currentTimeMillis())
+        Reminders.schedule(context,"local",task,"Rhayra")
+        assertSame("Refrescar o Firestore não pode substituir o alarme pendente.",before,shadowOf(alarms).peekNextScheduledAlarm())
+        assertEquals(planned,context.getSharedPreferences("central_task_alarm_cache",Context.MODE_PRIVATE)
+            .getLong("planned_local:stable-task",0L))
+        val health=Reminders.diagnostics(context,"local")
+        assertEquals(1,health.futureSchedules)
+        assertEquals(planned,health.nextAt)
+    }
+
+    @Test fun privateTaskDetailsOnLockScreenRequireExplicitOptIn() {
+        val task=Record("privacy-task","task",fields=mapOf(
+            "title" to "Consulta pessoal", "note" to "Informação privada",
+            "time" to "15:00","date" to LocalDate.now().plusDays(1).toString(),
+            "repeat" to "Única","owner" to "Rhayra"
+        ))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val intent=Intent("com.centraldocasal.app.TASK_ALARM").putExtra("uid","local").putExtra("id","privacy-task")
+        TaskAlarmReceiver().onReceive(context,intent)
+        assertEquals(android.app.Notification.VISIBILITY_PRIVATE,shadowOf(manager).allNotifications.single().visibility)
+        context.getSharedPreferences("reminders_local",Context.MODE_PRIVATE)
+            .edit().putBoolean("showDetailsOnLockScreen",true).commit()
+        // A tarefa única foi consumida no primeiro disparo; recadastre para a segunda entrega.
+        Reminders.schedule(context,"local",task,"Rhayra")
+        TaskAlarmReceiver().onReceive(context,intent)
+        assertEquals(android.app.Notification.VISIBILITY_PUBLIC,shadowOf(manager).allNotifications.single().visibility)
+        assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
+    }
+
     @Test fun anotherUsersPrivateTaskDoesNotAppearOnThisDevice() {
         val task=Record("other-owner","task",fields=mapOf(
             "title" to "Lembrete do Tiago",
