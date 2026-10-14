@@ -220,7 +220,14 @@ object Reminders {
             }
         }
         val whenMillis=instant.toEpochMilli()
-        if(whenMillis<=System.currentTimeMillis())return 0L
+        // A janela silenciosa pode deslocar o aviso para amanhã. Se o horário
+        // resultante já passou, não apagar a tarefa: reagendar na próxima janela.
+        if(whenMillis<=System.currentTimeMillis()) {
+            val retry=date.plusDays(1).atTime(5,40).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            if(retry<=System.currentTimeMillis()) return 0L
+            arm(context,uid,id,retry,date)
+            return retry
+        }
         arm(context,uid,id,whenMillis,date)
         return whenMillis
     }
