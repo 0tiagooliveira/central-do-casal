@@ -1,0 +1,14 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.jks
+*.keystore
+node_modules/
+*-debug.log
+.env
+.env.*
+!.env.example
+service-account*.json
+firebase-debug.log
+firestore-debug.log

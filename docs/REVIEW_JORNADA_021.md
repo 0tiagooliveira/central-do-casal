@@ -1,0 +1,17 @@
+# Revisão de jornada — código atual
+
+Leitura das cinco abas e seus componentes, em 11/10/2026. Esta revisão não certifica aparência no aparelho, sincronização entre contas ou instalação do APK.
+
+O encadeamento esperado é concreto: organizar o que já existe, executar uma atividade ou compra, guardar o que aconteceu e usar esse histórico para a próxima decisão. Hoje há ações reais, mas alguns atalhos perdem o contexto que motivou o toque.
+
+1. **Rotina: o pedido de revisão termina em uma lista que esconde o registro.** `HomeExperience.kt` conta tarefas com `needsReview`/`needsTimeReview` e oferece “Revisar rotinas”. O callback apenas seleciona Rotina. Em `MainActivity.kt`, `RoutineScreen` começa com `showAll=false`; `occurs` exclui `needsReview`. Resultado: a pessoa recebe um aviso e não encontra a rotina ao abri-lo. Correção: destino “A confirmar” ou filtro inicial específico. Verificação: tocar no aviso deve mostrar as rotinas contadas, com edição direta; não ativar lembretes automaticamente.
+
+2. **Home/Planos: uma referência organizada passa a contar como dois projetos.** `HomeExperience.kt` soma `plan` e `importedPlan`. `PlansExperience.kt` transforma a referência em plano com `sourcePlanId`, preservando o importado. O botão de organizar já some após a conversão, mas o contador da Home cresce mesmo sem existir uma segunda iniciativa. Correção: descontar referências já ligadas a um plano, ou separar “Projetos ativos” de “Ideias”. Verificação: organizar uma referência não duplica o total da mesma iniciativa.
+
+3. **Compras: “Abrir carrinho” não transporta mercado nem modo.** Cada insight em `HomeExperience.kt` conhece `basket.market`, mas seu callback só seleciona Compras. `ShoppingHub.kt` inicia Mercado/Lista e `ShoppingSessionScreen` controla Planejar/Modo Mercado/Carrinho internamente. Resultado: um aviso do Açougue pode abrir a lista de Mercado; tocar em saldo não abre o carrinho. Correção: transportar mercado e modo na navegação. Verificação: o atalho de cada saldo abre exatamente aquele carrinho e mantém o período da compra. A vinculação catálogo/preços/histórico que root está corrigindo deve manter esses mesmos identificadores.
+
+4. **Nós: desligar a jornada também esconde as lembranças do Baú.** Em `MainActivity.kt`, `TogetherScreen` verifica `level == "Desligado"` antes de distinguir Jornada de Baú. Assim, memórias de experiências já confirmadas deixam de aparecer quando a atmosfera é desligada. Correção: aplicar a preferência somente às novas propostas; Baú continua legível. Verificação: duas confirmações reais continuam acessíveis depois de desligar a atmosfera, sem criar novos aceites ou progresso.
+
+5. **Planos/Rotina: o próximo passo fica isolado do dia.** `GoalEditor.kt` grava “Próximo passo” em `note`; `PlansExperience.kt` permite etapas em `steps`, mas `HomeExperience.kt` só apresenta ocorrências de `task`. Uma etapa pendente não aparece no panorama diário e não há ponte explícita para agendá-la. Correção imediata: mostrar etapas pendentes como projetos a abrir, com origem clara; uma futura ação “Agendar” precisa gerar tarefa vinculada ao plano com escolha explícita de data/responsável. Verificação: concluir uma etapa não conclui tarefas por inferência e não altera saldo financeiro.
+
+`LifeOverview.kt` é uma opção pequena para expor a ligação entre tarefas, etapas, compras e lembranças usando os dados disponíveis. Ele não cria vínculos persistidos, não concilia contas e não substitui os destinos específicos acima.

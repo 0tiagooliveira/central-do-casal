@@ -1,0 +1,61 @@
+{
+  "mode": "ultraqa",
+  "active": false,
+  "current_phase": "qa_and_apk_delivery_complete",
+  "task_description": "QA e entregaAPK0.1.3concluidas. Uploadfonteopcionalaguardaaprovacaoexplicita,source_uploaded=false. NenhumaequipeOMXtmuxexecutada.",
+  "workingDirectory": "D:/CodexBuild/central-do-casal-2026-10-10/orchestration/omx-project",
+  "state": {
+    "workers": "native Codex collaboration",
+    "omx_tmux_team_executed": false,
+    "omx_worker_count": 0,
+    "fronts": [
+      {
+        "name": "dados_privacidade",
+        "status": "complete",
+        "evidence": "Generator: 74 registros; 50 compartilhados; 24 privados; 10 testes. Reportado pelo agente principal."
+      },
+      {
+        "name": "android_recorrencias",
+        "status": "complete",
+        "evidence": "Domain recurrences e Reminders; 8 testes. Reportado pelo agente principal."
+      },
+      {
+        "name": "integracao_entrega",
+        "status": "complete",
+        "evidence": "Nucleo/APK concluido;110tests0fail;APKonDrive17.230.717bytes;folder4files;appReleaseversion4/min4/hashURLserververified. Envio fonte tratado em frente separada."
+      },
+      {
+        "name": "qa_orquestracao",
+        "status": "complete",
+        "evidence": "OMXdoctor/AST/CRG reais,documentos/testes verificados; metadados delivery separaram APKpublicado de fonte local aguardando aprovacao."
+      },
+      {
+        "name": "fonte_publicacao",
+        "status": "pending_approval",
+        "evidence": "ZIPsanitizado53files221.962byteslocalready. Auto-review rejeitou egresssourcecode semaprovacaoexplicita. Solicitacao usuario pendente; fonte nao publicada."
+      }
+    ],
+    "delivery": {
+      "overall_status": "core_complete_optional_source_pending",
+      "core_status": "complete",
+      "apk_drive_verified": true,
+      "apk_size_bytes": 17230717,
+      "folder_files": [
+        "APK",
+        "LEIA-ME",
+        "VALIDACAO",
+        "SHA256"
+      ],
+      "app_release_server_verified": true,
+      "source_status": "pending_approval",
+      "source_uploaded": false,
+      "source_local_files": 53,
+      "source_local_bytes": 221962,
+      "approval_requested": true,
+      "source_optional": true,
+      "optional_source": "pending_approval"
+    }
+  },
+  "run_outcome": "finish",
+  "lifecycle_outcome": "finished"
+}

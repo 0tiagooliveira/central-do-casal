@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1092711646864",
+    "project_id": "central-do-casal",
+    "storage_bucket": "central-do-casal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1092711646864:android:9d530ba3125e8c0f497a15",
+        "android_client_info": {
+          "package_name": "com.centraldocasal.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1092711646864-ge0ottpdpvr9ksuo21bjm7u8igp1bqik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBS9nLXez2vs3xC86Og5BOE73qUVla_kcQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1092711646864-ge0ottpdpvr9ksuo21bjm7u8igp1bqik.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
