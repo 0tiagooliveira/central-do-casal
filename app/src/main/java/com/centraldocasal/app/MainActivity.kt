@@ -134,14 +134,16 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     val message by vm.message.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf("Hoje") }
     var route by rememberSaveable { mutableStateOf("") }
+    var requestedShoppingMarket by rememberSaveable { mutableStateOf<String?>(null) }
+    var requestedRoutineDate by rememberSaveable { mutableStateOf<String?>(null) }
     val snack = remember { SnackbarHostState() }
     val screenStates = rememberSaveableStateHolder()
     val view=LocalView.current; val experience=LocalExperience.current
     val context = LocalContext.current
     val alertPrefs = remember(session.uid) { context.getSharedPreferences("safety_alerts_${session.uid}", android.content.Context.MODE_PRIVATE) }
     LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.message.value = null } }
-    LaunchedEffect(session.uid) { route = ""; tab = "Hoje" }
-    LaunchedEffect(session.uid,openReminder) { if(openReminder && session.uid.isNotBlank()) { route="";tab="Rotina";consumeReminder() } }
+    LaunchedEffect(session.uid) { route = ""; tab = "Hoje"; requestedShoppingMarket = null; requestedRoutineDate = null }
+    LaunchedEffect(session.uid,openReminder) { if(openReminder && session.uid.isNotBlank()) { route="";tab="Rotina";requestedRoutineDate=null;consumeReminder() } }
     LaunchedEffect(session.uid, data.records) {
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
@@ -176,7 +178,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     }, bottomBar = {
         if (session.uid.isNotBlank() && route.isBlank()) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
             val icons = listOf(HomeLine, BasketLine, CalendarLine, PlanLine, HeartLine)
-            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = "" }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
+            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") requestedRoutineDate=null }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
         }
     }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -198,14 +200,14 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
-                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { tab = it })
-                    "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" })
+                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null })
+                    "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
-                    "Rotina" -> RoutineScreen(vm, session, data)
+                    "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate)
                     "Lembretes" -> ReminderInbox(session,data,openRoutine={route="";tab="Rotina"},openSettings={route="Configurações"})
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";tab="Compras"}) }
-                    "Planos" -> PlansScreen(vm, data, onOpenLinked = { destination -> route = ""; tab = destination })
+                    "Planos" -> PlansScreen(vm, data, onOpenLinked = { destination -> route = ""; when { destination.startsWith("Compras:") -> { requestedShoppingMarket=destination.substringAfter(":").takeIf { it in listOf("Mercado","Açougue") }; tab="Compras" }; destination.startsWith("Rotina:") -> { requestedRoutineDate=destination.substringAfter(":").takeIf { runCatching { LocalDate.parse(it) }.isSuccess }; tab="Rotina" }; else -> tab=destination } })
                     "Nós" -> TogetherScreen(vm, session, data)
                     "Finanças" -> FinanceScreen(vm, data)
                     "Saúde" -> HealthScreen(vm, data)
