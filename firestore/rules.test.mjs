@@ -86,12 +86,33 @@ test('stranger cannot forge household membership',async()=> {await assertFails(u
 test('member cannot add third party',async()=> {await assertFails(updateDoc(doc(db('alice'),'households/home'),{members:['alice','bob','eve']}));});
 test('user cannot point profile at unauthorized household',async()=> {await assertFails(setDoc(doc(db('eve'),'users/eve'),profile('eve')));});
 test('member cannot put health in shared collection',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/health'),record('alice','health')));});
+const safetyRecord = (uid,kind) => ({
+  kind,private:false,ownerUid:uid,ownerName:uid,
+  latitude:-25.0,longitude:-49.0,
+  mapUrl:'https://maps.google.com/?q=-25.0,-49.0',
+  ...(kind==='safetyAlert'?{createdAt:Date.now()}:{capturedAt:Date.now()}),
+  updatedBy:uid,updatedAt:serverTimestamp()
+});
 test('members can share house devices and safety state while strangers and private collections remain blocked',async()=>{
  const shared=db('alice');
- for(const kind of ['smartDevice','safetyCheckIn','safetyAlert']) await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),{...record('alice',kind),private:false}));
+ await assertSucceeds(setDoc(doc(shared,'households/home/records/smartDevice'),record('alice','smartDevice')));
+ for(const kind of ['safetyCheckIn','safetyAlert']) await assertSucceeds(setDoc(doc(shared,`households/home/records/${kind}`),safetyRecord('alice',kind)));
  await assertFails(setDoc(doc(db('eve'),'households/home/records/device'),{...record('eve','smartDevice'),private:false}));
  await assertFails(setDoc(doc(shared,'users/alice/records/private-device'),{...record('alice','smartDevice',true),private:true}));
  await assertFails(updateDoc(doc(shared,'households/home/records/safetyAlert'),{title:'não pode alterar alerta'}));
+});
+test('SOS identity belongs to authenticated writer and partner cannot rewrite a check-in',async()=>{
+ const alice=db('alice'), bob=db('bob');
+ await assertFails(setDoc(doc(alice,'households/home/records/forged-sos'),safetyRecord('bob','safetyAlert')));
+ await assertFails(setDoc(doc(alice,'households/home/records/forged-checkin'),safetyRecord('bob','safetyCheckIn')));
+ await assertFails(setDoc(doc(alice,'households/home/records/out-of-range'),{...safetyRecord('alice','safetyAlert'),latitude:100}));
+ const ref=doc(alice,'households/home/records/own-checkin');
+ await assertSucceeds(setDoc(ref,safetyRecord('alice','safetyCheckIn')));
+ await assertSucceeds(setDoc(ref,safetyRecord('alice','safetyCheckIn')));
+ await assertFails(setDoc(doc(bob,'households/home/records/own-checkin'),safetyRecord('bob','safetyCheckIn')));
+ await assertFails(updateDoc(doc(bob,'households/home/records/own-checkin'),{
+   ownerUid:'bob',ownerName:'bob',updatedBy:'bob',updatedAt:serverTimestamp()
+ }));
 });
 test('live location is scoped to owner, household, valid coordinates and expiry', async () => {
  const point=(uid,lat=-25.0,lon=-49.0)=>({
