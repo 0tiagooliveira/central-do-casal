@@ -86,6 +86,21 @@ class LocalRepositoryTest {
         repo.close()
     }
 
+    @Test fun planStepCannotBeDuplicatedAcrossMarketAndButcherBaskets() = runBlocking {
+        val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
+        repo.linkPlanStepToBasket("plan-b", "step-b", "Etapa de teste", "Mercado")
+        try {
+            repo.linkPlanStepToBasket("plan-b", "step-b", "Etapa de teste", "Açougue")
+            fail("Uma etapa não pode entrar duas vezes em listas diferentes.")
+        } catch (expected: IllegalArgumentException) {
+            assertEquals(1, repo.data.value.baskets.getValue("Mercado").entries.count {
+                it.sourcePlanId == "plan-b" && it.sourceStepId == "step-b"
+            })
+            assertTrue(repo.data.value.baskets["Açougue"]?.entries.isNullOrEmpty())
+        }
+        repo.close()
+    }
+
     @Test fun planStepRoutineLinkCreatesOnlyOneTaskAndKeepsOrigin() = runBlocking {
         val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
         val task = repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "Casa", "", true)
