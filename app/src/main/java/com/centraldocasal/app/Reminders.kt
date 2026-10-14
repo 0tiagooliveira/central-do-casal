@@ -252,6 +252,7 @@ object Reminders {
         val nextAt: Long?,
         val lastDeliveredAt: Long?,
         val lastFailedAt: Long?,
+        val lastDeliveryBlockedAt: Long?,
         val notificationsAllowed: Boolean,
         val taskChannelAllowed: Boolean,
         val exactAlarmsAllowed: Boolean
@@ -269,6 +270,7 @@ object Reminders {
             nextAt=planned.minOrNull(),
             lastDeliveredAt=p.getLong("lastDelivered:$uid",0L).takeIf { it>0L },
             lastFailedAt=p.getLong("lastScheduleFailed:$uid",0L).takeIf { it>0L },
+            lastDeliveryBlockedAt=p.getLong("lastDeliveryBlocked:$uid",0L).takeIf { it>0L },
             notificationsAllowed=AndroidInteractions.notificationsAllowed(context),
             taskChannelAllowed=channel?.importance != NotificationManager.IMPORTANCE_NONE,
             exactAlarmsAllowed=Build.VERSION.SDK_INT<31 || context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms()==true
@@ -348,10 +350,24 @@ object Reminders {
         if(!pref.getBoolean("enabled",true))return
         val time=runCatching{LocalTime.parse(task.text("time"))}.getOrNull() ?:return
         val date=scheduledDay
-        if(!AndroidInteractions.notificationsAllowed(context))return
-        val manager=context.getSystemService(NotificationManager::class.java) ?: return
+        // Mesmo quando o Android bloqueia a entrega, não perder a PRÓXIMA
+        // ocorrência de uma tarefa recorrente. Nenhum detalhe sai do aparelho.
+        fun advance() {
+            if (task.text("repeat") in listOf("Diária","Semanal","Dias da semana","Mensal","Primeiro domingo após dia 8")) {
+                schedule(context,uid,task,completedDay=date,forceRearm=true)
+            } else {
+                forget(context,uid,id)
+            }
+        }
         ensureChannel(context)
-        if(manager.getNotificationChannel(CHANNEL)?.importance==NotificationManager.IMPORTANCE_NONE)return
+        val manager=context.getSystemService(NotificationManager::class.java)
+        val notificationsAllowed=AndroidInteractions.notificationsAllowed(context)
+        val channelAllowed=manager?.getNotificationChannel(CHANNEL)?.importance!=NotificationManager.IMPORTANCE_NONE
+        if(!notificationsAllowed || manager==null || !channelAllowed) {
+            store(context).edit().putLong("lastDeliveryBlocked:$uid",System.currentTimeMillis()).apply()
+            advance()
+            return
+        }
         val owner=task.text("owner","Ambos")
         val details="${time} • $owner".let { formatted ->
             if(task.text("note").isBlank()) formatted else "$formatted • ${task.text("note").take(120)}"
@@ -363,6 +379,13 @@ object Reminders {
             flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val tap=PendingIntent.getActivity(context,(uid+id).hashCode(),intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val publicVersion=NotificationCompat.Builder(context,CHANNEL)
+            .setSmallIcon(R.drawable.ic_central)
+            .setContentTitle("Lembrete de tarefa")
+            .setContentText("Desbloqueie para ver os detalhes.")
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+        val showOnLockScreen=pref.getBoolean("showDetailsOnLockScreen",false)
         val notice=NotificationCompat.Builder(context,CHANNEL)
             .setSmallIcon(R.drawable.ic_central)
             .setContentTitle(task.text("title").ifBlank{"Tarefa agendada"})
@@ -370,7 +393,8 @@ object Reminders {
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(if(pref.getBoolean("showDetailsOnLockScreen",false)) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
+            .setVisibility(if(showOnLockScreen) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(if(showOnLockScreen) null else publicVersion)
             .setContentIntent(tap)
             .setAutoCancel(true)
             .build()
@@ -378,15 +402,11 @@ object Reminders {
             manager.notify((uid+id).hashCode(),notice)
             store(context).edit().putLong("lastDelivered:$uid",System.currentTimeMillis()).apply()
         } catch (_:SecurityException) {
-            store(context).edit().putLong("lastScheduleFailed:$uid",System.currentTimeMillis()).apply()
-            return
+            store(context).edit().putLong("lastDeliveryBlocked:$uid",System.currentTimeMillis()).apply()
         }
-        // The next occurrence is computed locally; no Firebase call in a background receiver.
-        if(task.text("repeat") in listOf("Diária","Semanal","Dias da semana","Mensal","Primeiro domingo após dia 8")) {
-            schedule(context,uid,task,completedDay=date)
-        } else {
-            forget(context,uid,id)
-        }
+        // Cada disparo processado libera a próxima ocorrência, mesmo se o Android
+        // vetar a notificação atual. Não usamos rede nem Firebase no receiver.
+        advance()
     }
 }
 
