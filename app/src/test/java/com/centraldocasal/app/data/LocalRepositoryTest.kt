@@ -93,7 +93,7 @@ class LocalRepositoryTest {
         assertEquals("step-a", task.text("sourceStepId"))
         assertTrue(task.isPrivate)
         try {
-            repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "", true)
+            repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "Casa", "", true)
             fail("A mesma etapa não pode criar duas tarefas.")
         } catch (expected: IllegalArgumentException) {
             assertEquals(1, repo.data.value.records.count { it.kind == "task" && it.text("sourcePlanId") == "plan-a" && it.text("sourceStepId") == "step-a" })
