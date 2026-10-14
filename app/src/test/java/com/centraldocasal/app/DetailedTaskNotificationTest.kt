@@ -118,6 +118,39 @@ class DetailedTaskNotificationTest {
         assertNotNull(Reminders.diagnostics(context,"local").lastDeliveredAt)
     }
 
+    @Test fun diagnosticsExplainWhyOneTaskDoesNotNotify() {
+        val future = LocalDate.now().plusDays(2).toString()
+        val ordinary=Record("eligible","task",fields=mapOf(
+            "title" to "Separar material","date" to future,"time" to "16:00",
+            "owner" to "Rhayra", "repeat" to "Única"
+        ))
+        assertNull(Reminders.blockReason(ordinary,"Rhayra"))
+        assertEquals("Esta tarefa está atribuída a outro responsável.",
+            Reminders.blockReason(ordinary,"Tiago"))
+        assertEquals("Confirme o horário desta tarefa.",
+            Reminders.blockReason(ordinary.copy(fields=ordinary.fields+("needsTimeReview" to true)),"Rhayra"))
+        assertEquals("A opção Permitir lembrete está desligada nesta tarefa.",
+            Reminders.blockReason(ordinary.copy(fields=ordinary.fields+("skipReminder" to true)),"Rhayra"))
+        assertEquals("Informe um horário válido (HH:mm).",
+            Reminders.blockReason(ordinary.copy(fields=ordinary.fields+("time" to "")),"Rhayra"))
+        assertEquals("A data ou o horário desta tarefa já passou.",
+            Reminders.blockReason(ordinary.copy(fields=ordinary.fields+("date" to "2020-01-01")),"Rhayra"))
+    }
+
+    @Test fun taskDiagnosticShowsActualAlarmAndNotMerelyEnabledPreference() {
+        val task = Record("diagnostic-task","task",fields=mapOf(
+            "title" to "Reservar almoço de amanhã","date" to LocalDate.now().plusDays(1).toString(),
+            "time" to "16:00","owner" to "Rhayra", "repeat" to "Única"
+        ))
+        val before=Reminders.inspect(context,"local",task,"Rhayra")
+        assertNull(before.plannedAt)
+        assertTrue(before.status.contains("Sem alarme futuro"))
+        Reminders.schedule(context,"local",task,"Rhayra")
+        val after=Reminders.inspect(context,"local",task,"Rhayra")
+        assertNotNull(after.plannedAt)
+        assertTrue(after.status.contains("Programado"))
+    }
+
     @Test fun profileNameChangeEnablesNewOwnerAlarm() {
         val task = Record("profile-task", "task", fields = mapOf(
             "title" to "Buscar a Rhayra", "owner" to "Rhayra",
