@@ -2,11 +2,13 @@ package com.centraldocasal.app
 
 import android.Manifest
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -58,5 +60,19 @@ class AndroidInteractionsTest {
         assertEquals("central-test", notices.single().channelId)
         assertEquals("Esta é uma notificação de teste.", notices.single().extras.getCharSequence("android.text").toString())
         assertFalse(context.getSharedPreferences("reminders_fixture", Application.MODE_PRIVATE).getBoolean("enabled", false))
+    }
+
+    @Test fun sosNotificationKeepsSensitiveDetailsPrivateOnLockScreen() {
+        assertEquals(
+            "Alerta SOS enviado ao Android.",
+            AndroidInteractions.notifySafetyAlert(context, "fixture-alert", "Pessoa Teste", "https://maps.example/secret")
+        )
+        val notice = shadowOf(manager).allNotifications.single()
+        assertEquals(Notification.VISIBILITY_PRIVATE, notice.visibility)
+        assertNotNull(notice.publicVersion)
+        assertEquals("Central do Casal", notice.publicVersion.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals("Você tem um alerta importante.", notice.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertFalse(notice.publicVersion.extras.toString().contains("Pessoa Teste"))
+        assertFalse(notice.publicVersion.extras.toString().contains("maps.example"))
     }
 }
