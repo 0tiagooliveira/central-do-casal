@@ -45,6 +45,26 @@ class LocalRepositoryTest {
         assertEquals(10000L, repo.data.value.records.single().number("budget"))
         repo.close()
     }
+    @Test fun careEventsPersistAndCanBeUndoneLocally() = runBlocking {
+        val first = CentralRepository(context); first.useLocal("Perfil de teste")
+        val event = Record("care-local", "careEvent", fields = mapOf(
+            "careType" to "diaper",
+            "subject" to "Lucca",
+            "actorUid" to "local",
+            "actorName" to "Perfil de teste",
+            "occurredAt" to 123456789L,
+            "date" to "2026-10-13"
+        ))
+        first.save(event)
+        first.close()
+
+        val second = CentralRepository(context)
+        assertEquals(event, second.data.value.records.single { it.id == event.id })
+        second.remove(event)
+        assertFalse(second.data.value.records.any { it.id == event.id })
+        second.close()
+    }
+
     @Test fun staleEditDoesNotOverwriteNewerList() = runBlocking {
         val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
         repo.editBasket("Açougue", null) { it.copy(budget = 10000) }
