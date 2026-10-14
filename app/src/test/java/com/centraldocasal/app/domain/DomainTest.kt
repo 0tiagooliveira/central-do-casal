@@ -19,4 +19,23 @@ class DomainTest {
     @Test fun completedOccurrenceDoesNotCompleteTomorrow() { val today = LocalDate.of(2026, 10, 10); val task = Record(id = "task-1", kind = "task", fields = mapOf("date" to today.toString(), "repeat" to "Diária")); assertTrue(occurs(task, today)); assertTrue(occurs(task, today.plusDays(1))); assertNotEquals(occurrenceId(task.id, today), occurrenceId(task.id, today.plusDays(1))) }
     @Test fun weeklyOnlySameWeekdayAfterStart() { val day = LocalDate.of(2026, 10, 10); val task = Record(kind = "task", fields = mapOf("date" to day.toString(), "repeat" to "Semanal")); assertFalse(occurs(task, day.minusDays(7))); assertTrue(occurs(task, day.plusDays(7))); assertFalse(occurs(task, day.plusDays(1))) }
     @Test fun quietWindowAndOvernight() { assertFalse(quietAt(0, 4)); assertTrue(quietAt(0, 5)); assertTrue(quietAt(5, 39)); assertFalse(quietAt(5, 40)); assertTrue(quietAt(23, 0, "22:00", "08:00")); assertTrue(quietAt(7, 59, "22:00", "08:00")); assertFalse(quietAt(12, 0, "22:00", "08:00")) }
+
+    @Test fun shoppingEntryRoundTripKeepsPlanOrigin() {
+        val original = Entry(
+            id = "linked",
+            title = "Material do projeto",
+            sourcePlanId = "plan-1",
+            sourceStepId = "step-2",
+            estimateKnown = false,
+            unitReviewed = false,
+            quantityReviewed = false
+        )
+        val restored = Entry.from(original.toMap())
+        assertEquals("plan-1", restored.sourcePlanId)
+        assertEquals("step-2", restored.sourceStepId)
+        assertFalse(restored.estimateKnown)
+        assertFalse(restored.unitReviewed)
+        assertFalse(restored.quantityReviewed)
+    }
+
 }
