@@ -339,11 +339,46 @@ private fun TodayScreen(vm: CentralViewModel, session: SessionState, data: DataS
 private fun done(task: Record, day: LocalDate, data: DataState) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
 @Composable
 private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralViewModel, edit: (() -> Unit)? = null) {
-    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.padding(horizontal=12.dp, vertical=16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(done(task, day, data), { vm.complete(task, day, it) }, modifier = Modifier.semantics { contentDescription = "Concluir tarefa: ${task.text("title")}" }, enabled = occurs(task, day) && !vm.busy.collectAsStateWithLifecycle().value)
-            Column(Modifier.weight(1f)) { Text(task.text("title"), fontWeight = FontWeight.SemiBold); Text("${task.text("category","Rotina")} · ${task.text("owner", "Ambos")} • ${if(task.flag("needsTimeReview")) "Horário a confirmar" else task.text("time").ifBlank { "Sem horário" }} • ${if (task.isPrivate) "Privada" else "Compartilhada"}", style = MaterialTheme.typography.labelSmall); if(task.flag("needsReview")) Text("Registro a confirmar • rotina inativa", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary) }
-            if (edit != null) TextButton(onClick = edit) { Text("Editar") }
+    val completed = done(task, day, data)
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    Surface(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(20.dp),
+        color = if (completed) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = if (completed) 0.dp else 2.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = completed,
+                onCheckedChange = { vm.complete(task, day, it) },
+                modifier = Modifier.semantics { contentDescription = "Concluir tarefa: ${task.text("title")}" },
+                enabled = occurs(task, day) && !busy
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(task.text("title"), style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                Text(
+                    listOfNotNull(
+                        task.text("time").takeUnless { it.isBlank() || task.flag("needsTimeReview") },
+                        task.text("owner", "Ambos"),
+                        task.text("category").takeUnless { it.isBlank() }
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (task.flag("needsReview")) {
+                    Text("Precisa de revisão", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (edit != null) TextButton(onClick = edit, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Editar")
+            }
         }
     }
 }
@@ -351,7 +386,7 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
 @Composable
 private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
     var showAll by rememberSaveable { mutableStateOf(false) }
-    var audience by rememberSaveable { mutableStateOf(if(requestedDate != null) "Tudo" else "Para mim") }
+    var audience by rememberSaveable { mutableStateOf("Tudo") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
     LaunchedEffect(requestedDate) {
         requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }?.let {
@@ -384,18 +419,61 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
         if(!reviewOnly) item { ChoiceStrip(listOf("Neste dia","Todos os registros"),if(showAll) "Todos os registros" else "Neste dia",{showAll=it=="Todos os registros"}) }
         if(!reviewOnly) item { WeekRibbon(day, { dayText=it.toString() }) }
         if(!reviewOnly) item { ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it}) }
-        if(!reviewOnly) item { CareEventsPanel(vm, session, data, day) }
-        item { Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("Nova tarefa") } }
-        val allTasks=data.records.filter { it.kind == "task" && if(reviewOnly) (it.flag("needsReview")||it.flag("needsTimeReview")) else (showAll || occurs(it, day)) && (reviewOnly || !done(it, day, data)) }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Atividades do dia", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Button(onClick = { creating = true }, shape = RoundedCornerShape(16.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Nova tarefa")
+                }
+            }
+        }
+        val allTasks=data.records.filter { it.kind == "task" && if(reviewOnly) (it.flag("needsReview")||it.flag("needsTimeReview")) else (showAll || occurs(it, day))  }
         val tasks=allTasks.filter { task -> reviewOnly || when(audience) { "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name); "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"; else -> taskBelongsTo(task,session.name) } }
         val weekend=day.dayOfWeek.value in setOf(6,7)
-        val sharedCare=tasks.filter { it.text("owner","Ambos")=="Ambos" && it.text("category") in setOf("Casa","Lucca") }
-        val otherTasks=tasks.filterNot { it in sharedCare }
+        val pendingTasks = tasks.filterNot { done(it, day, data) }
+        val finishedTasks = tasks.filter { done(it, day, data) }
+        val sharedCare = pendingTasks.filter { it.text("owner","Ambos") == "Ambos" && it.text("category") in setOf("Casa","Lucca") }
+        val otherTasks = pendingTasks.filterNot { it in sharedCare }
+        if (!reviewOnly && tasks.isNotEmpty()) item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${finishedTasks.size} de ${tasks.size} concluídas",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.primary)
+                Text("${(finishedTasks.size * 100 / tasks.size)}%", style = MaterialTheme.typography.labelSmall)
+            }
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { finishedTasks.size.toFloat() / tasks.size },
+                modifier = Modifier.fillMaxWidth().height(7.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        }
         if(weekend && sharedCare.isNotEmpty()) item { QuietCard("Cuidado compartilhado de fim de semana","Casa e Lucca: dividam o que precisa acontecer hoje.") {} }
         if(sharedCare.isNotEmpty()) items(sharedCare,key={it.id}) { TaskRow(it,day,data,vm) { editing=it } }
         if(otherTasks.isNotEmpty() && sharedCare.isNotEmpty()) item { Text("Outras pendências",style=MaterialTheme.typography.titleMedium) }
         if (tasks.isEmpty()) item { Empty(if(reviewOnly) "Rotinas revisadas" else "Nenhuma tarefa para este dia",if(reviewOnly) "Não há confirmações pendentes." else "Cadastre uma atividade única ou recorrente.") }
         items(otherTasks, key = { it.id }) { TaskRow(it, day, data, vm) { editing = it } }
+        if (finishedTasks.isNotEmpty() && !reviewOnly) {
+            item {
+                Text("Concluídas hoje · ${finishedTasks.size}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(finishedTasks, key = { "done-${it.id}" }) {
+                TaskRow(it, day, data, vm) { editing = it }
+            }
+        }
+        if (!reviewOnly) {
+            item {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(Modifier.height(4.dp))
+                CareEventsPanel(vm, session, data, day)
+            }
+        }
     }
     if (creating || editing != null) RecordEditor("task", editing, vm, onDismiss = { creating = false; editing = null })
 }
