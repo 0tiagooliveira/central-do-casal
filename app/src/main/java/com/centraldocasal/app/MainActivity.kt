@@ -78,21 +78,32 @@ class MainActivity : ComponentActivity() {
     }
     private var pendingExport = ""
     private var reminderLaunch by mutableStateOf(false)
+    private var reminderTaskId by mutableStateOf("")
+    private var reminderTaskDate by mutableStateOf("")
+    private var reminderTaskUid by mutableStateOf("")
+
+    private fun readReminderIntent(source: Intent?) {
+        reminderLaunch = source?.hasExtra("taskId") == true
+        reminderTaskId = source?.getStringExtra("taskId").orEmpty()
+        reminderTaskDate = source?.getStringExtra("taskDate").orEmpty()
+        reminderTaskUid = source?.getStringExtra("taskUid").orEmpty()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        reminderLaunch = intent.hasExtra("taskId")
+        readReminderIntent(intent)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(statusBarStyle=SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT))
-        reminderLaunch = intent.hasExtra("taskId")
+        readReminderIntent(intent)
         setContent {
             val vm: CentralViewModel = viewModel()
             val profile by vm.repo.session.collectAsStateWithLifecycle()
             val experience=rememberExperience(profile.uid)
             CompositionLocalProvider(LocalExperience provides experience) {
             CentralTheme(profile.name) {
-                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false})
+                CentralApp(vm, export = { pendingExport = vm.repo.export(); exportFile.launch("central-do-casal-${LocalDate.now()}.json") }, notify = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, location = { locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION)) }, nearby = { if(Build.VERSION.SDK_INT>=31) nearbyPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.NEARBY_WIFI_DEVICES)) }, photo = { pendingPhotoUid=profile.uid;photoPicker.launch(arrayOf("image/*")) }, openReminder=reminderLaunch, consumeReminder={reminderLaunch=false}, reminderTaskId=reminderTaskId, reminderTaskDate=reminderTaskDate, reminderTaskUid=reminderTaskUid)
             }
             }
         }
@@ -118,6 +129,10 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() { repo.close() }
 }
 
+/** A reminder opened on a different signed-in account must never reveal the original task. */
+internal fun reminderMatchesSession(sessionUid: String, reminderUid: String): Boolean =
+    sessionUid.isNotBlank() && (reminderUid.isBlank() || sessionUid == reminderUid)
+
 private val br = Locale.forLanguageTag("pt-BR")
 private val dateFormat = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)
 private fun money(value: Long) = NumberFormat.getCurrencyInstance(br).format(java.math.BigDecimal(value).movePointLeft(2))
@@ -127,7 +142,7 @@ private fun displayDate(value: String) = runCatching { LocalDate.parse(value).fo
 private fun dateInput(value: String) = LocalDate.parse(value, dateFormat).toString()
 
 @Composable
-fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}) {
+fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, location: () -> Unit = {}, nearby: () -> Unit = {}, photo: () -> Unit = {}, openReminder: Boolean = false, consumeReminder: () -> Unit = {}, reminderTaskId: String = "", reminderTaskDate: String = "", reminderTaskUid: String = "") {
     val session by vm.repo.session.collectAsStateWithLifecycle()
     val data by vm.repo.data.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -136,14 +151,33 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     var route by rememberSaveable { mutableStateOf("") }
     var requestedShoppingMarket by rememberSaveable { mutableStateOf<String?>(null) }
     var requestedRoutineDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var requestedRoutineTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     val snack = remember { SnackbarHostState() }
     val screenStates = rememberSaveableStateHolder()
     val view=LocalView.current; val experience=LocalExperience.current
     val context = LocalContext.current
     val alertPrefs = remember(session.uid) { context.getSharedPreferences("safety_alerts_${session.uid}", android.content.Context.MODE_PRIVATE) }
     LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.message.value = null } }
-    LaunchedEffect(session.uid) { route = ""; tab = "Hoje"; requestedShoppingMarket = null; requestedRoutineDate = null }
-    LaunchedEffect(session.uid,openReminder) { if(openReminder && session.uid.isNotBlank()) { route="";tab="Rotina";requestedRoutineDate=null;consumeReminder() } }
+    LaunchedEffect(session.uid) {
+        route = ""
+        tab = "Hoje"
+        requestedShoppingMarket = null
+        requestedRoutineDate = null
+        requestedRoutineTaskId = null
+    }
+    LaunchedEffect(session.uid,openReminder,reminderTaskId,reminderTaskDate,reminderTaskUid) {
+        if(openReminder && session.uid.isNotBlank()) {
+            if(reminderMatchesSession(session.uid,reminderTaskUid)) {
+                route=""
+                tab="Rotina"
+                requestedRoutineDate=reminderTaskDate.takeIf { runCatching { LocalDate.parse(it) }.isSuccess }
+                requestedRoutineTaskId=reminderTaskId.takeIf { it.isNotBlank() }
+            } else {
+                vm.message.value="Este lembrete pertence a outra conta. Entre no perfil correto para consultá-lo."
+            }
+            consumeReminder()
+        }
+    }
     LaunchedEffect(session.uid, session.name, data.records) {
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
@@ -182,7 +216,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     }, bottomBar = {
         if (session.uid.isNotBlank() && route.isBlank()) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
             val icons = listOf(HomeLine, BasketLine, CalendarLine, PlanLine, HeartLine)
-            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") requestedRoutineDate=null }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
+            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
         }
     }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -207,7 +241,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location)
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
-                    "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate)
+                    "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate,
+                        requestedTaskId = requestedRoutineTaskId, onTargetOpened = { requestedRoutineTaskId = null })
                     "Lembretes" -> ReminderInbox(session,data,openRoutine={route="";requestedRoutineDate=null;tab="Rotina"},openSettings={route="Configurações"})
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";requestedRoutineDate=null;tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";requestedShoppingMarket=null;tab="Compras"}) }
@@ -307,7 +342,7 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
 }
 
 @Composable
-private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null) {
+private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf(if(requestedDate != null) "Tudo" else "Para mim") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
@@ -319,6 +354,17 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     }
     val day = LocalDate.parse(dayText)
     var editing by remember { mutableStateOf<Record?>(null) }; var creating by remember { mutableStateOf(false) }
+    LaunchedEffect(requestedTaskId, data.records) {
+        val taskId = requestedTaskId?.takeIf { it.isNotBlank() }
+        if(taskId != null) {
+            data.records.firstOrNull { it.kind == "task" && it.id == taskId }?.let { target ->
+                showAll = true
+                audience = "Tudo"
+                editing = target
+                onTargetOpened()
+            }
+        }
+    }
     val context=LocalContext.current
     val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
     val remindersEnabled=reminderPrefs.getBoolean("enabled",true)
