@@ -13,12 +13,12 @@ service firebase.storage {
       return signedIn() && request.auth.uid in firestore.get(/databases/(default)/documents/households/$(hid)).data.members;
     }
     function sharedMoment(hid, mid) {
-      return firestore.get(/databases/(default)/documents/households/$(hid)/records/$(mid)).data.kind == 'moment'
-        && firestore.get(/databases/(default)/documents/households/$(hid)/records/$(mid)).data.private == false;
+      let moment = firestore.get(/databases/(default)/documents/households/$(hid)/records/$(mid)).data;
+      return moment.kind == 'moment' && moment.private == false;
     }
     function privateMoment(uid, mid) {
-      return firestore.get(/databases/(default)/documents/users/$(uid)/records/$(mid)).data.kind == 'moment'
-        && firestore.get(/databases/(default)/documents/users/$(uid)/records/$(mid)).data.private == true;
+      let moment = firestore.get(/databases/(default)/documents/users/$(uid)/records/$(mid)).data;
+      return moment.kind == 'moment' && moment.private == true;
     }
     function ownUpload(file) {
       return file.matches('^' + request.auth.uid + '-[A-Za-z0-9_-]+[.]jpg$');
