@@ -91,13 +91,19 @@ service cloud.firestore {
             && loc.capturedAt <= request.time + duration.value(1,'m')
             && loc.updatedAt == request.time
             && loc.expiresAt is timestamp && loc.expiresAt > request.time
-            && loc.expiresAt <= request.time + duration.value(5,'m')
+            && loc.expiresAt <= request.time + duration.value(90,'s')
             && loc.sessionEndsAt is timestamp && loc.sessionEndsAt > request.time
             && loc.sessionEndsAt <= request.time + duration.value(31,'m');
         }
-        allow create, update: if member(hid) && validLiveLocation()
-          && (!exists(/databases/$(database)/documents/households/$(hid)/liveLocations/$(ownerUid))
-              || resource.data.ownerUid == ownerUid);
+        // Uma escrita de localização NÃO renova a duração da sessão.
+        // Reiniciar após o limite exige encerrar a sessão antiga e iniciar uma nova.
+        function validLiveUpdate() {
+          return resource.data.ownerUid == ownerUid
+            && request.resource.data.sessionEndsAt == resource.data.sessionEndsAt
+            && request.resource.data.capturedAt >= resource.data.capturedAt;
+        }
+        allow create: if member(hid) && validLiveLocation();
+        allow update: if member(hid) && validLiveLocation() && validLiveUpdate();
         allow delete: if member(hid) && own(ownerUid) && resource.data.ownerUid == ownerUid;
       }
       match /baskets/{market} {
