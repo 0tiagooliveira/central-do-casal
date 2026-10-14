@@ -77,7 +77,10 @@ object AndroidInteractions {
         }
     }
 
-    /** A partner's SOS is intentionally separate from quiet-hour reminders. */
+    /** A partner's SOS is intentionally separate from quiet-hour reminders.
+     * Sensitive values are never shown in the Android notification shade, lock screen, or wearables.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun notifySafetyAlert(context: Context, alertId: String, name: String, mapUrl: String): String {
         if (!notificationsAllowed(context)) return "Alerta recebido, mas as notificações estão bloqueadas neste aparelho."
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -100,9 +103,9 @@ object AndroidInteractions {
             .build()
         val notification = NotificationCompat.Builder(context, SOS_CHANNEL)
             .setSmallIcon(R.drawable.ic_central)
-            .setContentTitle("SOS de $name")
-            .setContentText("Toque para abrir o alerta e ver a localização.")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$name pediu ajuda. Localização: $mapUrl"))
+            .setContentTitle("Alerta SOS do casal")
+            .setContentText("Abra a Central do Casal para conferir o pedido de ajuda.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("Abra o aplicativo autenticado para verificar o alerta."))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
