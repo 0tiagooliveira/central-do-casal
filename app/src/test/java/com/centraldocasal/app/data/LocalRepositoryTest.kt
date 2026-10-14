@@ -88,7 +88,7 @@ class LocalRepositoryTest {
 
     @Test fun planStepRoutineLinkCreatesOnlyOneTaskAndKeepsOrigin() = runBlocking {
         val repo = CentralRepository(context); repo.useLocal("Perfil de teste")
-        val task = repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "", true)
+        val task = repo.createPlanStepTask("plan-a", "step-a", "Medir a janela", "2026-10-20", "Ambos", "Casa", "", true)
         assertEquals("plan-a", task.text("sourcePlanId"))
         assertEquals("step-a", task.text("sourceStepId"))
         assertTrue(task.isPrivate)
