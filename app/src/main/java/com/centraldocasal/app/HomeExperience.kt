@@ -386,3 +386,46 @@ private fun HomePanel(title: String, body: @Composable ColumnScope.() -> Unit) {
         }
     }
 }
+
+
+@Composable
+internal fun HomeMoreScreen(navigate: (String) -> Unit) {
+    val scheme=MaterialTheme.colorScheme
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),
+        verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        item {
+            Text("Mais da Central",style=MaterialTheme.typography.headlineMedium,
+                fontWeight=FontWeight.Bold,color=homeInk)
+            Text("Tudo que completa a vida de vocês.",style=MaterialTheme.typography.bodyMedium,
+                color=homeMuted)
+        }
+        items(listOf(
+            Triple("Planos","Projetos, metas e contribuições","✧"),
+            Triple("Lembretes","Seus horários e alertas","◷"),
+            Triple("Nossa vida","Visão geral da família","♡"),
+            Triple("Finanças","Dinheiro e organização","▣"),
+            Triple("Saúde","Registros pessoais","✚"),
+            Triple("Casa","Dispositivos e automações","⌂"),
+            Triple("Segurança","Recursos e alertas de segurança","!"),
+            Triple("Configurações","Conta, aparência e privacidade","⚙")
+        )) { (name,description,symbol) ->
+            OutlinedCard(onClick={navigate(name)},shape=RoundedCornerShape(18.dp),
+                border=BorderStroke(1.dp,homeOutline),modifier=Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Surface(color=scheme.primaryContainer,shape=RoundedCornerShape(12.dp),
+                        modifier=Modifier.size(42.dp)) {
+                        Box(contentAlignment=Alignment.Center) {
+                            Text(symbol,color=scheme.primary,fontSize=21.sp)
+                        }
+                    }
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                        Text(name,style=MaterialTheme.typography.titleSmall,fontWeight=FontWeight.SemiBold)
+                        Text(description,style=MaterialTheme.typography.bodySmall,color=homeMuted)
+                    }
+                    Icon(Icons.Default.ChevronRight,null,tint=scheme.tertiary)
+                }
+            }
+        }
+    }
+}
