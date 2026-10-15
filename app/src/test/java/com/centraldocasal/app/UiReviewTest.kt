@@ -91,7 +91,7 @@ class UiReviewTest {
         compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed(); capture("nos")
         compose.onNodeWithTag("tab-Mais").performClick()
         compose.onNodeWithText("Configurações",substring=false).performClick()
-        compose.onNodeWithText("Lembretes").performClick(); compose.onNodeWithText("No seu ritmo").assertIsDisplayed(); capture("configuracoes")
+        compose.onNodeWithText("Notificações").performClick(); compose.onNodeWithText("No seu ritmo").assertIsDisplayed(); capture("configuracoes")
         compose.onNodeWithContentDescription("Voltar").performClick()
         compose.onNodeWithTag("tab-Nós").performClick()
         compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed()
@@ -163,11 +163,11 @@ class UiReviewTest {
                 }
             }
         }
-        compose.onNodeWithText("Conta e casal").performClick(); compose.onNode(hasScrollAction()).performScrollToNode(hasText("E-mail do parceiro")); compose.onNodeWithText("E-mail do parceiro").assertIsDisplayed()
+        compose.onNodeWithText("PERFIL DO CASAL").performClick(); compose.onNode(hasScrollAction()).performScrollToNode(hasText("E-mail do parceiro")); compose.onNodeWithText("E-mail do parceiro").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Criar convite"))
         compose.onNodeWithText("Criar convite").assertIsDisplayed().assertIsNotEnabled()
         capture("configuracoes-convite-fonte-ampliada-fixture")
-        compose.onNodeWithText("‹  Voltar às configurações").performClick(); compose.onNodeWithText("Privacidade").performClick(); compose.onNode(hasScrollAction()).performScrollToNode(hasText("Exportar meus registros")); compose.onNodeWithText("Exportar meus registros").assertIsDisplayed()
+        compose.onNodeWithText("‹  Voltar às configurações").performClick(); compose.onNodeWithText("Conta e privacidade").performClick(); compose.onNode(hasScrollAction()).performScrollToNode(hasText("Exportar meus registros")); compose.onNodeWithText("Exportar meus registros").assertIsDisplayed()
         vm.repo.close()
     }
     @Test fun importedCatalogAndNotesHaveSeparateNavigationAndDoNotChangeManualBalance() = runBlocking {
