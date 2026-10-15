@@ -17,6 +17,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.centraldocasal.app.domain.Record
 import com.centraldocasal.app.domain.occurrenceId
 import com.centraldocasal.app.domain.occurs
@@ -161,7 +162,8 @@ internal object SophiaMoments {
         if (!enabled(context, uid) || activeUid(context) != uid || location(context, uid) == null) return
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val request = PeriodicWorkRequestBuilder<SophiaWeatherWorker>(1, TimeUnit.HOURS)
-            .setConstraints(constraints).addTag("sophia-weather-$uid").build()
+            .setConstraints(constraints).setInputData(workDataOf("uid" to uid))
+            .addTag("sophia-weather-$uid").build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "sophia-weather-$uid", ExistingPeriodicWorkPolicy.KEEP, request)
     }
@@ -378,6 +380,7 @@ class SophiaWeatherWorker(context: Context, parameters: WorkerParameters) : Coro
         val context = applicationContext
         val uid = context.getSharedPreferences("central_local_v1", Context.MODE_PRIVATE)
             .getString("activeUid", "").orEmpty()
+        if (inputData.getString("uid") != uid) return Result.success()
         val location = SophiaMoments.location(context, uid) ?: return Result.success()
         return runCatching {
             SophiaMoments.updateForecast(context, uid, WeatherSource.fetch(location.first, location.second))
