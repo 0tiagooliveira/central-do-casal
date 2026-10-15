@@ -1,6 +1,11 @@
 package com.centraldocasal.app
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -329,8 +334,8 @@ private fun HomeSection(title: String, accent: Color, trailing: String="", onTra
             Text(icon,fontSize=19.sp,color=accent)
             Spacer(Modifier.width(6.dp))
         }
-        Text(title,modifier=Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,
-            fontWeight=FontWeight.Bold,color=homeInk)
+        Text(title,modifier=Modifier.weight(1f),style=if(icon.isNotBlank()) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleLarge,
+            fontWeight=FontWeight.Bold,color=if(icon.isNotBlank()) accent else homeInk)
         if(trailing.isNotBlank()) {
             if(onTrailing!=null) TextButton(onClick=onTrailing,contentPadding=PaddingValues(horizontal=4.dp)) {
                 Text(trailing,style=MaterialTheme.typography.labelSmall,color=homeMuted)
@@ -350,11 +355,11 @@ private fun HomeCareTile(
     modifier: Modifier,
     onAdd: () -> Unit
 ) {
-    val (symbol,title)=when(kind.id) {
-        "diaper" -> "◡" to "Fralda"
-        "bottle" -> "♧" to "Mamadeira"
-        "bath" -> "♨" to "Banho"
-        else -> "♧" to "Mel"
+    val title=when(kind.id) {
+        "diaper" -> "Fralda"
+        "bottle" -> "Mamadeira"
+        "bath" -> "Banho"
+        else -> "Mel"
     }
     Surface(modifier,shape=RoundedCornerShape(16.dp),color=Color.White,
         border=BorderStroke(1.dp,homeOutline)) {
@@ -362,7 +367,7 @@ private fun HomeCareTile(
             horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Surface(shape=RoundedCornerShape(11.dp),color=tint,modifier=Modifier.size(36.dp)) {
                 Box(contentAlignment=Alignment.Center) {
-                    Text(symbol,fontSize=24.sp,color=accent)
+                    HomeCareLineIcon(kind.id,accent)
                 }
             }
             Text(title,style=MaterialTheme.typography.labelSmall,color=homeInk,
@@ -387,6 +392,46 @@ private fun HomePanel(title: String, body: @Composable ColumnScope.() -> Unit) {
     }
 }
 
+
+
+@Composable
+private fun HomeCareLineIcon(type: String,color: Color) {
+    Canvas(Modifier.size(25.dp)) {
+        val s = size.minDimension / 24f
+        val stroke = Stroke(width=1.85f*s)
+        fun point(x:Float,y:Float)=Offset(x*s,y*s)
+        fun ring(x:Float,y:Float,r:Float)=drawCircle(color,r*s,point(x,y),style=stroke)
+        fun solid(x:Float,y:Float,r:Float)=drawCircle(color,r*s,point(x,y))
+        fun line(x1:Float,y1:Float,x2:Float,y2:Float)=drawLine(color,point(x1,y1),point(x2,y2),strokeWidth=1.85f*s)
+        fun rect(x:Float,y:Float,w:Float,h:Float,r:Float=2f)=drawRoundRect(color,
+            topLeft=point(x,y),size=Size(w*s,h*s),cornerRadius=CornerRadius(r*s,r*s),style=stroke)
+        when(type) {
+            "diaper" -> {
+                ring(12f,12f,8.3f)
+                solid(9f,11f,0.85f);solid(15f,11f,0.85f)
+                drawArc(color,20f,140f,false,topLeft=point(8f,12f),size=Size(8f*s,5f*s),style=stroke)
+                drawArc(color,192f,165f,false,topLeft=point(9f,1.9f),size=Size(6f*s,5.5f*s),style=stroke)
+            }
+            "bottle" -> {
+                rect(9f,2f,6f,4f,1f)
+                rect(7f,7f,10f,14f,2f)
+                line(10f,12f,14f,12f);line(10f,16f,14f,16f)
+                line(8f,7f,9f,6f);line(16f,7f,15f,6f)
+            }
+            "bath" -> {
+                line(3f,11f,21f,11f)
+                drawArc(color,0f,180f,false,topLeft=point(4f,10f),size=Size(16f*s,11f*s),style=stroke)
+                line(7f,20f,7f,22f);line(17f,20f,17f,22f)
+                line(8f,11f,8f,5f);line(8f,5f,11f,5f)
+                drawArc(color,180f,180f,false,topLeft=point(11f,4f),size=Size(5f*s,4f*s),style=stroke)
+            }
+            else -> {
+                ring(6f,7f,1.6f);ring(11f,4f,1.6f);ring(16f,6f,1.6f);ring(20f,10f,1.5f)
+                drawOval(color,topLeft=point(7f,11f),size=Size(11f*s,9f*s),style=stroke)
+            }
+        }
+    }
+}
 
 @Composable
 internal fun HomeMoreScreen(navigate: (String) -> Unit) {
