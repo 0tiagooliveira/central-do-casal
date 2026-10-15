@@ -51,7 +51,7 @@ internal fun ShoppingMonthPlannerScreen(
             products.forEach { product ->
                 put(product.id, when {
                     product.id in alreadySelected -> "Comprar"
-                    product.flag("stockKnown") && product.number("stockMilli") > 0 -> "Tenho"
+                    (product.flag("hasAtHome") || (product.flag("stockKnown") && product.number("stockMilli") > 0)) -> "Tenho"
                     else -> "Pular"
                 })
             }
