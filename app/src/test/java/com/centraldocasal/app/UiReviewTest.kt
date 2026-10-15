@@ -74,13 +74,17 @@ class UiReviewTest {
         capture("evolucao-preco-fixture")
     }
     @Test fun fiveTabsAndSettingsRemainUsableWithNewDesign() {
-        compose.onNodeWithText("Olá, Tiago ♡").assertIsDisplayed(); capture("hoje")
+        compose.onNode(hasText("Tiago! ♡", substring = true)).assertIsDisplayed()
+        compose.onNodeWithTag("home-weather").assertIsDisplayed()
+        compose.onNodeWithTag("home-focus").assertIsDisplayed()
+        capture("hoje")
         compose.onNodeWithTag("tab-Compras").performClick()
         capture("compras"); compose.onNodeWithTag("shopping-quick-add").assertIsDisplayed()
         compose.onNodeWithTag("tab-Rotina").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed(); capture("rotina")
-        compose.onNodeWithTag("tab-Planos").performClick()
+        compose.onNodeWithTag("tab-Mais").performClick()
+        compose.onNodeWithText("Planos", substring = false).performClick()
         compose.onNodeWithText("Criar um plano").assertIsDisplayed(); capture("planos")
         compose.onNodeWithTag("tab-Nós").performClick()
         compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed(); capture("nos")
@@ -91,9 +95,9 @@ class UiReviewTest {
     }
     @Test fun rhayraTabsAndReminderCenterUseRealLocalState() {
         compose.runOnUiThread { androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java].repo.useLocal("Rhayra") }
-        compose.onNodeWithText("Olá, Rhayra ♡").assertIsDisplayed()
+        compose.onNode(hasText("Rhayra! ♡", substring = true)).assertIsDisplayed()
         capture("rhayra-hoje")
-        listOf("Compras","Rotina","Planos","Nós").forEach { tab ->
+        listOf("Compras","Rotina","Mais","Nós").forEach { tab ->
             compose.onNodeWithTag("tab-$tab").performClick()
             capture("rhayra-$tab")
         }
@@ -121,6 +125,7 @@ class UiReviewTest {
     @Test fun auxiliaryScreensAndLocalEntryRemainUsable() {
         val vm = androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java]
         listOf("Finanças" to "Novo lançamento", "Saúde" to "Novo registro pessoal").forEach { (destination, action) ->
+            compose.onNodeWithText("Ver compras, planos e outros detalhes").performScrollTo().performClick()
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(destination))
             compose.onNodeWithText(destination).performClick()
             compose.onNodeWithText(action).assertIsDisplayed()
