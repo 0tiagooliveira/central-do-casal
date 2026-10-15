@@ -53,4 +53,54 @@ class WeatherSourceTest {
         assertNull(snapshot.tomorrowLow)
         assertNull(snapshot.tomorrowRainChance)
     }
+    @Test fun hourlyForecastUsesProvidedValuesWithoutInventingMissingRain() {
+        val json = """{
+          "current":{"temperature_2m":20,"apparent_temperature":19,"relative_humidity_2m":65,"wind_speed_10m":11,"weather_code":2},
+          "hourly":{
+            "time":["2026-10-14T15:00","2026-10-14T16:00"],
+            "temperature_2m":[20.5,21.3],
+            "precipitation_probability":[70,null],
+            "weather_code":[61,2]
+          },
+          "daily":{
+            "time":["2026-10-14","2026-10-15","2026-10-16"],
+            "temperature_2m_max":[25,23,21],
+            "temperature_2m_min":[15,13,12],
+            "precipitation_probability_max":[70,25,null]
+          }
+        }"""
+        val forecast = WeatherSource.parse(json)
+        assertEquals(2, forecast.hours.size)
+        assertEquals(70, forecast.hours[0].rainChance)
+        assertNull(forecast.hours[1].rainChance)
+        assertEquals(3, forecast.days.size)
+        assertNull(forecast.days[2].rainChance)
+        assertEquals(21.3, forecast.hours[1].temperature, 0.01)
+    }
+
+    @Test fun weatherInsightConnectsRainWithActualTaskTime() {
+        val appointment = java.time.LocalDateTime.of(2026,10,14,17,0)
+        val task = com.centraldocasal.app.domain.Record(
+            id = "pick-up",
+            kind = "task",
+            fields = mapOf("title" to "Buscar a Rhayra", "date" to "2026-10-14",
+                "time" to "17:00", "repeat" to "Única")
+        )
+        val forecast = WeatherSnapshot(
+            temperature = 22.0, feelsLike = 21.0, humidity = 78,
+            wind = 9.0, todayHigh = 24.0, todayLow = 16.0,
+            rainChance = 80, description = "Nublado",
+            hours = listOf(WeatherHour(appointment, 21.0, 75, 61))
+        )
+        val insights = weatherInsights(
+            forecast, listOf(task),
+            now = java.time.LocalDateTime.of(2026,10,14,15,0)
+        )
+        assertTrue(insights.any { "Buscar a Rhayra" in it.title && "75%" in it.detail })
+        val noRain = weatherInsights(forecast.copy(
+            rainChance = null, hours = listOf(WeatherHour(appointment,21.0,null,2))
+        ), listOf(task), java.time.LocalDateTime.of(2026,10,14,15,0))
+        assertFalse(noRain.any { "Buscar a Rhayra" in it.title })
+    }
+
 }

@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
@@ -99,6 +100,7 @@ class MainActivity : ComponentActivity() {
         // Depois de voltar de Permissões/Alarmes e lembretes, reavaliar os
         // alarmes locais, mas não recriar os que continuam válidos.
         Reminders.restore(this,forceRearm=false)
+        SophiaMoments.restore(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -194,6 +196,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                 val completeToday=data.records.any { it.kind=="occurrence" && it.text("taskId")==task.id && it.text("date")==LocalDate.now().toString() && it.flag("done") }
                 Reminders.schedule(context,session.uid,task,session.name,completedDay=LocalDate.now().takeIf { completeToday })
             }
+            SophiaMoments.syncTasks(context, session.uid, session.name, data.records)
         }
     }
     LaunchedEffect(data.records, session.uid) {
@@ -206,7 +209,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     }
     BackHandler(route.isNotBlank()) { route = "" }
     Scaffold(snackbarHost = { SnackbarHost(snack) }, topBar = {
-        if (session.uid.isNotBlank()) Surface(color = MaterialTheme.colorScheme.background) {
+        if (session.uid.isNotBlank() && route.isNotBlank()) Surface(color = MaterialTheme.colorScheme.background) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (route.isNotBlank()) IconButton(onClick = { route = "" }) { Icon(Icons.Default.ArrowBack, "Voltar") }
                 else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(11.dp).size(23.dp), tint = MaterialTheme.colorScheme.primary) }
@@ -222,8 +225,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         }
     }, bottomBar = {
         if (session.uid.isNotBlank() && route.isBlank()) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-            val icons = listOf(HomeLine, BasketLine, CalendarLine, PlanLine, HeartLine)
-            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
+            val icons = listOf(HomeLine, CalendarLine, BasketLine, HeartLine, Icons.Default.Settings)
+            listOf("Hoje", "Rotina", "Compras", "Nós", "Mais").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
         }
     }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -245,7 +248,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
-                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location)
+                    "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location, requestNotificationsPermission = notify)
+                    "Mais" -> HomeMoreScreen { destination -> route=destination }
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate,
@@ -260,7 +264,10 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Configurações" -> SettingsScreen(vm, session, data, export, notify, navigate = { route = it }, photo = photo)
                     "Casa" -> HomeDevicesScreen(vm, data, busy, requestNearby=nearby)
                     "Segurança" -> SafetyScreen(vm, session, data, busy, requestPermission=location)
-                    "Sophia" -> IntegrationScreen(route, data)
+                    "Sophia" -> SophiaReferenceScreen(session,data,location,notify) { destination ->
+                        if(destination in listOf("Hoje","Rotina","Compras","Nós","Mais")) { tab=destination;route="" }
+                        else route=destination
+                    }
                 } } }
             }
         }
@@ -339,11 +346,46 @@ private fun TodayScreen(vm: CentralViewModel, session: SessionState, data: DataS
 private fun done(task: Record, day: LocalDate, data: DataState) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
 @Composable
 private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralViewModel, edit: (() -> Unit)? = null) {
-    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.padding(horizontal=12.dp, vertical=16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(done(task, day, data), { vm.complete(task, day, it) }, modifier = Modifier.semantics { contentDescription = "Concluir tarefa: ${task.text("title")}" }, enabled = occurs(task, day) && !vm.busy.collectAsStateWithLifecycle().value)
-            Column(Modifier.weight(1f)) { Text(task.text("title"), fontWeight = FontWeight.SemiBold); Text("${task.text("category","Rotina")} · ${task.text("owner", "Ambos")} • ${if(task.flag("needsTimeReview")) "Horário a confirmar" else task.text("time").ifBlank { "Sem horário" }} • ${if (task.isPrivate) "Privada" else "Compartilhada"}", style = MaterialTheme.typography.labelSmall); if(task.flag("needsReview")) Text("Registro a confirmar • rotina inativa", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary) }
-            if (edit != null) TextButton(onClick = edit) { Text("Editar") }
+    val completed = done(task, day, data)
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    Surface(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(20.dp),
+        color = if (completed) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = if (completed) 0.dp else 2.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = completed,
+                onCheckedChange = { vm.complete(task, day, it) },
+                modifier = Modifier.semantics { contentDescription = "Concluir tarefa: ${task.text("title")}" },
+                enabled = occurs(task, day) && !busy
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(task.text("title"), style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                Text(
+                    listOfNotNull(
+                        task.text("time").takeUnless { it.isBlank() || task.flag("needsTimeReview") },
+                        task.text("owner", "Ambos"),
+                        task.text("category").takeUnless { it.isBlank() }
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (task.flag("needsReview")) {
+                    Text("Precisa de revisão", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (edit != null) TextButton(onClick = edit, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Editar")
+            }
         }
     }
 }
@@ -351,7 +393,7 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
 @Composable
 private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
     var showAll by rememberSaveable { mutableStateOf(false) }
-    var audience by rememberSaveable { mutableStateOf(if(requestedDate != null) "Tudo" else "Para mim") }
+    var audience by rememberSaveable { mutableStateOf("Tudo") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
     LaunchedEffect(requestedDate) {
         requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }?.let {
@@ -377,37 +419,131 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val remindersEnabled=reminderPrefs.getBoolean("enabled",true)
     val notificationAllowed=AndroidInteractions.notificationsAllowed(context)
     val configured=data.records.count { it.kind=="task" && it.text("time").isNotBlank() && !it.flag("skipReminder") && !it.flag("needsReview") && (it.text("owner","Ambos")=="Ambos" || taskBelongsTo(it,session.name)) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { SectionHero(if(reviewOnly) "Revisar rotinas" else "Sua semana",if(reviewOnly) "Confirme os dados para usar estas rotinas." else "Cada dia tem seu próprio ritmo.", CalendarLine) }
-        if(!reviewOnly && (!notificationAllowed || !remindersEnabled)) item { QuietCard("Lembretes precisam de atenção",if(!notificationAllowed) "Permita notificações do Android para receber os avisos das tarefas." else "Os lembretes estão desligados neste aparelho.") { Text("Edite uma tarefa para conferir horário e “Permitir lembrete”.",style=MaterialTheme.typography.bodySmall) } }
-        if(!reviewOnly && notificationAllowed && remindersEnabled && configured>0) item { Text("$configured lembretes ativos para suas rotinas e as compartilhadas.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        if(!reviewOnly) item { ChoiceStrip(listOf("Neste dia","Todos os registros"),if(showAll) "Todos os registros" else "Neste dia",{showAll=it=="Todos os registros"}) }
-        if(!reviewOnly) item { WeekRibbon(day, { dayText=it.toString() }) }
-        if(!reviewOnly) item { ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it}) }
-        if(!reviewOnly) item { CareEventsPanel(vm, session, data, day) }
-        item { Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("Nova tarefa") } }
-        val allTasks=data.records.filter { it.kind == "task" && if(reviewOnly) (it.flag("needsReview")||it.flag("needsTimeReview")) else (showAll || occurs(it, day)) && (reviewOnly || !done(it, day, data)) }
-        val tasks=allTasks.filter { task -> reviewOnly || when(audience) { "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name); "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"; else -> taskBelongsTo(task,session.name) } }
-        val weekend=day.dayOfWeek.value in setOf(6,7)
-        val sharedCare=tasks.filter { it.text("owner","Ambos")=="Ambos" && it.text("category") in setOf("Casa","Lucca") }
-        val otherTasks=tasks.filterNot { it in sharedCare }
-        if(weekend && sharedCare.isNotEmpty()) item { QuietCard("Cuidado compartilhado de fim de semana","Casa e Lucca: dividam o que precisa acontecer hoje.") {} }
-        if(sharedCare.isNotEmpty()) items(sharedCare,key={it.id}) { TaskRow(it,day,data,vm) { editing=it } }
-        if(otherTasks.isNotEmpty() && sharedCare.isNotEmpty()) item { Text("Outras pendências",style=MaterialTheme.typography.titleMedium) }
-        if (tasks.isEmpty()) item { Empty(if(reviewOnly) "Rotinas revisadas" else "Nenhuma tarefa para este dia",if(reviewOnly) "Não há confirmações pendentes." else "Cadastre uma atividade única ou recorrente.") }
-        items(otherTasks, key = { it.id }) { TaskRow(it, day, data, vm) { editing = it } }
+    var routineSection by rememberSaveable { mutableStateOf("Hoje") }
+    val allTasks=data.records.filter { it.kind=="task" &&
+        if(reviewOnly) it.flag("needsReview")||it.flag("needsTimeReview")
+        else showAll || occurs(it,day)
+    }
+    val profileTasks=allTasks.filter { task -> (reviewOnly && taskBelongsTo(task,session.name)) || (!reviewOnly && when(audience) {
+        "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name)
+        "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"
+        else -> taskBelongsTo(task,session.name)
+    }) }
+    val tasks=if(routineSection=="Hábitos" && !reviewOnly)
+        profileTasks.filter { it.text("repeat") !in setOf("","Única") } else profileTasks
+    val completedTasks=tasks.filter { done(it,day,data) }
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=18.dp,vertical=16.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                ReferenceHeading(if(reviewOnly)"Revisar rotinas" else "Rotina",
+                    if(reviewOnly)"Confirme os dados pendentes" else "Seus compromissos, no seu ritmo",
+                    Modifier.weight(1f))
+                IconButton(onClick={creating=true}) { Icon(Icons.Default.Add,"Nova tarefa",tint=MaterialTheme.colorScheme.primary) }
+            }
+        }
+        if(!reviewOnly) item {
+            ReferenceTabs(listOf("Hoje","Semana","Cuidados","Hábitos"),routineSection) { routineSection=it }
+        }
+        if(!reviewOnly && routineSection!="Cuidados") item {
+            ReferenceCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Icon(CalendarLine,null,tint=MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(9.dp))
+                    Text(day.format(DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM",br))
+                        .replaceFirstChar { it.uppercase() },
+                        style=MaterialTheme.typography.titleSmall,
+                        modifier=Modifier.weight(1f))
+                    TextButton(onClick={routineSection="Semana"}) { Text("Alterar dia") }
+                }
+            }
+        }
+        if(!reviewOnly && routineSection=="Semana") item { WeekRibbon(day,{ dayText=it.toString() }) }
+        if(!reviewOnly && routineSection!="Cuidados") item {
+            ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it})
+        }
+        if(!reviewOnly && routineSection!="Cuidados" && (!notificationAllowed || !remindersEnabled)) item {
+            Text(if(!notificationAllowed) "Notificações desativadas no Android. Confira os lembretes."
+                else "Lembretes desativados neste aparelho.",style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if(routineSection=="Cuidados" && !reviewOnly) {
+            item {
+                CareEventsPanel(vm,session,data,day)
+            }
+        } else {
+            item {
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                    Text(if(routineSection=="Hábitos")"Hábitos recorrentes" else "Atividades do dia",
+                        style=MaterialTheme.typography.titleLarge,
+                        fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                    TextButton(onClick={creating=true}) {
+                        Icon(Icons.Default.Add,null,Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp)); Text("Nova tarefa")
+                    }
+                }
+                if(tasks.isNotEmpty()) {
+                    Text("${completedTasks.size} de ${tasks.size} concluídas",
+                        style=MaterialTheme.typography.labelMedium,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    ReferenceProgress(completedTasks.size.toFloat()/tasks.size)
+                }
+            }
+            if(tasks.isEmpty()) item {
+                ReferenceEmpty(if(reviewOnly)"Rotinas revisadas" else "Nenhuma tarefa neste período",
+                    if(reviewOnly)"Não há confirmações pendentes."
+                    else "Cadastre uma rotina ou escolha outro dia.")
+            }
+            listOf("Manhã","Tarde","Noite","Sem horário").forEach { period ->
+                val group=tasks.filter { task ->
+                    val time=runCatching { java.time.LocalTime.parse(task.text("time")) }.getOrNull()
+                    when(period) {
+                        "Manhã" -> time!=null && time.hour in 5..11
+                        "Tarde" -> time!=null && time.hour in 12..17
+                        "Noite" -> time!=null && (time.hour in 18..23 || time.hour in 0..4)
+                        else -> time==null
+                    }
+                }.sortedWith(compareBy<Record> { it.text("time").ifBlank { "99:99" } }.thenBy { it.id })
+                if(group.isNotEmpty()) {
+                    item(key="routine-section-$period") {
+                        Surface(shape=RoundedCornerShape(17.dp),
+                            color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.48f)) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=10.dp),
+                                verticalAlignment=Alignment.CenterVertically) {
+                                Text(period,style=MaterialTheme.typography.titleMedium,
+                                    color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold,
+                                    modifier=Modifier.weight(1f))
+                                Text("${group.count{done(it,day,data)}} de ${group.size}",
+                                    style=MaterialTheme.typography.labelMedium,
+                                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    items(group,key={ "routine-$period-${it.id}" }) { task ->
+                        TaskRow(task,day,data,vm) { editing=task }
+                    }
+                }
+            }
+            if(!reviewOnly && routineSection=="Hoje" && tasks.isNotEmpty()) item {
+                Text("Toque na atividade para editar ou marcar a conclusão.",
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
     if (creating || editing != null) RecordEditor("task", editing, vm, onDismiss = { creating = false; editing = null })
 }
 
 @Composable
-internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?, dismiss: () -> Unit) {
+internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?, dismiss: () -> Unit, startBought: Boolean = false) {
     val id = remember { entry?.id ?: java.util.UUID.randomUUID().toString() }
+    var advanced by rememberSaveable(id) { mutableStateOf(false) }
     val roomChoices=listOf("Cozinha", "Banheiro", "Lavanderia", "Pets", "Casa")
     var title by remember { mutableStateOf(entry?.title ?: "") }; var unit by remember { mutableStateOf(entry?.unit ?: "un") }; var storageRoom by remember { mutableStateOf(entry?.storageRoom?.takeIf { it.isNotBlank() } ?: entry?.let { suggestedStorageRoom(it.title,it.category) } ?: "Casa") }; var customRoom by remember { mutableStateOf(entry?.storageRoom?.takeIf { it.isNotBlank() && it !in roomChoices }.orEmpty()) }
     var recipient by remember { mutableStateOf(entry?.recipient?.ifBlank { "Casa" } ?: "Casa") }; var needGroup by remember { mutableStateOf(entry?.group?.ifBlank { "Essenciais" } ?: "Essenciais") }; var subgroup by remember { mutableStateOf(entry?.subgroup.orEmpty()) }; var priority by remember { mutableStateOf(entry?.priority?.ifBlank { "Normal" } ?: "Normal") }
     var planned by remember { mutableStateOf(quantityInput(entry?.plannedMilli ?: 1000)) }; var actualQty by remember { mutableStateOf(quantityInput(entry?.actualMilli ?: 1000)) }
-    var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought ?: false) }
+    var estimated by remember { mutableStateOf(if(entry?.estimateKnown==true) moneyInput(entry.estimated) else "") }; var real by remember { mutableStateOf(entry?.actual?.let(::moneyInput) ?: "") }; var bought by remember { mutableStateOf(entry?.bought == true || startBought) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     EditDialog(if (entry == null) "Novo item" else "Ficha do produto", dismiss, save = { vm.action {
         require(title.isNotBlank()) { "Informe o produto." }
@@ -417,12 +553,41 @@ internal fun ShoppingEditor(vm: CentralViewModel, basket: Basket, entry: Entry?,
         if (bought) item.real()
         vm.repo.editBasket(basket.market, basket.revision.takeIf { vm.repo.data.value.baskets.containsKey(basket.market) }) { it.copy(entries = it.entries.filterNot { e -> e.id == id } + item) }; dismiss()
     } }, busy = busy) {
-        Field("Produto", title, { title = it }); Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient=it }); Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup=it }); Field("Subgrupo opcional", subgroup, { subgroup=it }); Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority=it }); Choice("Onde guardar", roomChoices+"Outro", if(storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it }); if(storageRoom=="Outro") Field("Nome do cômodo", customRoom, { customRoom=it }); Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
-        Field("Quantidade prevista", planned, { planned = it }); Field("Preço previsto opcional por unidade (R$)", estimated, { estimated = it })
-        Text("Preço por $unit. Para 500 g a R$ 0,04/g, use quantidade 500; para 0,5 kg a R$ 40/kg, use 0,5.", style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" }); Text("Foi comprado") }
-        if (bought) { Field("Quantidade comprada", actualQty, { actualQty = it }); Field("Preço real por unidade (R$)", real, { real = it }) }
-        if (entry != null && basket.entries.any { it.id==entry.id }) TextButton(onClick = { vm.action { vm.repo.editBasket(basket.market, basket.revision) { it.copy(entries = it.entries.filterNot { e -> e.id == id }) }; dismiss() } }, enabled = !busy) { Text("Remover da sessão atual") }
+        Field("Produto", title, { title = it })
+        Choice("Unidade", listOf("un", "kg", "g", "L", "mL", "pacote"), unit, { unit = it })
+        Field("Quantidade", planned, { planned = it })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(bought, { bought = it }, modifier = Modifier.semantics { contentDescription = "Produto comprado" })
+            Text("Já coloquei no carrinho", style = MaterialTheme.typography.bodyMedium)
+        }
+        if (bought) {
+            Field("Quantidade comprada", actualQty, { actualQty = it })
+            Field("Preço real por ${unit} (R$)", real, { real = it })
+            if (real.isBlank()) Text("Informe o preço para registrar a compra.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(if (advanced) "Ocultar opções do produto" else "Mais opções do produto")
+        }
+        if (advanced) {
+            Choice("Para quem", listOf("Casa", "Nós", "Rhayra", "Tiago", "Lucca"), recipient, { recipient = it })
+            Choice("Grupo", listOf("Essenciais", "Alimentação", "Casa e limpeza", "Higiene e cuidados", "Cuidados do Lucca", "Pets", "Outro"), needGroup, { needGroup = it })
+            Field("Subgrupo opcional", subgroup, { subgroup = it })
+            Choice("Prioridade", listOf("Alta", "Normal", "Baixa"), priority, { priority = it })
+            Choice("Onde guardar", roomChoices + "Outro", if (storageRoom in roomChoices) storageRoom else "Outro", { storageRoom = it })
+            if (storageRoom == "Outro") Field("Nome do cômodo", customRoom, { customRoom = it })
+            Field("Preço previsto por unidade (opcional, R$)", estimated, { estimated = it })
+            if (entry != null && basket.entries.any { it.id == entry.id }) {
+                TextButton(onClick = {
+                    vm.action {
+                        vm.repo.editBasket(basket.market, basket.revision) {
+                            it.copy(entries = it.entries.filterNot { e -> e.id == id })
+                        }
+                        dismiss()
+                    }
+                }, enabled = !busy) { Text("Remover item da lista") }
+            }
+        }
     }
 }
 
@@ -465,7 +630,7 @@ private fun FinanceScreen(vm: CentralViewModel, data: DataState) {
 
 @Composable
 private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: DataState) {
-    var section by rememberSaveable { mutableStateOf("Resumo") }; var create by remember { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf("Nossa Jornada") }; var create by remember { mutableStateOf(false) }
     var momentEdit by remember { mutableStateOf<Record?>(null) }
     var destination by rememberSaveable { mutableStateOf("Ilha das Surpresas") }; var cardIndex by rememberSaveable { mutableIntStateOf(0) }
     val cards = when (destination) {
@@ -480,24 +645,24 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
     val experience = LocalExperience.current
     fun touch() { AndroidInteractions.haptic(view, experience.haptics); AndroidInteractions.clickSound(view, experience.sounds) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { SectionHero("Nosso espaço", "Pequenas aventuras. Boas lembranças.", HeartLine) }
-        item { ChoiceStrip(listOf("Resumo", "Momentos", "Jornada", "Baú"),section,{touch();section=it}) }
+        item { ReferenceHeading("Nós", "Pequenas aventuras. Boas lembranças.") }
+        item { ReferenceTabs(listOf("Nossa Jornada","Jogos","Conversas","Conquistas"),section) { touch();section=it } }
         item { Text(if (session.local) "Espaço pessoal neste aparelho" else "${data.members.size} participantes no espaço", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (section == "Resumo") {
-            item { CoupleSummary(data,session,onMoments={touch();section="Momentos"},onJourney={touch();section="Jornada"},onCreateMoment={touch();create=true}) }
-        } else if (section == "Momentos") {
+        if (section == "Nossa Jornada") {
+            item { CoupleLandingReference(data,session,onMoments={touch();section="Conversas"},onJourney={touch();section="Jogos"},onMemories={touch();section="Conquistas"},onCreateMoment={touch();create=true}) }
+        } else if (section == "Conversas") {
             item { Button(onClick = { touch(); create = true }, enabled = !busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Guardar um momento") } }
             val moments = data.records.filter { it.kind == "moment" }
             if (moments.isEmpty()) item { Empty("As memórias começam com vocês", "Guarde uma lembrança real, pessoal ou compartilhada.") }
             items(moments, key = { it.id }) { r -> Card(onClick={momentEdit=r},modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text(r.text("title"),style=MaterialTheme.typography.titleMedium);Text("${displayDate(r.text("date"))} · ${if(r.isPrivate) "Privada" else "Compartilhada"}",style=MaterialTheme.typography.bodySmall);Text(r.text("note"));Text("Editar lembrança",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) } } }
-        } else if (section=="Baú") {
+        } else if (section=="Conquistas") {
             val saved=data.records.filter { it.kind=="quest"&&!it.flag("cancelled")&&(it.fields["completed"] as? List<*>)?.distinct()?.size==2 }
             if(saved.isEmpty()) item { Empty("Baú de descobertas","As experiências confirmadas pelos dois aparecem aqui.") }
             items(saved,key={it.id}) { memory -> Panel(memory.text("title"),displayDate(memory.text("date"))) { Text(memory.text("destination"));Text("Experiência confirmada pelos dois",style=MaterialTheme.typography.labelSmall) } }
         } else {
             item { Panel("No nosso ritmo", "A jornada é opcional") { Choice("Atmosfera", listOf("Desligado", "Discreto", "Equilibrado", "Divertido"), level, { touch(); level = it; prefs.edit().putString("level", it).apply() }); Text("Lazer em dupla, sem ranking. Gastos e cuidados não dão pontos.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             if (level == "Desligado") item { Empty("Jornada pausada", "Você pode continuar usando todo o app. Ative uma atmosfera se quiser explorar convites.") }
-            else if (section == "Jornada") {
+            else if (section == "Jogos") {
                 item { Text("Escolham um mundo", style = MaterialTheme.typography.titleMedium) }
                 items(listOf("Ilha das Surpresas", "Bosque das Conversas", "Observatório dos Sonhos")) { world ->
                     val active = destination == world
@@ -554,6 +719,8 @@ private fun HealthScreen(vm: CentralViewModel, data: DataState) {
 
 @Composable
 internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: DataState, export: () -> Unit, notify: () -> Unit, navigate: (String) -> Unit = {}, photo: () -> Unit = {}) {
+    var section by rememberSaveable { mutableStateOf("Início") }
+    var revealDiagnostics by rememberSaveable { mutableStateOf(false) }
     var partnerEmail by rememberSaveable { mutableStateOf("") }; var code by rememberSaveable { mutableStateOf("") }; var invite by remember { mutableStateOf("") }; var leaving by remember { mutableStateOf(false) }
     val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("reminders_${session.uid}", android.content.Context.MODE_PRIVATE)
     var reminders by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("enabled", true)) }
@@ -585,19 +752,16 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    PersonalPortrait(experience.photo,session.name)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(session.name, style = MaterialTheme.typography.titleLarge)
-                        Text(if (session.local) "Espaço pessoal neste aparelho" else session.email, style = MaterialTheme.typography.bodySmall)
-                            TextButton(onClick = photo, contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) { Text("Escolher minha foto") }
-                    }
-                }
-            }
+        if(section=="Início") item {
+            SettingsReferenceLanding(
+                session=session,photoUri=experience.photo,onPhoto=photo,
+                onSection={section=it},onRoute=navigate
+            )
+        } else if(section!="Início") item {
+            TextButton(onClick={section="Início"}) { Text("‹  Voltar às configurações") }
+            ReferenceHeading(section)
         }
-        item { Panel("Do seu jeito", "Pequenos detalhes que fazem diferença.") {
+        if (section == "Aparência") item { Panel("Do seu jeito", "Pequenos detalhes que fazem diferença.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Vibrações leves ao tocar",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(haptics,{ haptics=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("haptics",it).apply();AndroidInteractions.haptic(view,it) },modifier=Modifier.semantics { contentDescription="Vibrações leves ao tocar" }) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Animações suaves",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(motion,{ motion=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("motion",it).apply() },modifier=Modifier.semantics { contentDescription="Animações suaves" }) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Sons ao tocar",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(sounds,{ sounds=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("sounds",it).apply();AndroidInteractions.clickSound(view,it) },modifier=Modifier.semantics { contentDescription="Sons ao tocar" }) }
@@ -605,9 +769,9 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
             TextButton(onClick = { AndroidInteractions.haptic(view,haptics) },enabled=haptics) { Text("Sentir a vibração de teste") }
             Text("A resposta tátil respeita a configuração do Android. Sua foto fica somente neste aparelho.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         } }
-        if (!session.local && session.household.isBlank()) {
+        if (section == "Conta e casal" && !session.local && session.household.isBlank()) {
             item { Panel("Vamos conectar vocês?", "Crie o espaço ou aceite o convite que recebeu.") { Button(onClick = { vm.action { vm.repo.createHouse() } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Criar nosso espaço") }; HorizontalDivider(Modifier.padding(vertical = 6.dp)); Field("Código recebido", code, { code = it }); OutlinedButton(onClick = { vm.action { vm.repo.accept(code) } }, enabled = !busy && code.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Aceitar convite") } } }
-        } else if (!session.local) {
+        } else if (section == "Conta e casal" && !session.local) {
             item { Panel("Nosso espaço", when(data.members.size) { 2 -> "Vocês dois estão conectados"; 1 -> "Falta só conectar seu parceiro"; else -> "Confirmando participantes…" }) {
                 if (data.members.size == 1) {
                     Field("E-mail do parceiro", partnerEmail, { partnerEmail = it })
@@ -627,7 +791,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 TextButton(onClick = { leaving = true }, enabled = !busy) { Text("Sair deste espaço", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } }
         }
-        item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
+        if (section == "Lembretes") item { Panel("No seu ritmo", "Escolha quando quer ser lembrado.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Lembretes de tarefas", style = MaterialTheme.typography.bodyMedium); Text("Para ${session.name.ifBlank { "esta conta" }}, neste aparelho", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(reminders, { reminders = it; prefs.edit().putBoolean("enabled", it).apply(); if (it) { notify(); data.records.filter { r -> r.kind == "task" }.forEach { r -> Reminders.schedule(vm.getApplication(), session.uid, r,session.name) } } else Reminders.cancelAll(vm.getApplication(), session.uid) }, modifier = Modifier.semantics { contentDescription = "Lembretes de tarefas para esta conta neste aparelho" }) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Modo Sossego", style = MaterialTheme.typography.bodyMedium); Text("Silêncio das 00:05 às 05:40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(quiet, { enabled ->
@@ -640,7 +804,7 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                     reminderDiagnosticRefresh++
                 }, modifier = Modifier.semantics { contentDescription = "Modo Sossego, das 00:05 às 05:40" }) }
         } }
-        item { Panel("Notificações e permissões", if(notificationAllowed) "Notificações permitidas pelo Android" else "Notificações ainda bloqueadas no Android") {
+        if (section == "Lembretes") item { Panel("Notificações e permissões", if(notificationAllowed) "Notificações permitidas pelo Android" else "Notificações ainda bloqueadas no Android") {
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 if(!notificationAllowed && Build.VERSION.SDK_INT>=33) Button(onClick = notify) { Text("Permitir notificações") }
                 OutlinedButton(onClick = { context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.packageName)) }) { Text("Configurar no Android") }
@@ -659,6 +823,10 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                     prefs.edit().putBoolean("showDetailsOnLockScreen",it).apply()
                 })
             }
+            TextButton(onClick = { revealDiagnostics = !revealDiagnostics }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (revealDiagnostics) "Ocultar diagnóstico técnico" else "Diagnóstico técnico e permissões avançadas")
+            }
+            if (revealDiagnostics) {
             val diagnosis=remember(session.uid,data.records,reminderDiagnosticRefresh,notificationAllowed) {
                 Reminders.diagnostics(context,session.uid)
             }
@@ -738,9 +906,10 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+context.packageName))) }
                     .onFailure { vm.message.value="Ative Alarmes e lembretes no acesso especial aos aplicativos." }
             }) { Text("Permitir alarmes no horário") }
+            }
         } }
-        item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-        data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
+        if (section == "Privacidade") item { Panel("Privacidade e dados", if(session.local) "Seus registros pessoais ficam neste aparelho." else "Seus registros pessoais ficam só na sua conta.") { OutlinedButton(onClick = export, modifier = Modifier.fillMaxWidth()) { Text("Exportar meus registros") }; Text("Inclui os dados carregados neste aparelho. Não inclui registros privados do parceiro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        if (section == "Avançado") data.records.firstOrNull { it.kind == "appRelease" }?.let { release -> item {
             val uri=android.net.Uri.parse(release.text("url")); val trusted=uri.scheme == "https" && uri.host == "drive.google.com"
             Panel("Atualizações", if(release.number("minimumVersionCode") > BuildConfig.VERSION_CODE) "Atualização importante disponível" else if(release.number("versionCode") > BuildConfig.VERSION_CODE) "Atualização opcional disponível" else "Você está com a versão atual") {
                 Text(if(session.local) "Este espaço salva somente no aparelho. A atualização do aplicativo preserva seus registros locais." else "Produtos, preços e registros atualizam pela nuvem. Uma nova instalação só é necessária quando o aplicativo mudar.", style = MaterialTheme.typography.bodySmall)
@@ -748,12 +917,12 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
                 Text("${BuildConfig.VERSION_NAME} instalada", style = MaterialTheme.typography.labelSmall)
             }
         } }
-        if(data.records.any { it.kind == "sourceReview" }) item { TextButton(onClick = { reviews = !reviews }) { Text(if(reviews) "Recolher pontos a confirmar" else "Ver pontos a confirmar dos arquivos") } }
-        if(reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
-        item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
-        item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
-        item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if(section == "Avançado" && data.records.any { it.kind == "sourceReview" }) item { TextButton(onClick = { reviews = !reviews }) { Text(if(reviews) "Recolher pontos a confirmar" else "Ver pontos a confirmar dos arquivos") } }
+        if(section == "Avançado" && reviews) items(data.records.filter { it.kind == "sourceReview" }, key = { it.id }) { review -> Panel("Ponto a confirmar", if(review.isPrivate) "Somente minha conta" else "No espaço do casal") { Text(review.text("note"), style = MaterialTheme.typography.bodySmall) } }
+        if (section == "Privacidade") item { OutlinedButton(onClick = { navigate("Segurança") }, modifier = Modifier.fillMaxWidth()) { Text("SOS e localização") } }
+        if (section == "Avançado") item { OutlinedButton(onClick = { navigate("Casa") }, modifier = Modifier.fillMaxWidth()) { Text("Nossa Casa e integrações") } }
+        if (section == "Avançado") item { TextButton(onClick = { details = !details }) { Text(if(details) "Ocultar detalhes da versão" else "Sobre esta versão") }; if (details) Text("Sophia, Alexa, Avant, Poup+, Notion e Google login ainda não estão conectados. SOS e localização são experimentais e ainda precisam de validação em dois aparelhos. Lembretes podem atrasar por bateria.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (section == "Conta e casal") item { OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sair da conta") }; Text("Central do Casal ${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth().padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Sair do espaço?") }, text = { Text("Sua conta perde acesso aos registros compartilhados. Seus registros privados permanecem na sua conta. O histórico do espaço é preservado.") }, confirmButton = { Button(onClick = { vm.action { Reminders.cancelAll(vm.getApplication(), session.uid); vm.repo.leaveHouse(); leaving = false } }) { Text("Sair do espaço") } }, dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancelar") } })
 }

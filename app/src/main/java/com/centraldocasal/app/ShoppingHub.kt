@@ -188,10 +188,11 @@ internal fun planningPriceSignal(record: Record, records: List<Record>): String?
 internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: SessionState, busy: Boolean, annual: () -> Unit, requestedMarket: String? = null) {
     var market by rememberSaveable { mutableStateOf(requestedMarket?.takeIf { it in listOf("Mercado","Açougue") } ?: "Mercado") }
     LaunchedEffect(requestedMarket) { if(requestedMarket in listOf("Mercado","Açougue")) market = requestedMarket!! }
-    var section by rememberSaveable { mutableStateOf("Lista") }
+    var section by rememberSaveable { mutableStateOf("Listas") }
     var search by rememberSaveable { mutableStateOf("") }
     var byStore by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Entry?>(null) }
+    var buying by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var budget by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
@@ -210,7 +211,52 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
         ProductDetailScreen(vm,busy,product,data,onDismiss={detail=null},onAdd={ selected -> editing=catalogDraft(selected,data.records).let { if(product.kind=="catalogItem") it.copy(sourceBaseId=product.id) else it };detail=null },onReceipt={receiptDetail=it})
         return
     }
-    if(section=="Lista") ShoppingSessionScreen(data,session,busy,{editing=it},{adding=true},{budget=true},{section="Catálogo"},annual,{section="Histórico"},{preparing=true},{closing=true},{market=it},market,::feedback,onQuickSave={ entry -> vm.action { vm.repo.editBasket(market,basket.revision) { current -> require(current.entries.any { it.id==entry.id }) { "Este item mudou. Atualize a lista." }; current.copy(entries=current.entries.map { if(it.id==entry.id) entry else it }) }; feedback() } },onReview={ section="Revisar" })
+    if (section == "Listas") ShoppingReferenceDashboard(
+        data = data, onMarket = { selected -> market=selected; section="Lista";feedback() },
+        onBudget = { selected -> market=selected; budget=true;feedback() },
+        onHistory = { section="Histórico";feedback() },
+        onSuggestions = { section="Catálogo";feedback() }
+    )
+    else if (section == "Lista") SimpleShoppingScreen(
+        data = data, market = market, busy = busy,
+        onMarket = { market = it; feedback() },
+        onQuickAdd = { name ->
+            vm.action("Item adicionado à lista") {
+                vm.repo.editBasket(market, basket.revision.takeIf { data.baskets.containsKey(market) }) { current ->
+                    require(current.entries.size < 200) { "Limite de 200 itens por lista." }
+                    require(current.entries.none { it.title.equals(name, ignoreCase = true) }) { "Este item já está na lista." }
+                    val recipient = suggestedRecipient(name, "")
+                    val entry = Entry(
+                        title = name,
+                        estimateKnown = false,
+                        recipient = recipient,
+                        group = suggestedNeedGroup(name, "", recipient),
+                        storageRoom = suggestedStorageRoom(name, "")
+                    )
+                    current.copy(entries = current.entries + entry)
+                }
+            }
+        },
+        onEdit = { editing = it; buying = true; feedback() },
+        onUnmark = { entry ->
+            vm.action("Item devolvido à lista") {
+                vm.repo.editBasket(market, basket.revision) { current ->
+                    require(current.entries.any { it.id == entry.id }) { "O item mudou. Atualize a lista." }
+                    current.copy(entries = current.entries.map {
+                        if (it.id == entry.id) it.copy(bought = false, actual = null) else it
+                    })
+                }
+            }
+        },
+        onBudget = { budget = true; feedback() },
+        onPrepareMonth = { preparing = true; feedback() },
+        onHistory = { section = "Histórico"; feedback() },
+        onCatalog = { section = "Catálogo"; feedback() },
+        onReview = { section = "Revisar"; feedback() },
+        onAnnual = annual,
+        onFinish = { closing = true; feedback() },
+        onOverview = { section="Listas"; feedback() }
+    )
     else LazyColumn(Modifier.fillMaxSize(), contentPadding=PaddingValues(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             val title=when(section) { "Catálogo" -> "Produtos para a sua lista"; "Histórico" -> "Histórico que ajuda a decidir"; else -> "Revisar vínculos" }
@@ -274,7 +320,7 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
             items(suggestions,key={it.id}) { suggestion -> MatchReviewCard(vm,data,suggestion,busy,onLinked={detail=it},onOpen={detail=it}) }
         }
     }
-    if(adding||editing!=null) ShoppingEditor(vm,basket,editing) { adding=false;editing=null }
+    if(adding||editing!=null) ShoppingEditor(vm,basket,editing, { adding=false; editing=null; buying=false }, startBought=buying)
     if(budget) {
         var amount by remember { mutableStateOf(BigDecimal.valueOf(basket.budget,2).toPlainString().replace('.',',')) }
         EditDialog("Orçamento de $market",{budget=false},{vm.action { val value=Money.cents(amount); vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) { it.copy(budget=value) };budget=false }},busy) { OutlinedTextField(amount,{amount=it},label={Text("Valor em R$")}) }

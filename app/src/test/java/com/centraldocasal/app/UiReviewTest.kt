@@ -62,7 +62,7 @@ class UiReviewTest {
         compose.onNodeWithText("R$ 88,00").assertIsDisplayed()
         capture("mercado-orcamento-fixture")
         compose.onNodeWithText("Modo Mercado").performScrollTo().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Adicionar ao carrinho")); compose.onNodeWithText("Adicionar ao carrinho").performClick()
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Adicionar ao carrinho")); compose.onNodeWithText("Adicionar ao carrinho").performClick()
         compose.onNodeWithText("Preço real / un").performTextReplacement("8,50"); compose.onNodeWithText("Quantidade (un)").performTextReplacement("2"); capture("edicao-rapida-fixture"); compose.onNodeWithText("Adicionar",substring=false).performClick(); compose.runOnIdle { org.junit.Assert.assertEquals("fixture-pending",edited?.id); org.junit.Assert.assertTrue(edited?.bought==true); org.junit.Assert.assertEquals(850L,edited?.actual); org.junit.Assert.assertEquals(2000L,edited?.actualMilli) }
         capture("modo-mercado-fixture")
     }
@@ -74,29 +74,37 @@ class UiReviewTest {
         capture("evolucao-preco-fixture")
     }
     @Test fun fiveTabsAndSettingsRemainUsableWithNewDesign() {
-        compose.onNodeWithText("Olá, Tiago ♡").assertIsDisplayed(); capture("hoje")
+        compose.onNode(hasText("Tiago! ♡", substring = true)).assertIsDisplayed()
+        compose.onNodeWithTag("home-weather").assertIsDisplayed()
+        compose.onNodeWithTag("home-focus").assertIsDisplayed()
+        capture("hoje")
         compose.onNodeWithTag("tab-Compras").performClick()
-        capture("compras"); compose.onNodeWithText("Montar lista do mês").performScrollTo().assertIsDisplayed()
+        capture("compras"); compose.onNodeWithText("Mercado",substring=false).performClick(); compose.onNodeWithTag("shopping-quick-add").assertIsDisplayed()
         compose.onNodeWithTag("tab-Rotina").performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed(); capture("rotina")
-        compose.onNodeWithTag("tab-Planos").performClick()
+        compose.onNodeWithTag("tab-Mais").performClick()
+        compose.onNodeWithText("Planos", substring = false).performClick()
         compose.onNodeWithText("Criar um plano").assertIsDisplayed(); capture("planos")
-        compose.onNodeWithTag("tab-Nós").performClick()
-        compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed(); capture("nos")
-        compose.onNodeWithContentDescription("Configurações e privacidade").performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("No seu ritmo")); compose.onNodeWithText("No seu ritmo").assertIsDisplayed(); capture("configuracoes")
         compose.onNodeWithContentDescription("Voltar").performClick()
-        compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("tab-Nós").performClick()
+        compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed(); capture("nos")
+        compose.onNodeWithTag("tab-Mais").performClick()
+        compose.onNodeWithText("Configurações",substring=false).performClick()
+        compose.onNodeWithText("Notificações").performClick(); compose.onNodeWithText("No seu ritmo").assertIsDisplayed(); capture("configuracoes")
+        compose.onNodeWithContentDescription("Voltar").performClick()
+        compose.onNodeWithTag("tab-Nós").performClick()
+        compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed()
     }
     @Test fun rhayraTabsAndReminderCenterUseRealLocalState() {
         compose.runOnUiThread { androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java].repo.useLocal("Rhayra") }
-        compose.onNodeWithText("Olá, Rhayra ♡").assertIsDisplayed()
+        compose.onNode(hasText("Rhayra! ♡", substring = true)).assertIsDisplayed()
         capture("rhayra-hoje")
-        listOf("Compras","Rotina","Planos","Nós").forEach { tab ->
+        listOf("Compras","Rotina","Mais","Nós").forEach { tab ->
             compose.onNodeWithTag("tab-$tab").performClick()
             capture("rhayra-$tab")
         }
+        compose.onNodeWithTag("tab-Hoje").performClick()
         compose.onNodeWithContentDescription("Abrir lembretes").performClick()
         compose.onNodeWithText("Pendências de hoje").assertIsDisplayed()
         compose.onNodeWithText("Tudo em dia").assertIsDisplayed()
@@ -114,14 +122,15 @@ class UiReviewTest {
             compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}, openReminder = true) } }
         }
         compose.onNodeWithTag("tab-Rotina").assertIsSelected()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed()
         org.junit.Assert.assertEquals(before, vm.repo.data.value)
     }
     @Test fun auxiliaryScreensAndLocalEntryRemainUsable() {
         val vm = androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java]
+        compose.onNodeWithTag("tab-Mais").performClick()
         listOf("Finanças" to "Novo lançamento", "Saúde" to "Novo registro pessoal").forEach { (destination, action) ->
-            compose.onNode(hasScrollAction()).performScrollToNode(hasText(destination))
+            compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText(destination))
             compose.onNodeWithText(destination).performClick()
             compose.onNodeWithText(action).assertIsDisplayed()
             capture("auxiliar-$destination")
@@ -154,11 +163,11 @@ class UiReviewTest {
                 }
             }
         }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("E-mail do parceiro")); compose.onNodeWithText("E-mail do parceiro").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Criar convite"))
+        compose.onNodeWithText("PERFIL DO CASAL").performClick(); compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("E-mail do parceiro")); compose.onNodeWithText("E-mail do parceiro").assertIsDisplayed()
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Criar convite"))
         compose.onNodeWithText("Criar convite").assertIsDisplayed().assertIsNotEnabled()
         capture("configuracoes-convite-fonte-ampliada-fixture")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Exportar meus registros")); compose.onNodeWithText("Exportar meus registros").assertIsDisplayed()
+        compose.onNodeWithText("‹  Voltar às configurações").performClick(); compose.onNodeWithText("Conta e privacidade").performClick(); compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Exportar meus registros")); compose.onNodeWithText("Exportar meus registros").assertIsDisplayed()
         vm.repo.close()
     }
     @Test fun importedCatalogAndNotesHaveSeparateNavigationAndDoNotChangeManualBalance() = runBlocking {
@@ -169,7 +178,8 @@ class UiReviewTest {
         val vm=CentralViewModel(context); vm.repo.useLocal("Perfil fixture")
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}) } } }
         compose.onNodeWithTag("tab-Compras").performClick()
-        compose.onNodeWithText("Catálogo").performClick()
+        compose.onNodeWithText("Mercado",substring=false).performClick()
+        compose.onNodeWithContentDescription("Mais opções de compras").performClick(); compose.onNodeWithText("Catálogo de produtos").performClick()
         compose.onNodeWithText("Produto fixture").assertIsDisplayed().performClick()
         compose.onNodeWithText("Preparar item para lista").assertIsDisplayed()
         compose.onNodeWithText("Fechar").performClick()
