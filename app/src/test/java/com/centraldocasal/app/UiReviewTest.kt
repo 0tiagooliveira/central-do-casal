@@ -79,7 +79,7 @@ class UiReviewTest {
         compose.onNodeWithTag("home-focus").assertIsDisplayed()
         capture("hoje")
         compose.onNodeWithTag("tab-Compras").performClick()
-        capture("compras"); compose.onNodeWithTag("shopping-quick-add").assertIsDisplayed()
+        capture("compras"); compose.onNodeWithText("Mercado",substring=false).performClick(); compose.onNodeWithTag("shopping-quick-add").assertIsDisplayed()
         compose.onNodeWithTag("tab-Rotina").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Nova tarefa"))
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed(); capture("rotina")
@@ -88,11 +88,13 @@ class UiReviewTest {
         compose.onNodeWithText("Criar um plano").assertIsDisplayed(); capture("planos")
         compose.onNodeWithContentDescription("Voltar").performClick()
         compose.onNodeWithTag("tab-Nós").performClick()
-        compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed(); capture("nos")
-        compose.onNodeWithContentDescription("Configurações e privacidade").performClick()
+        compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed(); capture("nos")
+        compose.onNodeWithTag("tab-Mais").performClick()
+        compose.onNodeWithText("Configurações",substring=false).performClick()
         compose.onNodeWithText("Lembretes").performClick(); compose.onNodeWithText("No seu ritmo").assertIsDisplayed(); capture("configuracoes")
         compose.onNodeWithContentDescription("Voltar").performClick()
-        compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("tab-Nós").performClick()
+        compose.onNodeWithText("Nossa jornada",substring=false).assertIsDisplayed()
     }
     @Test fun rhayraTabsAndReminderCenterUseRealLocalState() {
         compose.runOnUiThread { androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java].repo.useLocal("Rhayra") }
@@ -102,6 +104,7 @@ class UiReviewTest {
             compose.onNodeWithTag("tab-$tab").performClick()
             capture("rhayra-$tab")
         }
+        compose.onNodeWithTag("tab-Hoje").performClick()
         compose.onNodeWithContentDescription("Abrir lembretes").performClick()
         compose.onNodeWithText("Pendências de hoje").assertIsDisplayed()
         compose.onNodeWithText("Tudo em dia").assertIsDisplayed()
@@ -175,6 +178,7 @@ class UiReviewTest {
         val vm=CentralViewModel(context); vm.repo.useLocal("Perfil fixture")
         compose.runOnUiThread { compose.activity.setContent { CentralTheme { CentralApp(vm, {}, {}) } } }
         compose.onNodeWithTag("tab-Compras").performClick()
+        compose.onNodeWithText("Mercado",substring=false).performClick()
         compose.onNodeWithContentDescription("Mais opções de compras").performClick(); compose.onNodeWithText("Catálogo de produtos").performClick()
         compose.onNodeWithText("Produto fixture").assertIsDisplayed().performClick()
         compose.onNodeWithText("Preparar item para lista").assertIsDisplayed()
