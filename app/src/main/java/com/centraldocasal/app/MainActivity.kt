@@ -416,66 +416,116 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val remindersEnabled=reminderPrefs.getBoolean("enabled",true)
     val notificationAllowed=AndroidInteractions.notificationsAllowed(context)
     val configured=data.records.count { it.kind=="task" && it.text("time").isNotBlank() && !it.flag("skipReminder") && !it.flag("needsReview") && (it.text("owner","Ambos")=="Ambos" || taskBelongsTo(it,session.name)) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { SectionHero(if(reviewOnly) "Revisar rotinas" else "Sua semana",if(reviewOnly) "Confirme os dados para usar estas rotinas." else "Cada dia tem seu próprio ritmo.", CalendarLine) }
-        if(!reviewOnly && (!notificationAllowed || !remindersEnabled)) item { QuietCard("Lembretes precisam de atenção",if(!notificationAllowed) "Permita notificações do Android para receber os avisos das tarefas." else "Os lembretes estão desligados neste aparelho.") { Text("Edite uma tarefa para conferir horário e “Permitir lembrete”.",style=MaterialTheme.typography.bodySmall) } }
-        if(!reviewOnly && notificationAllowed && remindersEnabled && configured>0) item { Text("$configured lembretes ativos para suas rotinas e as compartilhadas.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        if(!reviewOnly) item { ChoiceStrip(listOf("Neste dia","Todos os registros"),if(showAll) "Todos os registros" else "Neste dia",{showAll=it=="Todos os registros"}) }
-        if(!reviewOnly) item { WeekRibbon(day, { dayText=it.toString() }) }
-        if(!reviewOnly) item { ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it}) }
+    var routineSection by rememberSaveable { mutableStateOf("Hoje") }
+    val allTasks=data.records.filter { it.kind=="task" &&
+        if(reviewOnly) it.flag("needsReview")||it.flag("needsTimeReview")
+        else showAll || occurs(it,day)
+    }
+    val profileTasks=allTasks.filter { task -> reviewOnly || when(audience) {
+        "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name)
+        "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"
+        else -> taskBelongsTo(task,session.name)
+    } }
+    val tasks=if(routineSection=="Hábitos" && !reviewOnly)
+        profileTasks.filter { it.text("repeat") !in setOf("","Única") } else profileTasks
+    val completedTasks=tasks.filter { done(it,day,data) }
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=18.dp,vertical=16.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Atividades do dia", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                Button(onClick = { creating = true }, shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Default.Add, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Nova tarefa")
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                ReferenceHeading(if(reviewOnly)"Revisar rotinas" else "Rotina",
+                    if(reviewOnly)"Confirme os dados pendentes" else "Seus compromissos, no seu ritmo",
+                    Modifier.weight(1f))
+                IconButton(onClick={creating=true}) { Icon(Icons.Default.Add,"Nova tarefa",tint=MaterialTheme.colorScheme.primary) }
+            }
+        }
+        if(!reviewOnly) item {
+            ReferenceTabs(listOf("Hoje","Semana","Cuidados","Hábitos"),routineSection) { routineSection=it }
+        }
+        if(!reviewOnly && routineSection!="Cuidados") item {
+            ReferenceCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Icon(CalendarLine,null,tint=MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(9.dp))
+                    Text(day.format(DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM",br))
+                        .replaceFirstChar { it.uppercase() },
+                        style=MaterialTheme.typography.titleSmall,
+                        modifier=Modifier.weight(1f))
+                    TextButton(onClick={routineSection="Semana"}) { Text("Alterar dia") }
                 }
             }
         }
-        val allTasks=data.records.filter { it.kind == "task" && if(reviewOnly) (it.flag("needsReview")||it.flag("needsTimeReview")) else (showAll || occurs(it, day))  }
-        val tasks=allTasks.filter { task -> reviewOnly || when(audience) { "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name); "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"; else -> taskBelongsTo(task,session.name) } }
-        val weekend=day.dayOfWeek.value in setOf(6,7)
-        val pendingTasks = tasks.filterNot { done(it, day, data) }
-        val finishedTasks = tasks.filter { done(it, day, data) }
-        val sharedCare = pendingTasks.filter { it.text("owner","Ambos") == "Ambos" && it.text("category") in setOf("Casa","Lucca") }
-        val otherTasks = pendingTasks.filterNot { it in sharedCare }
-        if (!reviewOnly && tasks.isNotEmpty()) item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("${finishedTasks.size} de ${tasks.size} concluídas",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.primary)
-                Text("${(finishedTasks.size * 100 / tasks.size)}%", style = MaterialTheme.typography.labelSmall)
-            }
-            Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { finishedTasks.size.toFloat() / tasks.size },
-                modifier = Modifier.fillMaxWidth().height(7.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primaryContainer
-            )
+        if(!reviewOnly && routineSection=="Semana") item { WeekRibbon(day,{ dayText=it.toString() }) }
+        if(!reviewOnly && routineSection!="Cuidados") item {
+            ChoiceStrip(listOf("Para mim","Compartilhadas","Tudo"),audience,{audience=it})
         }
-        if(weekend && sharedCare.isNotEmpty()) item { QuietCard("Cuidado compartilhado de fim de semana","Casa e Lucca: dividam o que precisa acontecer hoje.") {} }
-        if(sharedCare.isNotEmpty()) items(sharedCare,key={it.id}) { TaskRow(it,day,data,vm) { editing=it } }
-        if(otherTasks.isNotEmpty() && sharedCare.isNotEmpty()) item { Text("Outras pendências",style=MaterialTheme.typography.titleMedium) }
-        if (tasks.isEmpty()) item { Empty(if(reviewOnly) "Rotinas revisadas" else "Nenhuma tarefa para este dia",if(reviewOnly) "Não há confirmações pendentes." else "Cadastre uma atividade única ou recorrente.") }
-        items(otherTasks, key = { it.id }) { TaskRow(it, day, data, vm) { editing = it } }
-        if (finishedTasks.isNotEmpty() && !reviewOnly) {
-            item {
-                Text("Concluídas hoje · ${finishedTasks.size}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            items(finishedTasks, key = { "done-${it.id}" }) {
-                TaskRow(it, day, data, vm) { editing = it }
-            }
+        if(!reviewOnly && routineSection!="Cuidados" && (!notificationAllowed || !remindersEnabled)) item {
+            Text(if(!notificationAllowed) "Notificações desativadas no Android. Confira os lembretes."
+                else "Lembretes desativados neste aparelho.",style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (!reviewOnly) {
+        if(routineSection=="Cuidados" && !reviewOnly) {
             item {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Spacer(Modifier.height(4.dp))
-                CareEventsPanel(vm, session, data, day)
+                CareEventsPanel(vm,session,data,day)
+            }
+        } else {
+            item {
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                    Text(if(routineSection=="Hábitos")"Hábitos recorrentes" else "Atividades do dia",
+                        style=MaterialTheme.typography.titleLarge,
+                        fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                    TextButton(onClick={creating=true}) {
+                        Icon(Icons.Default.Add,null,Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp)); Text("Nova tarefa")
+                    }
+                }
+                if(tasks.isNotEmpty()) {
+                    Text("${completedTasks.size} de ${tasks.size} concluídas",
+                        style=MaterialTheme.typography.labelMedium,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    ReferenceProgress(completedTasks.size.toFloat()/tasks.size)
+                }
+            }
+            if(tasks.isEmpty()) item {
+                ReferenceEmpty(if(reviewOnly)"Rotinas revisadas" else "Nenhuma tarefa neste período",
+                    if(reviewOnly)"Não há confirmações pendentes."
+                    else "Cadastre uma rotina ou escolha outro dia.")
+            }
+            listOf("Manhã","Tarde","Noite","Sem horário").forEach { period ->
+                val group=tasks.filter { task ->
+                    val time=runCatching { LocalTime.parse(task.text("time")) }.getOrNull()
+                    when(period) {
+                        "Manhã" -> time!=null && time.hour in 5..11
+                        "Tarde" -> time!=null && time.hour in 12..17
+                        "Noite" -> time!=null && (time.hour in 18..23 || time.hour in 0..4)
+                        else -> time==null
+                    }
+                }.sortedWith(compareBy<Record> { it.text("time").ifBlank { "99:99" } }.thenBy { it.id })
+                if(group.isNotEmpty()) {
+                    item(key="routine-section-$period") {
+                        Surface(shape=RoundedCornerShape(17.dp),
+                            color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.48f)) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=10.dp),
+                                verticalAlignment=Alignment.CenterVertically) {
+                                Text(period,style=MaterialTheme.typography.titleMedium,
+                                    color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold,
+                                    modifier=Modifier.weight(1f))
+                                Text("${group.count{done(it,day,data)}} de ${group.size}",
+                                    style=MaterialTheme.typography.labelMedium,
+                                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    items(group,key={ "routine-$period-${it.id}" }) { task ->
+                        TaskRow(task,day,data,vm) { editing=task }
+                    }
+                }
+            }
+            if(!reviewOnly && routineSection=="Hoje" && tasks.isNotEmpty()) item {
+                Text("Toque na atividade para editar ou marcar a conclusão.",
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
