@@ -77,7 +77,7 @@ internal fun ShoppingReferenceDashboard(
                 Row(horizontalArrangement=Arrangement.spacedBy(9.dp),modifier=Modifier.fillMaxWidth()) {
                     baskets.forEach { basket ->
                         val entries=basket.entries
-                        val total=entries.filter { it.bought && it.actual!=null }.sumOf {
+                        val total=entries.filter { it.bought && it.actual!=null && it.actualMilli>0 }.sumOf {
                             Money.subtotal(requireNotNull(it.actual),it.actualMilli)
                         }
                         Surface(onClick={onMarket(basket.market)},modifier=Modifier.weight(1f).heightIn(min=114.dp),
