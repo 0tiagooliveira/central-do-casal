@@ -10,8 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.ArrowForward
+
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -154,7 +154,7 @@ internal fun HomeExperienceScreen(
                 }
                 IconButton(onClick={touch{navigate("Lembretes")}},
                     modifier=Modifier.size(40.dp).semantics{contentDescription="Abrir lembretes"}) {
-                    Icon(Icons.Default.Notifications,null,tint=palette.primary)
+                    Icon(ReminderBell,null,tint=palette.primary)
                 }
             }
         }
@@ -199,7 +199,7 @@ internal fun HomeExperienceScreen(
                         verticalAlignment=Alignment.CenterVertically) {
                         Text("$completed de ${tasks.size} atividades concluídas hoje",
                             modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium,color=palette.primary)
-                        Icon(Icons.Default.ChevronRight,null,Modifier.size(18.dp),tint=accent)
+                        Icon(Icons.Default.ArrowForward,null,Modifier.size(18.dp),tint=accent)
                     }
                 }
             }
@@ -261,7 +261,7 @@ internal fun HomeExperienceScreen(
             ) {
                 Text(if(showRest) "Mostrar menos" else "Ver compras, planos e outros detalhes")
                 Spacer(Modifier.width(8.dp))
-                Icon(Icons.Default.ChevronRight,null,Modifier.size(18.dp))
+                Icon(Icons.Default.ArrowForward,null,Modifier.size(18.dp))
             }
         }
         if(showRest) {
@@ -334,7 +334,7 @@ private fun HomeSection(title: String, accent: Color, trailing: String="", onTra
         if(trailing.isNotBlank()) {
             if(onTrailing!=null) TextButton(onClick=onTrailing,contentPadding=PaddingValues(horizontal=4.dp)) {
                 Text(trailing,style=MaterialTheme.typography.labelSmall,color=homeMuted)
-                Icon(Icons.Default.ChevronRight,null,Modifier.size(15.dp),tint=accent)
+                Icon(Icons.Default.ArrowForward,null,Modifier.size(15.dp),tint=accent)
             } else Text(trailing,style=MaterialTheme.typography.labelSmall,color=homeMuted)
         }
     }
@@ -423,7 +423,7 @@ internal fun HomeMoreScreen(navigate: (String) -> Unit) {
                         Text(name,style=MaterialTheme.typography.titleSmall,fontWeight=FontWeight.SemiBold)
                         Text(description,style=MaterialTheme.typography.bodySmall,color=homeMuted)
                     }
-                    Icon(Icons.Default.ChevronRight,null,tint=scheme.tertiary)
+                    Icon(Icons.Default.ArrowForward,null,tint=scheme.tertiary)
                 }
             }
         }
