@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
@@ -56,7 +57,8 @@ internal fun SimpleShoppingScreen(
     onCatalog: () -> Unit,
     onReview: () -> Unit,
     onAnnual: () -> Unit,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    onOverview: () -> Unit
 ) {
     val basket = data.baskets[market] ?: Basket(market)
     val pending = basket.entries.filterNot { it.bought }.sortedBy { it.title.lowercase() }
@@ -67,6 +69,7 @@ internal fun SimpleShoppingScreen(
     var draft by rememberSaveable(market) { mutableStateOf("") }
     var showPurchased by rememberSaveable(market) { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
+    var tripStartedAt by rememberSaveable(market) { mutableStateOf<Long?>(null) }
 
     fun addItem() {
         val name = draft.trim()
@@ -84,9 +87,13 @@ internal fun SimpleShoppingScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick=onOverview,modifier=Modifier.size(46.dp)) {
+                Icon(Icons.Default.ArrowBack,"Voltar às listas")
+            }
             Column(Modifier.weight(1f)) {
-                Text("Lista de compras", style = MaterialTheme.typography.headlineMedium)
-                Text("Adicione o que falta. O restante fica com a gente.",
+                Text(if(tripStartedAt!=null) "No mercado" else "Lista de $market",
+                    style = MaterialTheme.typography.headlineMedium, color=MaterialTheme.colorScheme.primary)
+                Text(if(tripStartedAt!=null) "Compra em andamento · ${purchased.size} de ${basket.entries.size} itens" else "Adicione o que falta. O restante fica com a gente.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -102,6 +109,23 @@ internal fun SimpleShoppingScreen(
                     DropdownMenuItem(text = { Text("Revisar vínculos") }, onClick = { menu = false; onReview() })
                     DropdownMenuItem(text = { Text("Resumo do ano") }, onClick = { menu = false; onAnnual() })
                 }
+            }
+        }
+        if (tripStartedAt==null) {
+            OutlinedButton(onClick={tripStartedAt=System.currentTimeMillis()},
+                modifier=Modifier.fillMaxWidth()) { Text("Iniciar compra no $market") }
+        } else {
+            ReferenceCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Compra em andamento",style=MaterialTheme.typography.titleSmall,
+                            color=MaterialTheme.colorScheme.primary)
+                        Text("${purchased.size} de ${basket.entries.size} itens · ${compactMoney(spent)} confirmados",
+                            style=MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick={tripStartedAt=null}) { Text("Encerrar modo") }
+                }
+                ReferenceProgress(if(basket.entries.isEmpty()) 0f else purchased.size.toFloat()/basket.entries.size)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
