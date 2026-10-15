@@ -302,8 +302,7 @@ internal fun WeatherCard(
 
     val current = weather
     val insight = remember(current, records, uid, enabled) {
-        if (enabled && current != null) SophiaMomentPlanner.plan(current, records, profileName, LocalDateTime.now())
-            .firstOrNull { it.eventAt <= LocalDateTime.now().plusHours(2) }
+        if (enabled && current != null) SophiaMoments.currentTip(context, uid, profileName, records)
         else null
     }
     Card(
@@ -355,7 +354,22 @@ internal fun WeatherCard(
                     Text(if (busy) "Consultando…" else "Consultar o clima")
                 }
             }
-            if (current != null || enabled) {
+            if (!enabled && current != null && !expanded) {
+                TextButton(onClick = {
+                    val location = lastLocation
+                    if (location == null) {
+                        message = "Para ativar, consulte o clima com a localização autorizada."
+                    } else {
+                        SophiaMoments.enable(context, uid, location.first, location.second)
+                        SophiaMoments.syncTasks(context, uid, profileName, records)
+                        SophiaMoments.updateForecast(context, uid, current)
+                        enabled = true
+                        message = if (!AndroidInteractions.notificationsAllowed(context))
+                            "Para receber avisos, ative as notificações do Android." else null
+                    }
+                }) { Text("Ativar avisos inteligentes") }
+            }
+            if (expanded && (current != null || enabled)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Avisos inteligentes neste celular", modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodySmall)
