@@ -240,7 +240,8 @@ internal fun WeatherCard(
     requestLocationPermission: () -> Unit,
     uid: String,
     profileName: String,
-    records: List<Record>
+    records: List<Record>,
+    requestNotificationsPermission: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -364,8 +365,10 @@ internal fun WeatherCard(
                         SophiaMoments.syncTasks(context, uid, profileName, records)
                         SophiaMoments.updateForecast(context, uid, current)
                         enabled = true
-                        message = if (!AndroidInteractions.notificationsAllowed(context))
-                            "Para receber avisos, ative as notificações do Android." else null
+                        message = if (!AndroidInteractions.notificationsAllowed(context)) {
+                            requestNotificationsPermission()
+                            "Autorize as notificações do Android para receber os avisos." 
+                        } else null
                     }
                 }) { Text("Ativar avisos inteligentes") }
             }
@@ -386,8 +389,10 @@ internal fun WeatherCard(
                                 SophiaMoments.syncTasks(context, uid, profileName, records)
                                 current?.let { SophiaMoments.updateForecast(context, uid, it) }
                                 enabled = true
-                                message = if (!AndroidInteractions.notificationsAllowed(context))
-                                    "Ative as notificações do Android para receber os avisos." else null
+                                message = if (!AndroidInteractions.notificationsAllowed(context)) {
+                                    requestNotificationsPermission()
+                                    "Autorize as notificações do Android para receber os avisos."
+                                } else null
                             }
                         }
                     })
