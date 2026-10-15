@@ -50,7 +50,7 @@ class NativeFlowsTest {
     @After fun closeOwnedRepository() { if (::vm.isInitialized) vm.repo.close() }
 
     private fun scrollTo(matcher: SemanticsMatcher) {
-        compose.onNode(hasScrollAction()).performScrollToNode(matcher)
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(matcher)
     }
 
     private fun capture(name: String) {
