@@ -120,6 +120,8 @@ test('care events require genuine authorship and only the author can undo',async
  await assertFails(deleteDoc(doc(db('bob'),'households/home/records/care-alice')));
  await assertSucceeds(deleteDoc(ref));
  await assertFails(setDoc(doc(db('bob'),'households/home/records/care-forged'),care('alice')));
+ await assertSucceeds(setDoc(doc(db('alice'),'households/home/records/care-bottle'),care('alice','bottle','Lucca')));
+ await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid-bottle'),care('alice','bottle','Mel')));
  await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid'),care('alice','petFood','Lucca')));
 });
 test('user cannot forge mutation author',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/forged'),record('bob')));});
