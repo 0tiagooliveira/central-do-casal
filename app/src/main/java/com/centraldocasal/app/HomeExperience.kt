@@ -446,6 +446,7 @@ internal fun HomeMoreScreen(navigate: (String) -> Unit) {
         }
         items(listOf(
             Triple("Planos","Projetos, metas e contribuições","✧"),
+            Triple("Sophia","Previsão, dicas e ações personalizadas","✦"),
             Triple("Lembretes","Seus horários e alertas","◷"),
             Triple("Nossa vida","Visão geral da família","♡"),
             Triple("Finanças","Dinheiro e organização","▣"),
