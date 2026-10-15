@@ -424,11 +424,11 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
         if(reviewOnly) it.flag("needsReview")||it.flag("needsTimeReview")
         else showAll || occurs(it,day)
     }
-    val profileTasks=allTasks.filter { task -> reviewOnly || when(audience) {
+    val profileTasks=allTasks.filter { task -> (reviewOnly && taskBelongsTo(task,session.name)) || (!reviewOnly && when(audience) {
         "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name)
         "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"
         else -> taskBelongsTo(task,session.name)
-    } }
+    }) }
     val tasks=if(routineSection=="Hábitos" && !reviewOnly)
         profileTasks.filter { it.text("repeat") !in setOf("","Única") } else profileTasks
     val completedTasks=tasks.filter { done(it,day,data) }
