@@ -181,11 +181,11 @@ class CentralRepository(context: Context) {
         recordCollection(record.isPrivate).document(record.id).set(record.toMap() + mapOf("updatedBy" to session.value.uid, "updatedAt" to FieldValue.serverTimestamp())).await()
     }
     /** Inventory is user-maintained planning data on a shared catalog item; imported receipt fields stay untouched. */
-    suspend fun saveCatalogInventory(item: Record, stockMilli: Long?, storageRoom: String) {
+    suspend fun saveCatalogInventory(item: Record, stockMilli: Long?, storageRoom: String, hasAtHome: Boolean = stockMilli != null && stockMilli > 0L) {
         require(item.kind == "catalogItem" && !item.isPrivate) { "Só produtos da base compartilhada aceitam estoque." }
         require(stockMilli == null || stockMilli in 0..100_000_000L) { "Quantidade em casa inválida." }
         require(storageRoom.length <= 60) { "Cômodo inválido." }
-        val fields = item.fields + mapOf("stockKnown" to (stockMilli != null), "stockMilli" to (stockMilli ?: 0L), "storageRoom" to storageRoom)
+        val fields = item.fields + mapOf("stockKnown" to (stockMilli != null), "stockMilli" to (stockMilli ?: 0L), "storageRoom" to storageRoom, "hasAtHome" to hasAtHome)
         val next = item.copy(fields = fields)
         if (session.value.local) {
             persistLocal(data.value.copy(records = data.value.records.filterNot { it.id == item.id } + next))
@@ -193,7 +193,7 @@ class CentralRepository(context: Context) {
         }
         recordCollection(false).document(item.id).update(mapOf(
             "stockKnown" to (stockMilli != null), "stockMilli" to (stockMilli ?: 0L), "storageRoom" to storageRoom,
-            "updatedBy" to session.value.uid, "updatedAt" to FieldValue.serverTimestamp()
+            "hasAtHome" to hasAtHome, "updatedBy" to session.value.uid, "updatedAt" to FieldValue.serverTimestamp()
         )).await()
     }
     /** Stores a human-approved display label separately from the immutable fiscal name. */
