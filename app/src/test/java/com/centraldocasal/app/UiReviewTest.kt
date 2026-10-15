@@ -125,8 +125,8 @@ class UiReviewTest {
     }
     @Test fun auxiliaryScreensAndLocalEntryRemainUsable() {
         val vm = androidx.lifecycle.ViewModelProvider(compose.activity)[CentralViewModel::class.java]
+        compose.onNodeWithText("Ver compras, planos e outros detalhes").performScrollTo().performClick()
         listOf("Finanças" to "Novo lançamento", "Saúde" to "Novo registro pessoal").forEach { (destination, action) ->
-            compose.onNodeWithText("Ver compras, planos e outros detalhes").performScrollTo().performClick()
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(destination))
             compose.onNodeWithText(destination).performClick()
             compose.onNodeWithText(action).assertIsDisplayed()
