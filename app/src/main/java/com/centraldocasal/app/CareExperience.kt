@@ -21,6 +21,7 @@ internal data class CareKind(val id: String, val label: String, val subject: Str
 
 internal val careKinds = listOf(
     CareKind("diaper", "Troca de fralda", "Lucca"),
+    CareKind("bottle", "Mamadeira", "Lucca"),
     CareKind("bath", "Banho do Lucca", "Lucca"),
     CareKind("petFood", "Ração da Mel", "Mel")
 )
