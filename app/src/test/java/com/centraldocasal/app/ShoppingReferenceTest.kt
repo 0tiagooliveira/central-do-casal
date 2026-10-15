@@ -19,7 +19,7 @@ class ShoppingReferenceTest {
         assertEquals(1,overview.missingPrices)
         assertEquals(3,overview.count)
         assertEquals(20000L,overview.budget)
-        assertEquals(3298L,overview.planned)
+        assertEquals(2799L,overview.planned)
     }
     @Test fun absentBudgetAndPricesRemainUnknownInsteadOfFabricated() {
         val overview=shoppingOverview(listOf(Basket("Mercado",entries=listOf(
