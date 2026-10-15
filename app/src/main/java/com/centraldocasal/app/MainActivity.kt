@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
         // Depois de voltar de Permissões/Alarmes e lembretes, reavaliar os
         // alarmes locais, mas não recriar os que continuam válidos.
         Reminders.restore(this,forceRearm=false)
+        SophiaMoments.restore(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -195,6 +196,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                 val completeToday=data.records.any { it.kind=="occurrence" && it.text("taskId")==task.id && it.text("date")==LocalDate.now().toString() && it.flag("done") }
                 Reminders.schedule(context,session.uid,task,session.name,completedDay=LocalDate.now().takeIf { completeToday })
             }
+            SophiaMoments.syncTasks(context, session.uid, session.name, data.records)
         }
     }
     LaunchedEffect(data.records, session.uid) {
