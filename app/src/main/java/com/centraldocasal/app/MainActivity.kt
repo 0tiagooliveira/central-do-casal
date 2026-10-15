@@ -225,7 +225,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         }
     }, bottomBar = {
         if (session.uid.isNotBlank() && route.isBlank()) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-            val icons = listOf(HomeLine, CalendarLine, BasketLine, HeartLine, Icons.Default.MoreHoriz)
+            val icons = listOf(HomeLine, CalendarLine, BasketLine, HeartLine, Icons.Default.MoreVert)
             listOf("Hoje", "Rotina", "Compras", "Nós", "Mais").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
         }
     }) { padding ->
