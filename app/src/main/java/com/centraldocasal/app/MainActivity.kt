@@ -497,7 +497,7 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
             }
             listOf("Manhã","Tarde","Noite","Sem horário").forEach { period ->
                 val group=tasks.filter { task ->
-                    val time=runCatching { LocalTime.parse(task.text("time")) }.getOrNull()
+                    val time=runCatching { java.time.LocalTime.parse(task.text("time")) }.getOrNull()
                     when(period) {
                         "Manhã" -> time!=null && time.hour in 5..11
                         "Tarde" -> time!=null && time.hour in 12..17
