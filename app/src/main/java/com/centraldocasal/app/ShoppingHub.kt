@@ -204,6 +204,39 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
     val view = LocalView.current
     val experience = LocalExperience.current
     fun feedback() { AndroidInteractions.haptic(view, experience.haptics); AndroidInteractions.clickSound(view, experience.sounds) }
+    if(preparing) {
+        val catalog=data.records.filter { it.kind=="catalogItem" && it.text("market")==market }.sortedBy { it.text("title") }
+        ShoppingMonthPlannerScreen(
+            data=data, basket=basket, market=market, busy=busy,
+            onDismiss={preparing=false},
+            onSave={ decisions, stock ->
+                feedback()
+                vm.action {
+                    catalog.filter { decisions[it.id]=="Tenho" }.forEach { record ->
+                        val amount=stock[record.id]?.trim().orEmpty()
+                        vm.repo.saveCatalogInventory(
+                            record,
+                            if(amount.isBlank()) null else Money.quantity(amount),
+                            record.text("storageRoom").ifBlank { suggestedStorageRoom(record.text("title"),record.text("category")) }
+                        )
+                    }
+                    val catalogIds=catalog.map { it.id }.toSet()
+                    val currentIds=basket.entries.map { it.sourceBaseId }.toSet()
+                    val kept=basket.entries.filter { entry ->
+                        entry.sourceBaseId.isBlank() || entry.sourceBaseId !in catalogIds || decisions[entry.sourceBaseId]=="Comprar"
+                    }
+                    val drafted=catalog.filter { decisions[it.id]=="Comprar" && it.id !in currentIds }
+                        .map { catalogDraft(it,data.records) }
+                    vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) {
+                        require(kept.size+drafted.size<=200) { "Use até 200 itens por lista." }
+                        it.copy(entries=kept+drafted)
+                    }
+                    preparing=false
+                }
+            }
+        )
+        return
+    }
     if(receiptDetail!=null) { PurchaseDocumentScreen(receiptDetail!!) { receiptDetail=null };return }
     if(detail!=null) {
         val product=detail!!
@@ -278,36 +311,6 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
     if(budget) {
         var amount by remember { mutableStateOf(BigDecimal.valueOf(basket.budget,2).toPlainString().replace('.',',')) }
         EditDialog("Orçamento de $market",{budget=false},{vm.action { val value=Money.cents(amount); vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) { it.copy(budget=value) };budget=false }},busy) { OutlinedTextField(amount,{amount=it},label={Text("Valor em R$")}) }
-    }
-    if(preparing) {
-        var query by remember { mutableStateOf("") }
-        var room by rememberSaveable { mutableStateOf("Todos") }
-        val choices=data.records.filter { it.kind=="catalogItem" && it.text("market")==market }.sortedBy { it.text("title") }
-        val selectedBaseIds=basket.entries.map { it.sourceBaseId }.filter { it.isNotBlank() }.toSet()
-        val choice=remember(choices.map { it.id }, selectedBaseIds) { mutableStateMapOf<String,String>().apply { choices.forEach { record -> put(record.id,if(record.id in selectedBaseIds) "Comprar" else if(record.flag("stockKnown") && record.number("stockMilli")>0) "Tenho" else "Pular") } } }
-        val stock=remember(choices.map { it.id to it.number("stockMilli") }) { mutableStateMapOf<String,String>().apply { choices.forEach { record -> if(record.flag("stockKnown")) put(record.id,BigDecimal.valueOf(record.number("stockMilli"),3).stripTrailingZeros().toPlainString().replace('.',',')) } } }
-        val invalidStock=choices.any { record -> choice[record.id]=="Tenho" && stock[record.id]?.takeIf { it.isNotBlank() }?.let { runCatching { Money.quantity(it) }.isFailure } == true }
-        val buyCount=choice.values.count { it=="Comprar" }; val haveCount=choice.values.count { it=="Tenho" }
-        AlertDialog(onDismissRequest={preparing=false},title={Text("Pré-lista do mês")},text={ Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("Todos os produtos da base aparecem aqui por cômodo. Escolha o que entra, o que já existe em casa e o que fica fora desta compra.")
-            OutlinedTextField(query,{query=it},label={Text("Buscar produto")},singleLine=true)
-            val rooms=listOf("Todos")+(choices.map { it.text("storageRoom").ifBlank { suggestedStorageRoom(it.text("title"),it.text("category")) } }.distinct().sorted())
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { rooms.forEach { option -> FilterChip(room==option,{room=option},label={Text(option)}) } }
-            Text("$buyCount na lista · $haveCount já tenho · ${choices.size-buyCount-haveCount} fora este mês",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            val visible=choices.filter { it.text("title").contains(query,true) && (room=="Todos" || it.text("storageRoom").ifBlank { suggestedStorageRoom(it.text("title"),it.text("category")) }==room) }
-            LazyColumn(Modifier.heightIn(max=360.dp)) { items(visible,key={it.id}) { record ->
-                val previous=productPurchases(record,data.records).firstOrNull(); val unit=record.text("unit").ifBlank { previous?.unit ?: "un" }; val state=choice[record.id] ?: "Pular"
-                Column(Modifier.padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    Text(record.text("title"),style=MaterialTheme.typography.titleSmall)
-                    Text("${record.text("storageRoom").ifBlank { suggestedStorageRoom(record.text("title"),record.text("category")) }} · ${record.text("category")}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    planningPriceSignal(record,data.records)?.let { signal -> Text(signal,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) }
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Comprar","Tenho","Pular").forEach { option -> FilterChip(state==option,{choice[record.id]=option},label={Text(if(option=="Pular") "Não este mês" else option)}) } }
-                    if(state=="Tenho") OutlinedTextField(stock[record.id].orEmpty(),{ value -> stock[record.id]=value },label={Text("Quantidade em casa ($unit)")},placeholder={Text("Informe se souber")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                }
-                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-            } }
-            if(invalidStock) Text("Use até três casas decimais na quantidade em casa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
-        }},confirmButton={Button(enabled=!busy&&!invalidStock,onClick={vm.action { choices.filter { choice[it.id]=="Tenho" }.forEach { record -> val value=stock[record.id]?.trim().orEmpty(); vm.repo.saveCatalogInventory(record,if(value.isBlank()) null else Money.quantity(value),record.text("storageRoom").ifBlank { suggestedStorageRoom(record.text("title"),record.text("category")) }) }; val existing=basket.entries.map { it.sourceBaseId }.toSet(); val kept=basket.entries.filter { entry -> entry.sourceBaseId.isBlank() || choice[entry.sourceBaseId]=="Comprar" }; val drafts=choices.filter { choice[it.id]=="Comprar" && it.id !in existing }.map { catalogDraft(it,data.records) }; vm.repo.editBasket(market,basket.revision.takeIf { data.baskets.containsKey(market) }) { require(kept.size+drafts.size<=200) { "Use até 200 itens por lista." }; it.copy(entries=kept+drafts) }; preparing=false }}) { Text(if(buyCount==0) "Atualizar sem itens" else "Atualizar lista com $buyCount itens") }},dismissButton={TextButton(onClick={preparing=false}) { Text("Voltar") }})
     }
     if(closing) AlertDialog(onDismissRequest={closing=false},title={Text("Concluir esta compra?")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) { Text("${basket.entries.count { it.bought }} itens · ${hubMoney(basket.real())}"); Text("Os itens pendentes continuam na lista. Preços e quantidades ficam preservados no histórico.") }},confirmButton={Button(enabled=!busy,onClick={vm.action { vm.repo.closeBasket(market,basket.generation,basket.revision);closing=false;section="Histórico";feedback() }}) { Text("Confirmar fechamento") }},dismissButton={TextButton(onClick={closing=false}) { Text("Revisar") }})
     if(confirmReliableLinks) {
