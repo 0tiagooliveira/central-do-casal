@@ -627,7 +627,7 @@ private fun FinanceScreen(vm: CentralViewModel, data: DataState) {
 
 @Composable
 private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: DataState) {
-    var section by rememberSaveable { mutableStateOf("Resumo") }; var create by remember { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf("Nossa Jornada") }; var create by remember { mutableStateOf(false) }
     var momentEdit by remember { mutableStateOf<Record?>(null) }
     var destination by rememberSaveable { mutableStateOf("Ilha das Surpresas") }; var cardIndex by rememberSaveable { mutableIntStateOf(0) }
     val cards = when (destination) {
@@ -642,24 +642,24 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
     val experience = LocalExperience.current
     fun touch() { AndroidInteractions.haptic(view, experience.haptics); AndroidInteractions.clickSound(view, experience.sounds) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { SectionHero("Nosso espaço", "Pequenas aventuras. Boas lembranças.", HeartLine) }
-        item { ChoiceStrip(listOf("Resumo", "Momentos", "Jornada", "Baú"),section,{touch();section=it}) }
+        item { ReferenceHeading("Nós", "Pequenas aventuras. Boas lembranças.") }
+        item { ReferenceTabs(listOf("Nossa Jornada","Jogos","Conversas","Conquistas"),section) { touch();section=it } }
         item { Text(if (session.local) "Espaço pessoal neste aparelho" else "${data.members.size} participantes no espaço", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (section == "Resumo") {
-            item { CoupleSummary(data,session,onMoments={touch();section="Momentos"},onJourney={touch();section="Jornada"},onCreateMoment={touch();create=true}) }
-        } else if (section == "Momentos") {
+        if (section == "Nossa Jornada") {
+            item { CoupleLandingReference(data,session,onMoments={touch();section="Conversas"},onJourney={touch();section="Jogos"},onMemories={touch();section="Conquistas"},onCreateMoment={touch();create=true}) }
+        } else if (section == "Conversas") {
             item { Button(onClick = { touch(); create = true }, enabled = !busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Guardar um momento") } }
             val moments = data.records.filter { it.kind == "moment" }
             if (moments.isEmpty()) item { Empty("As memórias começam com vocês", "Guarde uma lembrança real, pessoal ou compartilhada.") }
             items(moments, key = { it.id }) { r -> Card(onClick={momentEdit=r},modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text(r.text("title"),style=MaterialTheme.typography.titleMedium);Text("${displayDate(r.text("date"))} · ${if(r.isPrivate) "Privada" else "Compartilhada"}",style=MaterialTheme.typography.bodySmall);Text(r.text("note"));Text("Editar lembrança",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) } } }
-        } else if (section=="Baú") {
+        } else if (section=="Conquistas") {
             val saved=data.records.filter { it.kind=="quest"&&!it.flag("cancelled")&&(it.fields["completed"] as? List<*>)?.distinct()?.size==2 }
             if(saved.isEmpty()) item { Empty("Baú de descobertas","As experiências confirmadas pelos dois aparecem aqui.") }
             items(saved,key={it.id}) { memory -> Panel(memory.text("title"),displayDate(memory.text("date"))) { Text(memory.text("destination"));Text("Experiência confirmada pelos dois",style=MaterialTheme.typography.labelSmall) } }
         } else {
             item { Panel("No nosso ritmo", "A jornada é opcional") { Choice("Atmosfera", listOf("Desligado", "Discreto", "Equilibrado", "Divertido"), level, { touch(); level = it; prefs.edit().putString("level", it).apply() }); Text("Lazer em dupla, sem ranking. Gastos e cuidados não dão pontos.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             if (level == "Desligado") item { Empty("Jornada pausada", "Você pode continuar usando todo o app. Ative uma atmosfera se quiser explorar convites.") }
-            else if (section == "Jornada") {
+            else if (section == "Jogos") {
                 item { Text("Escolham um mundo", style = MaterialTheme.typography.titleMedium) }
                 items(listOf("Ilha das Surpresas", "Bosque das Conversas", "Observatório dos Sonhos")) { world ->
                     val active = destination == world
