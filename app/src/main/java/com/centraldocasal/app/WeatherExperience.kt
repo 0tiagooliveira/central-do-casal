@@ -302,6 +302,27 @@ internal fun WeatherCard(
     }
 
     val current = weather
+    fun activate() {
+        val location = lastLocation
+        if (location == null) {
+            message = "Para ativar, consulte a previsão com a localização autorizada."
+            return
+        }
+        SophiaMoments.enable(context, uid, location.first, location.second)
+        // Não fingir ativação se o usuário está no modo local ou em outra conta.
+        val active = SophiaMoments.enabled(context, uid)
+        enabled = active
+        if (!active) {
+            message = "Entre na sua conta para habilitar avisos individuais."
+            return
+        }
+        SophiaMoments.syncTasks(context, uid, profileName, records)
+        current?.let { SophiaMoments.updateForecast(context, uid, it) }
+        message = if (!AndroidInteractions.notificationsAllowed(context)) {
+            requestNotificationsPermission()
+            "Autorize as notificações do Android para receber os avisos."
+        } else null
+    }
     val insight = remember(current, records, uid, enabled) {
         if (enabled && current != null) SophiaMoments.currentTip(context, uid, profileName, records)
         else null
@@ -356,21 +377,7 @@ internal fun WeatherCard(
                 }
             }
             if (!enabled && current != null && !expanded) {
-                TextButton(onClick = {
-                    val location = lastLocation
-                    if (location == null) {
-                        message = "Para ativar, consulte o clima com a localização autorizada."
-                    } else {
-                        SophiaMoments.enable(context, uid, location.first, location.second)
-                        SophiaMoments.syncTasks(context, uid, profileName, records)
-                        SophiaMoments.updateForecast(context, uid, current)
-                        enabled = true
-                        message = if (!AndroidInteractions.notificationsAllowed(context)) {
-                            requestNotificationsPermission()
-                            "Autorize as notificações do Android para receber os avisos." 
-                        } else null
-                    }
-                }) { Text("Ativar avisos inteligentes") }
+                TextButton(onClick = { activate() }) { Text("Ativar avisos inteligentes") }
             }
             if (expanded && (current != null || enabled)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -381,19 +388,7 @@ internal fun WeatherCard(
                             SophiaMoments.disable(context, uid)
                             enabled = false
                         } else {
-                            val location = lastLocation
-                            if (location == null) {
-                                message = "Para ativar, consulte a previsão com a localização autorizada."
-                            } else {
-                                SophiaMoments.enable(context, uid, location.first, location.second)
-                                SophiaMoments.syncTasks(context, uid, profileName, records)
-                                current?.let { SophiaMoments.updateForecast(context, uid, it) }
-                                enabled = true
-                                message = if (!AndroidInteractions.notificationsAllowed(context)) {
-                                    requestNotificationsPermission()
-                                    "Autorize as notificações do Android para receber os avisos."
-                                } else null
-                            }
+                            activate()
                         }
                     })
                 }
