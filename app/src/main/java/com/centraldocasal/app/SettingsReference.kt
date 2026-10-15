@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -73,7 +77,16 @@ internal fun SettingsReferenceLanding(
                     Surface(shape=RoundedCornerShape(12.dp),color=scheme.primaryContainer,
                         modifier=Modifier.size(40.dp)) {
                         Box(contentAlignment=Alignment.Center) {
-                            Text("✦",color=scheme.primary,style=MaterialTheme.typography.titleMedium)
+                            val symbol=when(label) {
+                                "Casa inteligente" -> HomeLine
+                                "Notificações" -> ReminderBell
+                                "Segurança e SOS" -> HeartLine
+                                "Integração com a Sophia" -> Icons.Default.Star
+                                "Conta e privacidade","Permissões" -> Icons.Default.Person
+                                "Dados e backup" -> Icons.Default.Info
+                                else -> Icons.Default.Settings
+                            }
+                            Icon(symbol,null,tint=scheme.primary,modifier=Modifier.size(22.dp))
                         }
                     }
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
