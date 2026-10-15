@@ -40,7 +40,7 @@ service cloud.firestore {
         && event.keys().hasOnly(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
         && event.kind == 'careEvent'
         && event.careType in ['diaper','bottle','bath','petFood']
-        && ((event.careType in ['diaper','bath'] && event.subject == 'Lucca')
+        && ((event.careType in ['diaper','bottle','bath'] && event.subject == 'Lucca')
           || (event.careType == 'petFood' && event.subject == 'Mel'))
         && event.actorUid == request.auth.uid
         && event.actorName is string && event.actorName.size() <= 100
