@@ -3,6 +3,8 @@ package com.centraldocasal.app
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -323,109 +325,125 @@ internal fun WeatherCard(
             "Autorize as notificações do Android para receber os avisos."
         } else null
     }
+    val eligibleTasks = records.filter { it.kind == "task" && SophiaMomentPlanner.belongsTo(it, profileName) }
     val insight = remember(current, records, uid, enabled) {
-        if (enabled && current != null) SophiaMoments.currentTip(context, uid, profileName, records)
-        else null
+        if (current == null) null else {
+            val personal = if (enabled) SophiaMoments.currentTip(context, uid, profileName, records)?.message else null
+            personal ?: weatherInsights(current, eligibleTasks, LocalDateTime.now())
+                .firstOrNull { it.title != "Clima em acompanhamento" }?.detail
+        }
     }
-    Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    val scheme = MaterialTheme.colorScheme
+    val accent = scheme.tertiary
+    val outline = scheme.primaryContainer
+    val rainHour = current?.hours?.firstOrNull {
+        it.time.isAfter(LocalDateTime.now().minusMinutes(30)) && (it.rainChance ?: -1) >= 60
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().animateContentSize().testTag("home-weather"),
+        shape = RoundedCornerShape(22.dp),
+        color = scheme.primaryContainer.copy(alpha = 0.46f),
+        border = androidx.compose.foundation.BorderStroke(1.dp,outline)
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(weatherGlyph(current?.description ?: "Parcialmente nublado"), fontSize = 23.sp)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(if (current == null) "Clima para sua rotina" else
-                        "${current.temperature.roundToInt()}° · ${current.description}",
-                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    if (current != null) Text("Hoje: ${current.todayLow.roundToInt()}° a ${current.todayHigh.roundToInt()}°",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else Text("Acompanhe o tempo com privacidade.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=13.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Row(Modifier.weight(1f),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                    Text("✦",color=accent,fontSize=16.sp)
+                    Text("O TEMPO E NOSSA ROTINA",style=MaterialTheme.typography.labelSmall,
+                        fontWeight=FontWeight.Bold,color=scheme.primary)
                 }
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Fechar" else "Detalhes")
+                TextButton(onClick = { expanded = !expanded },
+                    contentPadding=PaddingValues(horizontal=4.dp,vertical=0.dp),
+                    modifier=Modifier.heightIn(min=38.dp)) {
+                    Text(if(expanded) "Fechar" else "Detalhes",style=MaterialTheme.typography.labelSmall)
                 }
             }
-            if (enabled) {
-                HorizontalDivider()
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("✦", color = MaterialTheme.colorScheme.primary)
-                    Column(Modifier.weight(1f)) {
-                        Text("Sophia no Momento Certo", style = MaterialTheme.typography.labelLarge)
-                        if (insight != null) {
-                            Text(insight.message, style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(11.dp)) {
+                Row(Modifier.weight(0.44f),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text(weatherGlyph(current?.description ?: "Parcialmente nublado"),fontSize=27.sp)
+                    Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                        if (current == null) {
+                            Text("Previsão",style=MaterialTheme.typography.titleMedium,color=scheme.onSurface)
+                            Text("Não consultada",style=MaterialTheme.typography.labelSmall,
+                                color=scheme.onSurfaceVariant)
                         } else {
-                            Text("Avisos pessoais antes dos compromissos, somente quando houver uma dica útil.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${current.temperature.roundToInt()}°",
+                                style=MaterialTheme.typography.headlineMedium,
+                                fontWeight=FontWeight.Bold,color=scheme.onSurface)
+                            Text(current.description,style=MaterialTheme.typography.labelSmall,
+                                color=scheme.onSurfaceVariant,maxLines=2)
+                            Text("${current.todayLow.roundToInt()}° a ${current.todayHigh.roundToInt()}°",
+                                style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
                         }
                     }
                 }
-            }
-            if (message != null) Text(message.orEmpty(), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error)
-
-            // A opção inicial é intencionalmente explícita: o usuário autoriza
-            // reconsultas da região aproximada e notificações por este aparelho.
-            if (!enabled && current == null) {
-                TextButton(onClick = { consult() }, enabled = !busy) {
-                    Text(if (busy) "Consultando…" else "Consultar o clima")
+                VerticalDivider(Modifier.heightIn(min=75.dp),thickness=1.dp,
+                    color=scheme.primary.copy(alpha=0.17f))
+                Column(Modifier.weight(0.56f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Text("✧ Dica da Sophia",style=MaterialTheme.typography.labelMedium,
+                        fontWeight=FontWeight.Bold,color=scheme.primary)
+                    Text(if(current==null) "Consulte o clima para receber dicas ligadas às suas atividades."
+                        else insight ?: "Nenhum alerta importante para sua rotina agora.",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=scheme.onSurface,maxLines=5)
                 }
             }
-            if (!enabled && current != null && !expanded) {
-                TextButton(onClick = { activate() }) { Text("Ativar avisos inteligentes") }
+            if (rainHour != null) {
+                Text("Possibilidade de chuva às ${rainHour.time.format(DateTimeFormatter.ofPattern("HH:mm"))}: ${rainHour.rainChance}%",
+                    style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
             }
-            if (expanded && (current != null || enabled)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Avisos inteligentes neste celular", modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall)
-                    Switch(checked = enabled, onCheckedChange = { next ->
-                        if (!next) {
-                            SophiaMoments.disable(context, uid)
-                            enabled = false
-                        } else {
-                            activate()
-                        }
-                    })
+            if (message != null) Text(message.orEmpty(),style=MaterialTheme.typography.bodySmall,
+                color=scheme.error)
+            if (current == null) {
+                TextButton(onClick={ consult() },enabled=!busy,modifier=Modifier.heightIn(min=40.dp)) {
+                    Text(if(busy) "Consultando…" else "Consultar previsão",style=MaterialTheme.typography.labelMedium)
                 }
             }
             if (expanded) {
                 if (current != null) {
+                    Text("Previsão das próximas horas",style=MaterialTheme.typography.titleSmall)
                     val upcoming = current.hours.filter { it.time >= LocalDateTime.now().minusMinutes(30) }.take(8)
-                    if (upcoming.isNotEmpty()) {
-                        Text("Próximas horas", style = MaterialTheme.typography.titleSmall)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(upcoming, key = { it.time.toString() }) { hour ->
-                                Surface(shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                                    Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(hour.time.format(DateTimeFormatter.ofPattern("HH:mm")),
-                                            style = MaterialTheme.typography.labelSmall)
-                                        Text("${hour.temperature.roundToInt()}°", style = MaterialTheme.typography.bodyMedium)
-                                        Text(hour.rainChance?.let { "$it% chuva" } ?: "Sem dado",
-                                            style = MaterialTheme.typography.labelSmall)
-                                    }
+                    if(upcoming.isNotEmpty()) LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                        items(upcoming,key={it.time.toString()}) { hour ->
+                            Surface(shape=RoundedCornerShape(12.dp),color=scheme.surface) {
+                                Column(Modifier.padding(10.dp),horizontalAlignment=Alignment.CenterHorizontally,
+                                    verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                    Text(hour.time.format(DateTimeFormatter.ofPattern("HH:mm")),
+                                        style=MaterialTheme.typography.labelSmall)
+                                    Text("${hour.temperature.roundToInt()}°",style=MaterialTheme.typography.titleSmall)
+                                    Text(hour.rainChance?.let { "$it% chuva" } ?: "Sem dado",
+                                        style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
                                 }
                             }
                         }
                     }
-                    Text("Fonte: Open-Meteo. A previsão pode mudar. Atualização: " +
+                    Text("Dados Open-Meteo. Consultado às " +
                         DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
                             .format(Instant.ofEpochMilli(current.fetchedAtMillis)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { consult() }, enabled = !busy) { Text("Atualizar a previsão") }
+                        style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
+                    TextButton(onClick={consult()},enabled=!busy) {
+                        Text("Atualizar previsão")
+                    }
                 }
-                Text("Ao ativar, a Central salva apenas a região aproximada neste aparelho, reconsulta o clima periodicamente e usa suas tarefas autorizadas para avisar antes dos compromissos. Você pode desligar a qualquer momento. A Sophia generativa ainda não está conectada.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open-meteo.com/")))
-                }) { Text("Fonte dos dados meteorológicos") }
+                if (current != null || enabled) Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("Avisos inteligentes neste aparelho",modifier=Modifier.weight(1f),
+                        style=MaterialTheme.typography.bodySmall)
+                    Switch(checked=enabled,onCheckedChange={ next ->
+                        if(next) activate() else {
+                            SophiaMoments.disable(context,uid)
+                            enabled=false
+                        }
+                    })
+                }
+                Text("Com sua autorização, a Central usa a região aproximada e as tarefas permitidas para avisar antes de compromissos. Sem monitorar sua localização continuamente. A Sophia generativa ainda não está conectada.",
+                    style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
+                TextButton(onClick={
+                    context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))
+                }) { Text("Fonte Open-Meteo") }
             }
         }
     }
