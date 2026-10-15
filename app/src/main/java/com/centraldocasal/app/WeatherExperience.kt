@@ -238,184 +238,180 @@ private fun weatherGlyph(description: String): String = when {
 @Composable
 internal fun WeatherCard(
     requestLocationPermission: () -> Unit,
-    tasks: List<Record> = emptyList()
+    uid: String,
+    profileName: String,
+    records: List<Record>
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var weather by remember { mutableStateOf<WeatherSnapshot?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var showPrivacy by remember { mutableStateOf(false) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var weather by remember(uid) { mutableStateOf<WeatherSnapshot?>(null) }
+    var busy by remember(uid) { mutableStateOf(false) }
+    var message by remember(uid) { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable(uid) { mutableStateOf(false) }
+    var enabled by remember(uid) { mutableStateOf(SophiaMoments.enabled(context, uid)) }
+    var lastLocation by remember(uid) { mutableStateOf<Pair<Double,Double>?>(null) }
+
+    // Depois da ativação inicial, somente coordenadas aproximadas já autorizadas
+    // são reutilizadas. Nenhum GPS em segundo plano e nenhum botão diário.
+    LaunchedEffect(uid, enabled) {
+        if (enabled) {
+            SophiaMoments.location(context, uid)?.let { location ->
+                busy = true
+                runCatching { WeatherSource.fetch(location.first, location.second) }
+                    .onSuccess {
+                        weather = it
+                        SophiaMoments.syncTasks(context, uid, profileName, records)
+                        SophiaMoments.updateForecast(context, uid, it)
+                    }.onFailure {
+                        message = "Sem atualização do tempo agora. Os avisos dependem de dados recentes."
+                    }
+                busy = false
+            }
+        }
+    }
+
+    fun consult() {
+        if (busy) return
+        if (!SafetyLocationReader.permitted(context)) {
+            message = "Autorize a localização e consulte novamente. Ela não será monitorada em segundo plano."
+            requestLocationPermission()
+            return
+        }
+        busy = true
+        message = null
+        SafetyLocationReader.request(context) { coordinate ->
+            if (coordinate == null || System.currentTimeMillis() - coordinate.capturedAt !in 0L..(60 * 60 * 1000L)) {
+                busy = false
+                message = "Localização recente indisponível. Confira a localização do aparelho."
+            } else scope.launch {
+                runCatching { WeatherSource.fetch(coordinate.latitude, coordinate.longitude) }
+                    .onSuccess {
+                        lastLocation = coordinate.latitude to coordinate.longitude
+                        weather = it
+                        if (enabled) {
+                            SophiaMoments.enable(context, uid, coordinate.latitude, coordinate.longitude)
+                            SophiaMoments.syncTasks(context, uid, profileName, records)
+                            SophiaMoments.updateForecast(context, uid, it)
+                        }
+                    }
+                    .onFailure { message = "Não foi possível consultar a previsão. Confira a conexão." }
+                busy = false
+            }
+        }
+    }
+
     val current = weather
+    val insight = remember(current, records, uid, enabled) {
+        if (enabled && current != null) SophiaMomentPlanner.plan(current, records, profileName, LocalDateTime.now())
+            .firstOrNull { it.eventAt <= LocalDateTime.now().plusHours(2) }
+        else null
+    }
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("O TEMPO PARA A NOSSA ROTINA",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
-                    Text(if (current == null) "Como está o tempo?" else "Previsão na sua região",
-                        style = MaterialTheme.typography.titleLarge)
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(weatherGlyph(current?.description ?: "Parcialmente nublado"), fontSize = 23.sp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (current == null) "Clima para sua rotina" else
+                        "${current.temperature.roundToInt()}° · ${current.description}",
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (current != null) Text("Hoje: ${current.todayLow.roundToInt()}° a ${current.todayHigh.roundToInt()}°",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Text("Acompanhe o tempo com privacidade.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(if (current == null) "🌤️" else weatherGlyph(current.description),
-                    fontSize = 38.sp)
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "Fechar" else "Detalhes")
+                }
             }
-            if (current == null) {
-                Text("Veja a temperatura, a chuva das próximas horas e como isso pode afetar os planos de vocês.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("${current.temperature.roundToInt()}°",
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.Bold)
-                    Column {
-                        Text(current.description, style = MaterialTheme.typography.titleMedium)
-                        Text("Sensação ${current.feelsLike.roundToInt()}°",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Hoje: ${current.todayLow.roundToInt()}° / ${current.todayHigh.roundToInt()}°",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                val insights = remember(current, tasks) { weatherInsights(current, tasks) }
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("✦  Leitura inteligente do tempo",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        insights.take(if (expanded) 3 else 1).forEach { insight ->
-                            Text(insight.title, style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold)
-                            Text(insight.detail, style = MaterialTheme.typography.bodySmall,
+            if (enabled) {
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("✦", color = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f)) {
+                        Text("Sophia no Momento Certo", style = MaterialTheme.typography.labelLarge)
+                        if (insight != null) {
+                            Text(insight.message, style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("Avisos pessoais antes dos compromissos, somente quando houver uma dica útil.",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text("Sugestões automáticas baseadas em dados meteorológicos e horários da rotina, não em IA generativa.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(if (expanded) "Mostrar menos" else "Ver previsão por hora e próximos dias")
+            }
+            if (message != null) Text(message.orEmpty(), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+
+            // A opção inicial é intencionalmente explícita: o usuário autoriza
+            // reconsultas da região aproximada e notificações por este aparelho.
+            if (!enabled && current == null) {
+                TextButton(onClick = { consult() }, enabled = !busy) {
+                    Text(if (busy) "Consultando…" else "Consultar o clima")
                 }
-                if (expanded) {
-                val upcoming = current.hours.filter { it.time >= LocalDateTime.now().minusMinutes(30) }.take(9)
-                if (upcoming.isNotEmpty()) {
-                    Text("Próximas horas", style = MaterialTheme.typography.titleMedium)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(upcoming, key = { it.time.toString() }) { hour ->
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                modifier = Modifier.width(84.dp)
-                            ) {
-                                Column(
-                                    Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Text(hour.time.format(DateTimeFormatter.ofPattern("HH:mm")),
-                                        style = MaterialTheme.typography.labelSmall)
-                                    Text(weatherGlyph(weatherDescription(hour.code ?: -1)), fontSize = 24.sp)
-                                    Text("${hour.temperature.roundToInt()}°",
-                                        style = MaterialTheme.typography.titleMedium)
-                                    Text(hour.rainChance?.let { "💧 $it%" } ?: "Chuva s/d",
-                                        style = MaterialTheme.typography.labelSmall)
+            }
+            if (current != null || enabled) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Avisos inteligentes neste celular", modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = enabled, onCheckedChange = { next ->
+                        if (!next) {
+                            SophiaMoments.disable(context, uid)
+                            enabled = false
+                        } else {
+                            val location = lastLocation
+                            if (location == null) {
+                                message = "Para ativar, consulte a previsão com a localização autorizada."
+                            } else {
+                                SophiaMoments.enable(context, uid, location.first, location.second)
+                                SophiaMoments.syncTasks(context, uid, profileName, records)
+                                current?.let { SophiaMoments.updateForecast(context, uid, it) }
+                                enabled = true
+                                message = if (!AndroidInteractions.notificationsAllowed(context))
+                                    "Ative as notificações do Android para receber os avisos." else null
+                            }
+                        }
+                    })
+                }
+            }
+            if (expanded) {
+                if (current != null) {
+                    val upcoming = current.hours.filter { it.time >= LocalDateTime.now().minusMinutes(30) }.take(8)
+                    if (upcoming.isNotEmpty()) {
+                        Text("Próximas horas", style = MaterialTheme.typography.titleSmall)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(upcoming, key = { it.time.toString() }) { hour ->
+                                Surface(shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                    Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(hour.time.format(DateTimeFormatter.ofPattern("HH:mm")),
+                                            style = MaterialTheme.typography.labelSmall)
+                                        Text("${hour.temperature.roundToInt()}°", style = MaterialTheme.typography.bodyMedium)
+                                        Text(hour.rainChance?.let { "$it% chuva" } ?: "Sem dado",
+                                            style = MaterialTheme.typography.labelSmall)
+                                    }
                                 }
                             }
                         }
                     }
+                    Text("Fonte: Open-Meteo. A previsão pode mudar. Atualização: " +
+                        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+                            .format(Instant.ofEpochMilli(current.fetchedAtMillis)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { consult() }, enabled = !busy) { Text("Atualizar a previsão") }
                 }
-                val nextDays = current.days.drop(1).take(3)
-                if (nextDays.isNotEmpty()) {
-                    Text("Próximos dias", style = MaterialTheme.typography.titleMedium)
-                    nextDays.forEach { day ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(day.day.format(DateTimeFormatter.ofPattern("EEE dd/MM", Locale.forLanguageTag("pt-BR")))
-                                    .replaceFirstChar { it.uppercase() },
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f))
-                            Text(day.rainChance?.let { "💧 $it%" } ?: "Chuva s/d",
-                                style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.width(14.dp))
-                            Text("${day.low.roundToInt()}°  ${day.high.roundToInt()}°",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                } else if (current.tomorrowHigh != null && current.tomorrowLow != null) {
-                    Text("Amanhã: ${current.tomorrowLow.roundToInt()}° a ${current.tomorrowHigh.roundToInt()}°",
-                        style = MaterialTheme.typography.bodyMedium)
-                }
-                HorizontalDivider()
-                Text("${current.humidity}% de umidade  ·  vento ${current.wind.roundToInt()} km/h",
-                    style = MaterialTheme.typography.bodySmall)
-                }
-                Text(
-                    "Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(current.fetchedAtMillis))}. Previsões podem mudar.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (message != null) {
-                Text(message.orEmpty(), color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
-            }
-            Button(
-                onClick = {
-                    if (!SafetyLocationReader.permitted(context)) {
-                        message = "Permita a localização e toque novamente para consultar."
-                        requestLocationPermission()
-                    } else {
-                        loading = true
-                        message = null
-                        SafetyLocationReader.request(context) { coordinate ->
-                            if (coordinate == null || System.currentTimeMillis() - coordinate.capturedAt > 60 * 60 * 1000L) {
-                                loading = false
-                                message = "Não encontramos uma localização recente. Ative a localização e tente novamente."
-                            } else scope.launch {
-                                runCatching { WeatherSource.fetch(coordinate.latitude, coordinate.longitude) }
-                                    .onSuccess { weather = it }
-                                    .onFailure { message = "Não foi possível buscar a previsão agora. Confira sua conexão." }
-                                loading = false
-                            }
-                        }
-                    }
-                },
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(if (loading) "Consultando…" else if (current != null) "Atualizar previsão" else "Ver previsão para mim")
-            }
-            TextButton(
-                onClick = { showPrivacy = !showPrivacy },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text(if (showPrivacy) "Ocultar fonte e privacidade" else "Fonte dos dados e privacidade") }
-            if (showPrivacy) {
-                Text("Fonte: Open-Meteo (CC BY 4.0). A localização é consultada somente ao tocar no botão e enviada com coordenadas arredondadas a duas casas decimais. Os dados desta consulta não são gravados no Firebase e o cache em memória dura até 15 minutos.",
+                Text("Ao ativar, a Central salva apenas a região aproximada neste aparelho, reconsulta o clima periodicamente e usa suas tarefas autorizadas para avisar antes dos compromissos. Você pode desligar a qualquer momento. A Sophia generativa ainda não está conectada.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(
-                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open-meteo.com/"))) }
-                ) { Text("Abrir Open-Meteo") }
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open-meteo.com/")))
+                }) { Text("Fonte dos dados meteorológicos") }
             }
         }
     }
