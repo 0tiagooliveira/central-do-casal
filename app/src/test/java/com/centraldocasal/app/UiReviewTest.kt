@@ -86,6 +86,7 @@ class UiReviewTest {
         compose.onNodeWithTag("tab-Mais").performClick()
         compose.onNodeWithText("Planos", substring = false).performClick()
         compose.onNodeWithText("Criar um plano").assertIsDisplayed(); capture("planos")
+        compose.onNodeWithContentDescription("Voltar").performClick()
         compose.onNodeWithTag("tab-Nós").performClick()
         compose.onNodeWithText("Guardar um registro").performScrollTo().assertIsDisplayed(); capture("nos")
         compose.onNodeWithContentDescription("Configurações e privacidade").performClick()
