@@ -217,7 +217,8 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
                         vm.repo.saveCatalogInventory(
                             record,
                             if(amount.isBlank()) null else Money.quantity(amount),
-                            record.text("storageRoom").ifBlank { suggestedStorageRoom(record.text("title"),record.text("category")) }
+                            record.text("storageRoom").ifBlank { suggestedStorageRoom(record.text("title"),record.text("category")) },
+                            hasAtHome=true
                         )
                     }
                     val catalogIds=catalog.map { it.id }.toSet()
