@@ -35,7 +35,7 @@ private fun homeMoney(value: Long) = NumberFormat.getCurrencyInstance(Locale.for
 @Composable
 internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, data: DataState, navigate: (String) -> Unit, selectTab: (String) -> Unit, requestLocationPermission: () -> Unit = {}) {
     val day = LocalDate.now()
-    val tasks = data.records.filter { it.kind == "task" && occurs(it, day) }.sortedBy { if (it.flag("needsTimeReview")) "99:99" else it.text("time").ifBlank { "99:99" } }
+    val tasks = data.records.filter { it.kind == "task" && occurs(it, day) && SophiaMomentPlanner.belongsTo(it, session.name) }.sortedBy { if (it.flag("needsTimeReview")) "99:99" else it.text("time").ifBlank { "99:99" } }
     fun completed(task: Record) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
     val completedCount = tasks.count(::completed)
     val reviews = data.records.count { it.kind == "task" && (it.flag("needsReview") || it.flag("needsTimeReview")) }
@@ -58,7 +58,7 @@ internal fun HomeExperienceScreen(vm: CentralViewModel, session: SessionState, d
                 Text("Uma vida mais leve, organizada a dois.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        item { WeatherCard(requestLocationPermission, tasks = data.records.filter { it.kind == "task" }) }
+        item { WeatherCard(requestLocationPermission, session.uid, session.name, data.records) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryTile("", "${tasks.size}", "Tarefas de hoje · $completedCount concluídas", CalendarLine, accent, { touch { selectTab("Rotina") } }, Modifier.weight(1f))
