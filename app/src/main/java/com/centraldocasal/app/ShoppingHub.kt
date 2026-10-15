@@ -188,7 +188,7 @@ internal fun planningPriceSignal(record: Record, records: List<Record>): String?
 internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: SessionState, busy: Boolean, annual: () -> Unit, requestedMarket: String? = null) {
     var market by rememberSaveable { mutableStateOf(requestedMarket?.takeIf { it in listOf("Mercado","Açougue") } ?: "Mercado") }
     LaunchedEffect(requestedMarket) { if(requestedMarket in listOf("Mercado","Açougue")) market = requestedMarket!! }
-    var section by rememberSaveable { mutableStateOf("Lista") }
+    var section by rememberSaveable { mutableStateOf("Listas") }
     var search by rememberSaveable { mutableStateOf("") }
     var byStore by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Entry?>(null) }
@@ -211,7 +211,13 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
         ProductDetailScreen(vm,busy,product,data,onDismiss={detail=null},onAdd={ selected -> editing=catalogDraft(selected,data.records).let { if(product.kind=="catalogItem") it.copy(sourceBaseId=product.id) else it };detail=null },onReceipt={receiptDetail=it})
         return
     }
-    if (section == "Lista") SimpleShoppingScreen(
+    if (section == "Listas") ShoppingReferenceDashboard(
+        data = data, onMarket = { selected -> market=selected; section="Lista";feedback() },
+        onBudget = { selected -> market=selected; budget=true;feedback() },
+        onHistory = { section="Histórico";feedback() },
+        onSuggestions = { section="Catálogo";feedback() }
+    )
+    else if (section == "Lista") SimpleShoppingScreen(
         data = data, market = market, busy = busy,
         onMarket = { market = it; feedback() },
         onQuickAdd = { name ->
@@ -248,7 +254,8 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
         onCatalog = { section = "Catálogo"; feedback() },
         onReview = { section = "Revisar"; feedback() },
         onAnnual = annual,
-        onFinish = { closing = true; feedback() }
+        onFinish = { closing = true; feedback() },
+        onOverview = { section="Listas"; feedback() }
     )
     else LazyColumn(Modifier.fillMaxSize(), contentPadding=PaddingValues(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
