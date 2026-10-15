@@ -85,7 +85,7 @@ internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCrea
         if (plans.isEmpty()) item {
             Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(if(status=="Concluídos")"Os capítulos concluídos vão aparecer aqui"else"Um plano começa com uma ideia",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text(if(status=="Concluídos")"Este espaço reúne planos com todas as etapas confirmadas."else"Escolha um próximo passo e acompanhe no seu ritmo.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant);if(status!="Concluídos")TextButton(onClick=onCreate,enabled=!busy){Text("Criar um plano")}}
         }
-        if (imported.isNotEmpty()&&status!="Etapas concluídas") item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("Ideias que já estavam no papel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Referências importadas. Preferências e decisões ainda em aberto.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        if (imported.isNotEmpty()&&status!="Concluídos") item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("Ideias que já estavam no papel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Referências importadas. Preferências e decisões ainda em aberto.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         items(if(status=="Concluídos")emptyList() else imported, key = { it.id }) { reference ->
             OutlinedCard(onClick={selectedId=reference.id},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(22.dp)){Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Star,null,tint=MaterialTheme.colorScheme.primary);Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){Text(reference.text("title"),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text("Ideia em aberto · ver referência",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)};Icon(Icons.Default.KeyboardArrowRight,"Abrir referência do projeto")} }
         }
@@ -109,7 +109,7 @@ private fun FeaturedPlanReference(plan:Record,progress:PlanProgress,onOpen:()->U
                 contentAlignment=Alignment.CenterStart) {
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Surface(shape=RoundedCornerShape(40.dp),color=MaterialTheme.colorScheme.surface.copy(alpha=.9f)) {
-                        Text("✦ Em andamento",Modifier.padding(horizontal=12.dp,vertical=6.dp),
+                        Text(if(steps.isNotEmpty() && completed==steps.size)"✦ Concluído" else "✦ Em andamento",Modifier.padding(horizontal=12.dp,vertical=6.dp),
                             style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
                     }
                     Text(plan.text("title"),style=MaterialTheme.typography.headlineSmall,
