@@ -1,0 +1,44 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function allowedImage() {
+      return request.resource.size > 0
+        && request.resource.size <= 4 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+    }
+    function member(hid) {
+      return signedIn() && request.auth.uid in firestore.get(/databases/(default)/documents/households/$(hid)).data.members;
+    }
+    function sharedMoment(hid, mid) {
+      let moment = firestore.get(/databases/(default)/documents/households/$(hid)/records/$(mid)).data;
+      return moment.kind == 'moment' && moment.private == false;
+    }
+    function privateMoment(uid, mid) {
+      let moment = firestore.get(/databases/(default)/documents/users/$(uid)/records/$(mid)).data;
+      return moment.kind == 'moment' && moment.private == true;
+    }
+    function ownUpload(file) {
+      return file.matches('^' + request.auth.uid + '-[A-Za-z0-9_-]+[.]jpg$');
+    }
+    match /households/{hid}/moments/{mid}/{file} {
+      allow get: if member(hid) && sharedMoment(hid,mid);
+      allow list: if false;
+      allow create: if member(hid) && sharedMoment(hid,mid) && ownUpload(file) && allowedImage();
+      allow update: if false;
+      allow delete: if member(hid) && ownUpload(file);
+    }
+    match /users/{uid}/moments/{mid}/{file} {
+      allow get: if signedIn() && request.auth.uid == uid && privateMoment(uid,mid);
+      allow list: if false;
+      allow create: if signedIn() && request.auth.uid == uid && privateMoment(uid,mid) && ownUpload(file) && allowedImage();
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == uid && ownUpload(file);
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
