@@ -752,76 +752,14 @@ internal fun SettingsScreen(vm: CentralViewModel, session: SessionState, data: D
         }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (section == "Início") {
-            item {
-                Text("Configurações", style = MaterialTheme.typography.headlineMedium)
-                Text("Tudo no seu lugar, sem opções demais.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            item {
-                TextButton(onClick = { section = "Início" }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("‹  Voltar às configurações")
-                }
-                Text(section, style = MaterialTheme.typography.headlineMedium)
-            }
-        }
-        if (section == "Início") item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    PersonalPortrait(experience.photo,session.name)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(session.name, style = MaterialTheme.typography.titleLarge)
-                        Text(if (session.local) "Espaço pessoal neste aparelho" else session.email, style = MaterialTheme.typography.bodySmall)
-                            TextButton(onClick = photo, contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) { Text("Escolher minha foto") }
-                    }
-                }
-            }
-        }
-        if (section == "Início") {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf(
-                        Triple("Conta e casal", "Perfil, conexão de vocês e acesso", "♡"),
-                        Triple("Lembretes", "Avisos, horários e notificações", "◷"),
-                        Triple("Aparência", "Animações, vibração e sons", "✦"),
-                        Triple("Privacidade", "Dados, exportação e segurança", "◇"),
-                        Triple("Avançado", "Atualizações, integrações e diagnósticos", "⚙")
-                    ).forEach { (name, subtitle, symbol) ->
-                        Card(
-                            onClick = { section = name },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                            shape = RoundedCornerShape(20.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 17.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text(symbol, modifier = Modifier.padding(12.dp),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(name, style = MaterialTheme.typography.titleMedium)
-                                    Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Text("›", style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
+        if(section=="Início") item {
+            SettingsReferenceLanding(
+                session=session,photoUri=experience.photo,onPhoto=photo,
+                onSection={section=it},onRoute=navigate
+            )
+        } else if(section!="Início") item {
+            TextButton(onClick={section="Início"}) { Text("‹  Voltar às configurações") }
+            ReferenceHeading(section)
         }
         if (section == "Aparência") item { Panel("Do seu jeito", "Pequenos detalhes que fazem diferença.") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Vibrações leves ao tocar",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium); Switch(haptics,{ haptics=it;context.getSharedPreferences("experience_${session.uid}",android.content.Context.MODE_PRIVATE).edit().putBoolean("haptics",it).apply();AndroidInteractions.haptic(view,it) },modifier=Modifier.semantics { contentDescription="Vibrações leves ao tocar" }) }
