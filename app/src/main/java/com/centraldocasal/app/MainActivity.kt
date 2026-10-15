@@ -209,7 +209,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     }
     BackHandler(route.isNotBlank()) { route = "" }
     Scaffold(snackbarHost = { SnackbarHost(snack) }, topBar = {
-        if (session.uid.isNotBlank()) Surface(color = MaterialTheme.colorScheme.background) {
+        if (session.uid.isNotBlank() && (route.isNotBlank() || tab != "Hoje")) Surface(color = MaterialTheme.colorScheme.background) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (route.isNotBlank()) IconButton(onClick = { route = "" }) { Icon(Icons.Default.ArrowBack, "Voltar") }
                 else Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(HeartLine, null, Modifier.padding(11.dp).size(23.dp), tint = MaterialTheme.colorScheme.primary) }
@@ -225,8 +225,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         }
     }, bottomBar = {
         if (session.uid.isNotBlank() && route.isBlank()) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-            val icons = listOf(HomeLine, BasketLine, CalendarLine, PlanLine, HeartLine)
-            listOf("Hoje", "Compras", "Rotina", "Planos", "Nós").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
+            val icons = listOf(HomeLine, CalendarLine, BasketLine, HeartLine, Icons.Default.MoreHoriz)
+            listOf("Hoje", "Rotina", "Compras", "Nós", "Mais").forEachIndexed { index, title -> NavigationBarItem(modifier = Modifier.testTag("tab-$title"), selected = title == tab, onClick = { AndroidInteractions.haptic(view,experience.haptics);tab = title; route = ""; if(title=="Compras") requestedShoppingMarket=null; if(title=="Rotina") { requestedRoutineDate=null; requestedRoutineTaskId=null } }, icon = { Icon(icons[index], null, Modifier.size(22.dp)) }, label = { Text(title, style = MaterialTheme.typography.labelSmall) }, colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer, selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant)) }
         }
     }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -249,6 +249,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
                     "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location, requestNotificationsPermission = notify)
+                    "Mais" -> HomeMoreScreen { destination -> route=destination }
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate,
