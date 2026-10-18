@@ -297,7 +297,7 @@ private fun AuthScreen(vm: CentralViewModel, busy: Boolean) {
     }
 }
 
-private fun taskBelongsTo(task: Record, name: String): Boolean {
+internal fun taskBelongsTo(task: Record, name: String): Boolean {
     val owner=task.text("owner","Ambos")
     if(owner=="Ambos") return true
     val user=name.trim().lowercase(); val first=user.substringBefore(' ')
