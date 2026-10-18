@@ -467,6 +467,7 @@ internal fun routineTaskPeriod(task: Record): String {
 private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
     var audience by rememberSaveable { mutableStateOf("Tudo") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
+    var routineSection by rememberSaveable { mutableStateOf(initialRoutineSection(requestedDate, LocalDate.now())) }
     LaunchedEffect(requestedDate) {
         requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }?.let {
             dayText = it
@@ -490,7 +491,6 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
     val remindersEnabled=reminderPrefs.getBoolean("enabled",true)
     val notificationAllowed=AndroidInteractions.notificationsAllowed(context)
-    var routineSection by rememberSaveable { mutableStateOf(initialRoutineSection(requestedDate, LocalDate.now())) }
     LaunchedEffect(routineSection) {
         if (!reviewOnly && routineSection == "Hoje") dayText = LocalDate.now().toString()
     }
