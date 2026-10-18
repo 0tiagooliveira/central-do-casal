@@ -239,7 +239,6 @@ internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, r
         .filter { room == "Todos" || it.text("room", "Casa") == room }
         .sortedWith(compareBy({ it.text("room", "Casa") }, { it.text("title") }))
 
-@Composable
 /**
  * Do not claim a Bluetooth scan happened before the user explicitly requested it.
  * A permission failure or query error is not evidence of an empty device list.
@@ -251,6 +250,7 @@ internal fun bluetoothInventoryMessage(loaded: Boolean, failed: Boolean, count: 
     else -> "$count aparelho(s) pareado(s) encontrado(s)."
 }
 
+@Composable
 internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Boolean, requestNearby: () -> Unit = {}) {
     val context=LocalContext.current
     var adding by rememberSaveable { mutableStateOf(false) }
