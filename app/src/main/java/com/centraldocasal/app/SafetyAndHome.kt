@@ -205,7 +205,7 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick={messagePartner(location)}) { Text("WhatsApp") }
                     OutlinedButton(enabled=phone.filter(Char::isDigit).length>=8,onClick=::callPartner) { Text("Ligar") }
                 }
-                Button(enabled=!busy,onClick={ triggerSos(location) },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text("Registrar SOS sem esperar GPS") }
+                // O SOS principal continua no topo da tela, sem duplicidade aqui.
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:190")))}) { Text("Ligar para emergência (190)") }
             } }
         }
