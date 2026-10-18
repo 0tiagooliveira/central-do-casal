@@ -94,3 +94,32 @@ Base da inspeção: `ux/upstream-skills-aplicadas-fase10-20261018`. Escopo: `Rou
 - Testar tarefas importadas com `needsReview` e `needsTimeReview` no aplicativo instalado.
 - Validação de acessibilidade com fonte 1.3x/2x e TalkBack; screenshots em S23 FE e S25 FE pendentes.
 - Resgatar e reconciliar PR #44 (lembretes) antes de mexer na entrega real de notificações.
+
+
+## Revisão com skills originais, tela 04: Lembretes (fase 12)
+
+Escopo: `ReminderInbox.kt`, caller de `MainActivity.kt` e `ReminderInboxPrivacyTest.kt`.
+Base da fase 11; alterações não incluem o agendador `Reminders.kt` nem regras Firebase.
+
+### Etapas originais usadas
+- **dembrandt** etapas 3/4: listas separadas para pendências confirmadas do dia e tarefas que exigem revisão, porque nenhuma das duas é uma lista de entregas garantidas do Android.
+- **better-writing**: "Tarefas pendentes de hoje" substitui a interpretação implícita de que toda pendência tem aviso; cada botão tem verbo e objeto.
+- **notifications-and-recovery**: status realmente consultável por `Reminders.inspect`, com avisos para configurações desligadas e ligação direta ao fluxo de revisão importada. "Programado" não equivale a "entregue".
+- **better-layout / ui-density**: cartão de cada tarefa mantém informações essenciais e oferece diagnóstico detalhado sob demanda. `FlowRow` permite que ações quebrem linha em aparelhos estreitos.
+- **better-accessibility**: ações de 48dp, sem controles decorativos inertes. TalkBack físico pendente.
+- **Emil / motion-design**: nenhuma animação adicionada. Alternar diagnóstico é um uso recorrente e não exige movimento; transição instantânea mantém os rótulos atualizados.
+
+### Achados e correção
+| Severidade | Status do achado | Problema | Correção |
+| --- | --- | --- | --- |
+| Alta | Pré-existente | Tarefas importadas com `needsReview` não aparecem em pendências porque `occurs` as exclui | Lista explícita `reminderReviewTasks` independente de ocorrência; navega à rota "Revisar rotinas" |
+| Alta | Pré-existente | Horário visível podia sugerir aviso agendado/entregue sem evidência | `reminderScheduleHint` e opção "Ver estado do aviso" usando diagnóstico local existente |
+| Média | Pré-existente | Histórico de tarefas do outro perfil poderia ser exposto por nova lista | Filtro `taskBelongsTo` em ambas listas, com testes |
+| Média | Pré-existente | Itens à meia-noite ordenados como texto ou misturados aos sem horário | Ordenação por `LocalTime` com fallback ao final |
+| Baixa | Pré-existente | Mais de um botão numa única linha fixa seria estreito | `FlowRow` responsivo com alvo >=48dp |
+
+### Gates pendentes
+- [ ] Gradle, testes JVM e Firestore do CI desta fase.
+- [ ] QA S23 FE/S25 FE, fontes ampliadas, TalkBack.
+- [ ] Confirmar em aparelho real `Reminders.inspect` com aviso habilitado, bloqueado, sem alarme, após reboot e economia de bateria.
+- [ ] Revisar PR #44 antes de modificar entrega de alarmes; esta fase não faz alterações ao scheduler.
