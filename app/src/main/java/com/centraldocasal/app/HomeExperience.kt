@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -158,7 +159,7 @@ internal fun HomeExperienceScreen(
                     }
                 }
                 IconButton(onClick={touch{navigate("Lembretes")}},
-                    modifier=Modifier.size(40.dp).semantics{contentDescription="Abrir lembretes"}) {
+                    modifier=Modifier.size(48.dp).semantics{contentDescription="Abrir lembretes"}) {
                     Icon(ReminderBell,null,tint=palette.primary)
                 }
             }
@@ -192,15 +193,15 @@ internal fun HomeExperienceScreen(
                             if(focus!=null) vm.complete(focus,today,true) else selectTab("Rotina")
                         }},
                         enabled=!busy,
-                        modifier=Modifier.fillMaxWidth().heightIn(min=47.dp).testTag("home-focus-action"),
+                        modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("home-focus-action"),
                         shape=RoundedCornerShape(14.dp),
                         colors=ButtonDefaults.buttonColors(containerColor=palette.primary)
                     ) {
                         Icon(if(focus==null) Icons.Default.Add else Icons.Default.Check,null,Modifier.size(19.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text(if(focus==null) "Abrir minha rotina" else "Registrar atividade",style=MaterialTheme.typography.labelLarge)
+                        Text(if(focus==null) "Abrir minha rotina" else "Concluir atividade",style=MaterialTheme.typography.labelLarge)
                     }
-                    Row(Modifier.fillMaxWidth().clickable { touch { selectTab("Rotina") } }.heightIn(min=34.dp),
+                    Row(Modifier.fillMaxWidth().clickable { touch { selectTab("Rotina") } }.heightIn(min=48.dp),
                         verticalAlignment=Alignment.CenterVertically) {
                         Text("$completed de ${tasks.size} atividades concluídas hoje",
                             modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium,color=palette.primary)
@@ -244,17 +245,25 @@ internal fun HomeExperienceScreen(
             Spacer(Modifier.height(3.dp))
             Text("Registro rápido para o Lucca e a Mel.",style=MaterialTheme.typography.bodySmall,color=homeMuted)
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement=Arrangement.spacedBy(7.dp),modifier=Modifier.fillMaxWidth()) {
-                careKinds.forEach { kind ->
-                    HomeCareTile(
-                        kind=kind,
-                        count=cares.count { it.text("careType") == kind.id },
-                        accent=accent,
-                        tint=palette.primaryContainer,
-                        enabled=canRecordCare && !busy,
-                        modifier=Modifier.weight(1f),
-                        onAdd={saveCare(kind)}
-                    )
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = homeCareColumns(maxWidth.value, LocalDensity.current.fontScale)
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    careKinds.chunked(columns).forEach { group ->
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            group.forEach { kind ->
+                                HomeCareTile(
+                                    kind=kind,
+                                    count=cares.count { it.text("careType") == kind.id },
+                                    accent=accent,
+                                    tint=palette.primaryContainer,
+                                    enabled=canRecordCare && !busy,
+                                    modifier=Modifier.weight(1f),
+                                    onAdd={saveCare(kind)}
+                                )
+                            }
+                            repeat(columns-group.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             }
         }
@@ -345,6 +354,17 @@ private fun HomeSection(title: String, accent: Color, trailing: String="", onTra
     }
 }
 
+/**
+ * One column for very narrow layouts / 160% fonts; two for phones;
+ * four only when the available width is tablet-sized.
+ * Width is the actual content area, not a hard-coded device model.
+ */
+internal fun homeCareColumns(widthDp: Float, fontScale: Float): Int = when {
+    widthDp < 305f || fontScale >= 1.6f -> 1
+    widthDp >= 720f && fontScale <= 1.15f -> 4
+    else -> 2
+}
+
 @Composable
 private fun HomeCareTile(
     kind: CareKind,
@@ -355,27 +375,39 @@ private fun HomeCareTile(
     modifier: Modifier,
     onAdd: () -> Unit
 ) {
-    val title=when(kind.id) {
+    val title = when(kind.id) {
         "diaper" -> "Fralda"
         "bottle" -> "Mamadeira"
         "bath" -> "Banho"
         else -> "Mel"
     }
-    Surface(modifier,shape=RoundedCornerShape(16.dp),color=Color.White,
-        border=BorderStroke(1.dp,homeOutline)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal=3.dp,vertical=9.dp),
-            horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Surface(shape=RoundedCornerShape(11.dp),color=tint,modifier=Modifier.size(36.dp)) {
+    // Whole tile is an accessible tap target; avoid tiny nested 40dp icon buttons.
+    Surface(
+        onClick=onAdd,
+        enabled=enabled,
+        modifier=modifier.heightIn(min=72.dp)
+            .testTag("home-care-${kind.id}")
+            .semantics { contentDescription="Registrar ${kind.label}; $count hoje" },
+        shape=RoundedCornerShape(16.dp),
+        color=Color.White,
+        border=BorderStroke(1.dp,homeOutline)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=8.dp),
+            verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(7.dp)
+        ) {
+            Surface(shape=RoundedCornerShape(11.dp),color=tint,modifier=Modifier.size(34.dp)) {
                 Box(contentAlignment=Alignment.Center) {
                     HomeCareLineIcon(kind.id,accent)
                 }
             }
-            Text(title,style=MaterialTheme.typography.labelSmall,color=homeInk,
-                maxLines=1,overflow=TextOverflow.Ellipsis)
-            Text("$count hoje",style=MaterialTheme.typography.labelSmall,color=homeMuted)
-            IconButton(onClick=onAdd,enabled=enabled,modifier=Modifier.size(40.dp).testTag("home-care-${kind.id}")) {
-                Icon(Icons.Default.Add,"Registrar ${kind.label}",tint=accent,modifier=Modifier.size(21.dp))
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                Text(title,style=MaterialTheme.typography.labelMedium,color=homeInk,
+                    maxLines=2,overflow=TextOverflow.Ellipsis)
+                Text("$count hoje",style=MaterialTheme.typography.labelSmall,color=homeMuted)
             }
+            Icon(Icons.Default.Add,null,Modifier.size(20.dp),tint=accent)
         }
     }
 }
