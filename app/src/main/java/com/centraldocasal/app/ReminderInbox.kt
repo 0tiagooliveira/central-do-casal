@@ -14,6 +14,19 @@ import com.centraldocasal.app.domain.occurs
 import com.centraldocasal.app.domain.occurrenceId
 import java.time.LocalDate
 
+/**
+ * Inbox is personal, even if shared records for the partner are present in DataState.
+ * This is independent of notification delivery; "pending" is not a scheduled alarm.
+ */
+internal fun reminderVisibleTasks(
+    records: List<com.centraldocasal.app.domain.Record>,
+    profileName: String,
+    today: LocalDate
+): List<com.centraldocasal.app.domain.Record> = records.filter { task ->
+    task.kind=="task" && taskBelongsTo(task,profileName) && occurs(task,today) &&
+        records.none { it.kind=="occurrence" && it.id==occurrenceId(task.id,today) && it.flag("done") }
+}.sortedBy { it.text("time").ifBlank { "99:99" } }
+
 @Composable
 internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: () -> Unit, openSettings: () -> Unit) {
     val context=LocalContext.current
@@ -21,9 +34,7 @@ internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: 
     val prefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
     val enabled=prefs.getBoolean("enabled",true)
     val allowed=AndroidInteractions.notificationsAllowed(context)
-    val tasks=data.records.filter { task -> task.kind=="task" && occurs(task,today) &&
-        data.records.none { it.kind=="occurrence" && it.id==occurrenceId(task.id,today) && it.flag("done") } }
-        .sortedBy { it.text("time").ifBlank { "99:99" } }
+    val tasks = reminderVisibleTasks(data.records, session.name, today)
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item { SectionHero("Lembretes", "Seu dia, sem cobranças.",ReminderBell) }
         item { QuietCard("Notificações no aparelho", when {
@@ -33,7 +44,7 @@ internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: 
         }) { TextButton(onClick=openSettings) { Text("Ajustar notificações e silêncio") } } }
         item { Text("Pendências de hoje",style=MaterialTheme.typography.titleLarge) }
         if(tasks.isEmpty()) item { QuietCard("Tudo em dia", "Nenhuma atividade pendente para hoje.") { TextButton(onClick=openRoutine) { Text("Abrir rotina") } } }
-        items(tasks,key={it.id}) { task -> QuietCard(task.text("title"),"${task.text("time").ifBlank { "Sem horário" }} · ${task.text("owner","Ambos")}") {
+        items(tasks,key={it.id}) { task -> QuietCard(task.text("title"),"${if(task.flag("needsTimeReview") || task.text("time").isBlank()) "Horário a confirmar" else task.text("time")} · ${task.text("owner","Ambos")}") {
             TextButton(onClick=openRoutine) { Text("Ver na rotina") }
         } }
     }
