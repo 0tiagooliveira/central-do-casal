@@ -123,3 +123,28 @@ Base da fase 11; alterações não incluem o agendador `Reminders.kt` nem regras
 - [ ] QA S23 FE/S25 FE, fontes ampliadas, TalkBack.
 - [ ] Confirmar em aparelho real `Reminders.inspect` com aviso habilitado, bloqueado, sem alarme, após reboot e economia de bateria.
 - [ ] Revisar PR #44 antes de modificar entrega de alarmes; esta fase não faz alterações ao scheduler.
+
+
+## Revisão com skills originais, tela 05: Casa Inteligente (fase 13)
+
+Escopo: `HomeDevicesScreen` em `SafetyAndHome.kt`, helpers puros de status Bluetooth e testes. Não houve integração de rede, controle real de Alexa ou alteração de Firebase.
+
+### Dembrandt e Jakub Krehel
+- `dembrandt` etapas 3–4: ambientes organizados por chips horizontais com rolagem explícita, evitando uma sequência de muitas linhas de filtros; botão de ação “Adicionar aparelho” preservado.
+- `better-writing` + `notifications-and-recovery`: estado inicial não pode afirmar “Nenhum aparelho pareado encontrado” antes de consultar o Bluetooth. Os estados passam a distinguir aguardando consulta, consulta vazia, falha e encontrados.
+- `better-accessibility`: o checkbox "Mostrar aparelhos arquivados" usa `Row.toggleable` com papel de checkbox e texto integrado ao alvo de toque, em vez de caixa isolada e rótulo não interativo.
+- `better-layout`: filtro de cômodo é reajustado quando dados da conta mudam e o cômodo previamente selecionado deixa de existir.
+- `improve-animations` / `animate`: nenhuma animação nova em listas de inventário e filtros usados repetidamente. Movimento não comunica um status que a Central ainda não tem autorização para observar.
+
+### Achados localizados
+| Severidade | Origem | Antes | Agora | Teste |
+| --- | --- | --- | --- | --- |
+| Média | Pré-existente | Zero Bluetooth apresentado antes de qualquer consulta | `pairedLoaded/pairedError` e `bluetoothInventoryMessage` | Teste JVM |
+| Média | Pré-existente | Controle de arquivados com checkbox e texto como alvos diferentes | Linha `toggleable` com papel de checkbox e rótulo | TalkBack pendente |
+| Baixa | Pré-existente | Filtros de cômodo em várias linhas, ocupando a Home de Casa | Rolagem horizontal dos chips | S23 FE/S25 FE pendente |
+| Baixa | Pré-existente | Filtro pode persistir após cômodo sumir | Reinicia em “Todos” apenas se filtro inválido | QA visual pendente |
+
+### Pendências
+- Não afirmar que a Alexa, Home Assistant, Tuya ou Fire TV estão conectados. Os dispositivos registrados são inventário, não telemetria.
+- Conferir em aparelho real resultado Bluetooth, falha, permissão negada, aparelhos arquivados, restauração da tela e rolagem horizontal com TalkBack.
+- Testes automáticos Android/JVM e Firebase obrigatórios antes do merge; esta fase não muda regras de produção.

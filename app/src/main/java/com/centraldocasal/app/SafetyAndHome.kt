@@ -16,6 +16,8 @@ import android.bluetooth.BluetoothAdapter
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -236,6 +239,17 @@ internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, r
         .filter { room == "Todos" || it.text("room", "Casa") == room }
         .sortedWith(compareBy({ it.text("room", "Casa") }, { it.text("title") }))
 
+/**
+ * Do not claim a Bluetooth scan happened before the user explicitly requested it.
+ * A permission failure or query error is not evidence of an empty device list.
+ */
+internal fun bluetoothInventoryMessage(loaded: Boolean, failed: Boolean, count: Int): String = when {
+    failed -> "Não foi possível consultar o Bluetooth. Verifique a permissão e tente novamente."
+    !loaded -> "Toque em Ver aparelhos Bluetooth pareados para consultar este celular."
+    count == 0 -> "Nenhum aparelho pareado neste celular. Faça o pareamento nas configurações Bluetooth."
+    else -> "$count aparelho(s) pareado(s) encontrado(s)."
+}
+
 @Composable
 internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Boolean, requestNearby: () -> Unit = {}) {
     val context=LocalContext.current
@@ -243,14 +257,35 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
     var editingDevice by remember { mutableStateOf<Record?>(null) }
     var showArchived by rememberSaveable { mutableStateOf(false) }
     var paired by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pairedLoaded by remember { mutableStateOf(false) }
+    var pairedError by remember { mutableStateOf(false) }
     val nearbyAllowed=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
     fun refreshPaired() {
-        paired=if(!nearbyAllowed) emptyList() else runCatching { BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }?.sorted().orEmpty() }.getOrDefault(emptyList())
+        if (!nearbyAllowed) {
+            pairedLoaded=false
+            pairedError=false
+            paired=emptyList()
+            return
+        }
+        runCatching {
+            BluetoothAdapter.getDefaultAdapter()?.bondedDevices
+                ?.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }
+                ?.distinct()?.sorted().orEmpty()
+        }.onSuccess {
+            paired=it
+            pairedLoaded=true
+            pairedError=false
+        }.onFailure {
+            paired=emptyList()
+            pairedLoaded=false
+            pairedError=true
+        }
     }
     val devices = smartHomeDevices(data.records, showArchived)
     val activeCount = smartHomeDevices(data.records, false).size
     var roomFilter by rememberSaveable { mutableStateOf("Todos") }
     val rooms = remember(devices) { listOf("Todos") + devices.map { it.text("room","Casa") }.distinct().sorted() }
+    LaunchedEffect(rooms) { if (roomFilter !in rooms) roomFilter = "Todos" }
     val visibleDevices = smartHomeDevices(data.records, showArchived, roomFilter)
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -260,14 +295,26 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                     Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("Painel da casa",style=MaterialTheme.typography.titleMedium)
                         Text("$activeCount aparelho(s) cadastrados · ${rooms.size-1} cômodo(s) organizados",style=MaterialTheme.typography.bodyMedium)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked=showArchived,onCheckedChange={showArchived=it;roomFilter="Todos"})
-                            Text("Mostrar aparelhos arquivados",style=MaterialTheme.typography.bodySmall)
+                        Row(
+                            modifier=Modifier.fillMaxWidth().toggleable(
+                                value=showArchived,
+                                role=Role.Checkbox,
+                                onValueChange={showArchived=it;roomFilter="Todos"}
+                            ),
+                            verticalAlignment=Alignment.CenterVertically
+                        ) {
+                            Checkbox(checked=showArchived,onCheckedChange=null)
+                            Text("Mostrar aparelhos arquivados",style=MaterialTheme.typography.bodyMedium)
                         }
                         Text("Cadastro não é controle em tempo real. O estado ligado/desligado só aparecerá depois de uma integração autorizada com o provedor.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Cômodos",style=MaterialTheme.typography.labelLarge)
-                        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                            rooms.forEach { room -> FilterChip(selected=roomFilter==room,onClick={roomFilter=room},label={Text(room)}) }
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement=Arrangement.spacedBy(6.dp)
+                        ) {
+                            rooms.forEach { room ->
+                                FilterChip(selected=roomFilter==room,onClick={roomFilter=room},label={Text(room)})
+                            }
                         }
                     }
                 }
@@ -310,7 +357,7 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
             }
             item { Text("Integrações e pareamento",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold) }
             item { HomeAssistantPreviewCard() }
-            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text("Nenhum aparelho pareado encontrado. Use as configurações Bluetooth para parear primeiro.",style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
+            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if (paired.isEmpty()) Text(bluetoothInventoryMessage(pairedLoaded,pairedError,paired.size),style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
     onClick={
         vm.action("Aparelho Bluetooth registrado") {
             require(!bluetoothNameRegistered(vm.repo.data.value.records, name)) {
