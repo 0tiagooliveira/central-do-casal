@@ -139,7 +139,7 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
      * tarefa, permissão e conclusão usando o estado MAIS RECENTE do repositório.
      * Callback de sucesso só acontece depois da persistência confirmada.
      */
-    fun executeSophiaOperation(operation: SophiaOperation, onResult: (Boolean, String) -> Unit) {
+    internal fun executeSophiaOperation(operation: SophiaOperation, onResult: (Boolean, String) -> Unit) {
         if (busy.value) { onResult(false, "Aguarde a operação atual terminar."); return }
         busy.value = true
         viewModelScope.launch {
