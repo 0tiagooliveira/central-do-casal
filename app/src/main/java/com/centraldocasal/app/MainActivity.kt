@@ -626,12 +626,28 @@ private fun PlansScreen(vm: CentralViewModel, data: DataState, onOpenLinked: (St
     }
 }
 
+/** A manual ledger is not a bank balance or an Open Finance connection. */
+internal data class FinancialMonthSummary(val incomeCents: Long, val expenseCents: Long, val entryCount: Int) {
+    val resultCents: Long get() = incomeCents - expenseCents
+}
+
+internal fun financialMonthRecords(records: List<Record>, month: java.time.YearMonth): List<Record> =
+    records.filter { it.kind == "transaction" &&
+        runCatching { java.time.YearMonth.from(java.time.LocalDate.parse(it.text("date"))) == month }.getOrDefault(false)
+    }
+
+internal fun financialMonthSummary(records: List<Record>): FinancialMonthSummary {
+    val income = records.filter { it.text("type") == "Receita" }.sumOf { it.number("amount") }
+    val expense = records.filter { it.text("type") == "Despesa" }.sumOf { it.number("amount") }
+    return FinancialMonthSummary(income, expense, records.size)
+}
+
 @Composable
 private fun FinanceScreen(vm: CentralViewModel, data: DataState) {
     var month by rememberSaveable { mutableStateOf(java.time.YearMonth.now().toString()) }; val period = java.time.YearMonth.parse(month)
     var creating by remember { mutableStateOf(false) }; var editing by remember { mutableStateOf<Record?>(null) }
-    val records = data.records.filter { it.kind == "transaction" && it.text("date").startsWith(month) }
-    val incomes = records.filter { it.text("type") == "Receita" }.sumOf { it.number("amount") }; val expenses = records.filter { it.text("type") == "Despesa" }.sumOf { it.number("amount") }
+    val records = financialMonthRecords(data.records, period)
+    val summary = financialMonthSummary(records)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageHeading("Finanças", "Controle manual • valores em reais") }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { month = period.minusMonths(1).toString() }) { Text("Anterior") }; Text(period.format(DateTimeFormatter.ofPattern("MM/yyyy"))); TextButton(onClick = { month = period.plusMonths(1).toString() }) { Text("Próximo") } } }
@@ -639,7 +655,12 @@ private fun FinanceScreen(vm: CentralViewModel, data: DataState) {
         val bills=data.records.filter { it.kind == "plannedBill" && it.text("month") == month }
         if(bills.isNotEmpty()) item { Text("Compromissos previstos", style = MaterialTheme.typography.titleMedium); Text("Ainda sem conciliação. Valores ausentes ficam a confirmar.", style = MaterialTheme.typography.bodySmall) }
         items(bills, key = { it.id }) { PlannedBillCard(it) }
-        item { Panel("Controle manual", "Somente lançamentos registrados no app") { AmountRow("Receitas", incomes); AmountRow("Despesas", expenses); AmountRow("Saldo registrado", incomes - expenses); Text("Notas importadas não criam lançamentos automaticamente.", style = MaterialTheme.typography.labelSmall) } }
+        item { Panel("Controle manual", "${summary.entryCount} lançamento(s) registrado(s) neste mês") {
+            AmountRow("Receitas", summary.incomeCents)
+            AmountRow("Despesas", summary.expenseCents)
+            AmountRow("Resultado dos lançamentos", summary.resultCents)
+            Text("Este é um resumo do controle manual, não o saldo do banco. Notas importadas e contas previstas não geram lançamentos automaticamente.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } }
         item { Button(onClick = { creating = true }) { Text("Novo lançamento") } }
         if (records.isEmpty()) item { Empty("Sem lançamentos neste mês", "Registre receitas e despesas de forma explícita.") }
         items(records.sortedByDescending { it.text("date") }, key = { it.id }) { r ->
