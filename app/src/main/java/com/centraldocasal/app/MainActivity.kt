@@ -677,7 +677,7 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
             if (moments.isEmpty()) item { Empty("As memórias começam com vocês", "Guarde uma lembrança real, pessoal ou compartilhada.") }
             items(moments, key = { it.id }) { r -> Card(onClick={momentEdit=r},modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text(r.text("title"),style=MaterialTheme.typography.titleMedium);Text("${displayDate(r.text("date"))} · ${if(r.isPrivate) "Privada" else "Compartilhada"}",style=MaterialTheme.typography.bodySmall);Text(r.text("note"));Text("Editar lembrança",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary) } } }
         } else if (section=="Conquistas") {
-            val saved=data.records.filter { it.kind=="quest"&&!it.flag("cancelled")&&(it.fields["completed"] as? List<*>)?.distinct()?.size==2 }
+            val saved=data.records.filter { it.kind=="quest" && !it.isPrivate && !it.flag("cancelled") && coupleQuestState(it,data.members).confirmedByBoth }
             if(saved.isEmpty()) item { Empty("Baú de descobertas","As experiências confirmadas pelos dois aparecem aqui.") }
             items(saved,key={it.id}) { memory -> Panel(memory.text("title"),displayDate(memory.text("date"))) { Text(memory.text("destination"));Text("Experiência confirmada pelos dois",style=MaterialTheme.typography.labelSmall) } }
         } else {
@@ -702,22 +702,24 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
                     Button(onClick = { touch(); vm.action { require(!session.local && data.members.size == 2) { "Conecte duas contas ao mesmo espaço para propor um convite real." }; vm.repo.save(Record(kind = "quest", fields = mapOf("title" to cards[cardIndex % cards.size], "destination" to destination, "creatorUid" to session.uid, "accepted" to listOf(session.uid), "completed" to emptyList<String>(), "cancelled" to false, "date" to LocalDate.now().toString()))) } }, enabled = !busy && !session.local && data.members.size == 2) { Text("Propor convite") }
                     if (session.local || data.members.size != 2) Text("Conectem suas duas contas para propor uma aventura.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } }
-                items(data.records.filter { it.kind == "quest" && !it.flag("cancelled") }, key = { it.id }) { quest ->
-                    val accepted = quest.fields["accepted"] as? List<*> ?: emptyList<Any>(); val completed = quest.fields["completed"] as? List<*> ?: emptyList<Any>()
+                items(data.records.filter { it.kind == "quest" && !it.isPrivate && !it.flag("cancelled") }, key = { it.id }) { quest ->
+                    val state = coupleQuestState(quest, data.members)
+                    val accepted = state.accepted
+                    val completed = state.completed
                     Panel(quest.text("title"), "${accepted.size}/2 aceites • ${completed.size}/2 confirmações de realização") {
-                        LinearProgressIndicator(progress={((accepted.distinct().size+completed.distinct().size)/4f).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())
+                        LinearProgressIndicator(progress={state.progress},modifier=Modifier.fillMaxWidth())
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                             Column(Modifier.weight(1f)) { Text("Você",style=MaterialTheme.typography.labelLarge);Text(if(session.uid in completed) "Realizado" else if(session.uid in accepted) "Aceitou" else "Aguardando",style=MaterialTheme.typography.bodySmall) }
                             Column(Modifier.weight(1f)) { Text("Parceiro",style=MaterialTheme.typography.labelLarge);Text(if(completed.any { it!=session.uid }) "Realizado" else if(accepted.any { it!=session.uid }) "Aceitou" else "Aguardando",style=MaterialTheme.typography.bodySmall) }
                         }
                         if (session.uid !in accepted) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "accept") } }, enabled = !busy) { Text("Topo") }
-                        if (accepted.size == 2 && session.uid !in completed) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "complete") } }, enabled = !busy) { Text("Confirmar que aconteceu") }
-                        if (completed.size < 2) TextButton(onClick = { touch(); vm.action { vm.repo.questResponse(quest, if (quest.text("creatorUid") == session.uid) "cancel" else "decline") } }, enabled = !busy) { Text("Talvez outra hora") }
+                        if (state.readyToComplete && session.uid in accepted && session.uid !in completed) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "complete") } }, enabled = !busy) { Text("Confirmar que aconteceu") }
+                        if (!state.confirmedByBoth) TextButton(onClick = { touch(); vm.action { vm.repo.questResponse(quest, if (quest.text("creatorUid") == session.uid) "cancel" else "decline") } }, enabled = !busy) { Text("Talvez outra hora") }
                         else Text("Lembrança cooperativa guardada no Baú.")
                     }
                 }
             } else {
-                val quests = data.records.filter { it.kind == "quest" && !it.flag("cancelled") && (it.fields["completed"] as? List<*>)?.size == 2 }
+                val quests = data.records.filter { it.kind == "quest" && !it.isPrivate && !it.flag("cancelled") && coupleQuestState(it, data.members).confirmedByBoth }
                 if (quests.isEmpty()) item { Empty("Baú de descobertas", "Uma lembrança aparece quando ambos confirmam uma experiência real.") }
                 items(quests, key = { it.id }) { Panel("Experiência compartilhada", it.text("destination")) { Text(it.text("title")); Text("Proposta em ${displayDate(it.text("date"))} • duas confirmações reais", style = MaterialTheme.typography.labelSmall) } }
             }
