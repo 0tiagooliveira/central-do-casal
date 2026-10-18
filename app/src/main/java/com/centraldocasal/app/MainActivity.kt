@@ -254,7 +254,10 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate,
                         requestedTaskId = requestedRoutineTaskId, onTargetOpened = { requestedRoutineTaskId = null })
-                    "Lembretes" -> ReminderInbox(session,data,openRoutine={route="";requestedRoutineDate=null;tab="Rotina"},openSettings={route="Configurações"})
+                    "Lembretes" -> ReminderInbox(session,data,
+                        openRoutine={route="";requestedRoutineDate=null;tab="Rotina"},
+                        openSettings={route="Configurações"},
+                        openReview={route="Revisar rotinas"})
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";requestedRoutineDate=null;tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";requestedShoppingMarket=null;tab="Compras"}) }
                     "Planos" -> PlansScreen(vm, data, onOpenLinked = { destination -> route = ""; when { destination.startsWith("Compras:") -> { requestedShoppingMarket=destination.substringAfter(":").takeIf { it in listOf("Mercado","Açougue") }; tab="Compras" }; destination.startsWith("Rotina:") -> { requestedRoutineDate=destination.substringAfter(":").takeIf { runCatching { LocalDate.parse(it) }.isSuccess }; tab="Rotina" }; else -> tab=destination } })
