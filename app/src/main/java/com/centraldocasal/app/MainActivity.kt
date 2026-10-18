@@ -390,9 +390,35 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
     }
 }
 
+/**
+ * Pure eligibility filter for the Routine tabs.
+ *
+ * A deep-linked task opens only in the editor: it must not switch the daily
+ * agenda into an accidental all-dates mode. Shared items marked for review
+ * remain visible to authorized household members.
+ */
+internal fun routineVisibleTasks(
+    records: List<Record>,
+    day: LocalDate,
+    profileName: String,
+    audience: String = "Tudo",
+    reviewOnly: Boolean = false,
+    habitsOnly: Boolean = false
+): List<Record> = records.filter { task ->
+    if (task.kind != "task" || !taskBelongsTo(task, profileName)) return@filter false
+    if (reviewOnly) return@filter task.flag("needsReview") || task.flag("needsTimeReview")
+    if (!occurs(task, day)) return@filter false
+    val owner = task.text("owner", "Ambos")
+    val allowed = when (audience) {
+        "Para mim" -> !owner.equals("Ambos", true)
+        "Compartilhadas" -> owner.equals("Ambos", true)
+        else -> true
+    }
+    allowed && (!habitsOnly || task.text("repeat") !in setOf("", "Única"))
+}
+
 @Composable
 private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
-    var showAll by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("Tudo") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
     LaunchedEffect(requestedDate) {
@@ -406,8 +432,7 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     LaunchedEffect(requestedTaskId, data.records) {
         val taskId = requestedTaskId?.takeIf { it.isNotBlank() }
         if(taskId != null) {
-            data.records.firstOrNull { it.kind == "task" && it.id == taskId }?.let { target ->
-                showAll = true
+            data.records.firstOrNull { it.kind == "task" && it.id == taskId && taskBelongsTo(it, session.name) }?.let { target ->
                 audience = "Tudo"
                 editing = target
                 onTargetOpened()
@@ -420,17 +445,13 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val notificationAllowed=AndroidInteractions.notificationsAllowed(context)
     val configured=data.records.count { it.kind=="task" && it.text("time").isNotBlank() && !it.flag("skipReminder") && !it.flag("needsReview") && (it.text("owner","Ambos")=="Ambos" || taskBelongsTo(it,session.name)) }
     var routineSection by rememberSaveable { mutableStateOf("Hoje") }
-    val allTasks=data.records.filter { it.kind=="task" &&
-        if(reviewOnly) it.flag("needsReview")||it.flag("needsTimeReview")
-        else showAll || occurs(it,day)
+    LaunchedEffect(routineSection) {
+        if (!reviewOnly && routineSection == "Hoje") dayText = LocalDate.now().toString()
     }
-    val profileTasks=allTasks.filter { task -> (reviewOnly && taskBelongsTo(task,session.name)) || (!reviewOnly && when(audience) {
-        "Para mim" -> task.text("owner","Ambos")!="Ambos" && taskBelongsTo(task,session.name)
-        "Compartilhadas" -> task.text("owner","Ambos")=="Ambos"
-        else -> taskBelongsTo(task,session.name)
-    }) }
-    val tasks=if(routineSection=="Hábitos" && !reviewOnly)
-        profileTasks.filter { it.text("repeat") !in setOf("","Única") } else profileTasks
+    val tasks = routineVisibleTasks(
+        data.records, day, session.name, audience,
+        reviewOnly=reviewOnly, habitsOnly=routineSection=="Hábitos" && !reviewOnly
+    )
     val completedTasks=tasks.filter { done(it,day,data) }
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=18.dp,vertical=16.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
