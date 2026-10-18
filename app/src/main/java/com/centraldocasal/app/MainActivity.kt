@@ -726,12 +726,16 @@ private fun TogetherScreen(vm: CentralViewModel, session: SessionState, data: Da
     if (create || momentEdit!=null) RecordEditor("moment", momentEdit, vm, onDismiss = { create = false;momentEdit=null })
 }
 
+/** Defense-in-depth: private health records never render from a shared collection. */
+internal fun visibleHealthRecords(records: List<Record>): List<Record> =
+    records.filter { it.kind == "health" && it.isPrivate }
+
 @Composable
 private fun HealthScreen(vm: CentralViewModel, data: DataState) {
     var create by remember { mutableStateOf(false) }; var edit by remember { mutableStateOf<Record?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageHeading("Saúde pessoal", "Registros privados, visíveis somente à sua conta."); Button(onClick = { create = true }) { Text("Novo registro pessoal") } }
-        val records = data.records.filter { it.kind == "health" }
+        val records = visibleHealthRecords(data.records)
         if (records.isEmpty()) item { Empty("Um espaço só seu", "Registre voluntariamente hábitos ou compromissos. Sophia não acessa estes dados.") }
         items(records, key = { it.id }) { r -> Card(onClick = { edit = r }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(r.text("title"), fontWeight = FontWeight.Bold); Text(r.text("note")); Text(displayDate(r.text("date"))) } } }
     }

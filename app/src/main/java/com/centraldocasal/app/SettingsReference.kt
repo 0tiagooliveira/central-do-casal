@@ -61,10 +61,10 @@ internal fun SettingsReferenceLanding(
             Triple("Vibração e sons","Ajuste o retorno do aplicativo","Aparência"),
             Triple("Tema do app",themeLabel,"Aparência"),
             Triple("Segurança e SOS","Contatos e recursos de segurança","route:Segurança"),
-            Triple("Casa inteligente","Seus dispositivos e automações","route:Casa"),
-            Triple("Permissões","Câmera, localização e dados","Privacidade"),
+            Triple("Casa inteligente","Aparelhos, cômodos e conexões autorizadas","route:Casa"),
+            Triple("Permissões","Localização, notificações e privacidade","Privacidade"),
             Triple("Integração com a Sophia","Dicas locais · IA generativa em preparação","route:Sophia"),
-            Triple("Dados e backup","Exportação, armazenamento e privacidade","Privacidade"),
+            Triple("Dados e backup","Exportação e armazenamento de dados","Privacidade"),
             Triple("Avançado","Diagnósticos e integrações","Avançado")
         ).forEach { (label,subtitle,destination) ->
             Surface(onClick={

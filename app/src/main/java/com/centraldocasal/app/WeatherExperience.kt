@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -389,22 +390,28 @@ internal fun WeatherCard(
     var enabled by remember(uid) { mutableStateOf(SophiaMoments.enabled(context, uid)) }
     var lastLocation by remember(uid) { mutableStateOf<Pair<Double,Double>?>(null) }
 
-    // Depois da ativação inicial, somente coordenadas aproximadas já autorizadas
-    // são reutilizadas. Nenhum GPS em segundo plano e nenhum botão diário.
+    // Atualiza automaticamente enquanto a tela está ativa, após opt-in.
+    // Reutiliza somente região aproximada previamente autorizada: não ativa GPS
+    // em segundo plano, não instala monitoramento de localização contínuo.
     LaunchedEffect(uid, enabled) {
-        if (enabled) {
+        while (enabled) {
             SophiaMoments.location(context, uid)?.let { location ->
                 busy = true
-                runCatching { WeatherSource.fetch(location.first, location.second) }
-                    .onSuccess {
-                        weather = it
-                        SophiaMoments.syncTasks(context, uid, profileName, records)
-                        SophiaMoments.updateForecast(context, uid, it)
-                    }.onFailure {
-                        message = "Sem atualização do tempo agora. Os avisos dependem de dados recentes."
-                    }
-                busy = false
+                try {
+                    val updated = WeatherSource.fetch(location.first, location.second)
+                    weather = updated
+                    message = null
+                    SophiaMoments.syncTasks(context, uid, profileName, records)
+                    SophiaMoments.updateForecast(context, uid, updated)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    message = "Não foi possível atualizar a previsão. Os dados anteriores podem estar desatualizados."
+                } finally {
+                    busy = false
+                }
             }
+            delay(60 * 60 * 1000L)
         }
     }
 
