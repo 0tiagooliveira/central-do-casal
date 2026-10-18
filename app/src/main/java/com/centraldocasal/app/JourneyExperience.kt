@@ -86,13 +86,13 @@ internal fun JourneyExperience(vm: CentralViewModel, session: SessionState, data
                     }
                 }
             }
-            AnimatedContent(world, transitionSpec = { fadeIn(tween(if (options.motion) 260 else 0)) togetherWith fadeOut(tween(if (options.motion) 160 else 0)) }, label = "Mundo da jornada") { selectedWorld ->
+            AnimatedContent(world, transitionSpec = { fadeIn(tween(centralMotionDurationMillis(MotionKind.LAYOUT))) togetherWith fadeOut(tween(centralMotionDurationMillis(MotionKind.FEEDBACK))) }, label = "Mundo da jornada") { selectedWorld ->
                 Box(Modifier.fillMaxWidth().height(if (level == "Discreto") 140.dp else 194.dp).clip(RoundedCornerShape(22.dp))) {
                     WorldArt(selectedWorld, Modifier.fillMaxSize())
                     Surface(Modifier.align(Alignment.BottomStart).padding(14.dp), shape = RoundedCornerShape(12.dp), color = Color(0xE6111827), contentColor = Color.White) { Text(journeyWorlds[selectedWorld], Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium) }
                 }
             }
-            AnimatedContent(targetState = "$world:$card:$revealed", transitionSpec = { fadeIn(tween(if (options.motion) 220 else 0)) togetherWith fadeOut(tween(if (options.motion) 120 else 0)) }, label = "Carta de aventura") { state ->
+            AnimatedContent(targetState = "$world:$card:$revealed", transitionSpec = { fadeIn(tween(centralMotionDurationMillis(MotionKind.LAYOUT))) togetherWith fadeOut(tween(centralMotionDurationMillis(MotionKind.FEEDBACK))) }, label = "Carta de aventura") { state ->
                 val parts = state.split(':')
                 val cardWorld = parts[0].toInt()
                 val cardIndex = parts[1].toInt()
@@ -122,8 +122,9 @@ internal fun JourneyExperience(vm: CentralViewModel, session: SessionState, data
         }
         if (quests.isNotEmpty()) Text("As aventuras de vocês", style = MaterialTheme.typography.titleMedium)
         quests.forEach { quest ->
-            val accepted = (quest.fields["accepted"] as? List<*>)?.filterIsInstance<String>()?.distinct().orEmpty()
-            val completed = (quest.fields["completed"] as? List<*>)?.filterIsInstance<String>()?.distinct().orEmpty()
+            val state = coupleQuestState(quest,data.members)
+            val accepted = state.accepted
+            val completed = state.completed
             OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text(quest.text("title"), style = MaterialTheme.typography.titleMedium)
@@ -133,10 +134,10 @@ internal fun JourneyExperience(vm: CentralViewModel, session: SessionState, data
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(name, style = MaterialTheme.typography.labelLarge); Text(if (uid == null) "Conta não conectada" else if (uid in completed) "Confirmou a experiência" else if (uid in accepted) "Aceitou o convite" else "Ainda não respondeu", style = MaterialTheme.typography.bodySmall) }
                         }
                     }
-                    if (completed.size == 2) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) { Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary); Text("Lembrança confirmada pelos dois", style = MaterialTheme.typography.labelLarge) }
+                    if (state.confirmedByBoth) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) { Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary); Text("Lembrança confirmada pelos dois", style = MaterialTheme.typography.labelLarge) }
                     else if (active && canInvite) {
                         if (session.uid !in accepted) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "accept") } }, enabled = !busy) { Text("Topo esta aventura") }
-                        if (accepted.size == 2 && session.uid !in completed) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "complete") } }, enabled = !busy) { Text("Confirmar que aconteceu") }
+                        if (state.readyToComplete && session.uid in accepted && session.uid !in completed) Button(onClick = { touch(); vm.action { vm.repo.questResponse(quest, "complete") } }, enabled = !busy) { Text("Confirmar que aconteceu") }
                         TextButton(onClick = { touch(); vm.action { vm.repo.questResponse(quest, if (quest.text("creatorUid") == session.uid) "cancel" else "decline") } }, enabled = !busy) { Text("Talvez outra hora") }
                     }
                 }
