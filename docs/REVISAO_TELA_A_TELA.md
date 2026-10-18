@@ -57,3 +57,40 @@ Problema confirmado por inspeção estática do PR #45: quatro colunas estreitas
 
 ## Próxima revisão
 Após CI e inspeção da Home: começar Rotina. No caso do clima, validar o motor de 3 dicas que respeite horas e contextos autorizados, sem completar espaços com alertas inventados.
+
+
+## Revisão com skills originais, tela 02: Rotina (PR da fase 11)
+
+Base da inspeção: `ux/upstream-skills-aplicadas-fase10-20261018`. Escopo: `RoutineScreen` e `TaskRow` em `MainActivity.kt`, junto de novos testes de regras determinísticas. Este relatório descreve somente a fase 11, não é aprovação de todo o aplicativo.
+
+### Dembrandt: etapas aplicadas
+- Etapas 1 e 2 (marca/tokens): preservadas por existirem em `Design.kt`; identidade azul/rosa inalterada.
+- Etapa 3 (estrutura): cinco grupos em ordem temporal: madrugada (00–04h), manhã, tarde, noite e sem horário. Sem horário inválido ou em revisão passa ao grupo sem horário para não afirmar um agendamento inexistente.
+- Etapa 4 (interação): o dia solicitado por deep link é mantido no contexto de Semana; o fluxo de revisão exibe tarefas para corrigir, sem checkbox de conclusão ou progressos de outro dia.
+- Etapa 5 (polimento): ação “Nova tarefa” deixa de aparecer duplicada na maioria das abas. Não adicionamos animação à conclusão recorrente de tarefas.
+- Etapa 6 (acessibilidade): checkbox explica “Concluir” ou “Reabrir” conforme estado; controle de criação conserva alvo de pelo menos 48dp. Não houve teste TalkBack físico.
+
+### Skills originais específicas e evidência
+- `better-layout` + `ui-density`: grupos de horário exclusivos, em ordem cronológica e sem item duplicado.
+- `better-writing`: títulos “Tarefas para revisar”, “Nada para revisar”, sem confundir revisão com “Atividades do dia”.
+- `better-accessibility`: rótulo semântico dinâmico para o checkbox e área de toque mínima para criação.
+- `notifications-and-recovery`: abrir um dia de lembrete anterior/futuro não pode saltar silenciosamente para Hoje.
+- `improve-animations` (somente leitura) + `animate`: decisão explícita de **não animar** interação altamente frequente de conclusão de tarefa; remove `animateContentSize` do `TaskRow`. O comportamento instantâneo comunica o estado por checkbox e cor.
+- `interface-review`: achados relacionados à experiência de Rotina são anteriores a esta alteração; nenhum resultado físico foi inferido.
+
+### Resultado por achado
+| Severidade | Tipo | Problema anterior | Correção implementada | Gate |
+| --- | --- | --- | --- | --- |
+| Alta | Pré-existente | Deep link para dia diferente podia voltar para Hoje na inicialização | `initialRoutineSection` e atualização coerente da aba e data | Testes JVM + CI |
+| Média | Pré-existente | Compromissos às 00h apareciam em Noite | `routineTaskPeriod` cria Madrugada | Testes JVM + CI |
+| Média | Pré-existente | Revisão mostrava contagem de conclusão de data sem relação com o item | Substitui por contagem de itens a revisar; desliga checkbox na revisão | CI + QA manual |
+| Média | Pré-existente | Um horário que precisava ser confirmado aparecia sob a hora antiga | Item agrupado em Sem horário e microcopy “Horário a confirmar” | Testes JVM |
+| Baixa | Pré-existente | CTA “Nova tarefa” duplicado | Somente CTA contextual em atividades; atalho em Cuidados | UI inspection |
+| Baixa | Pré-existente | Checkbox sempre descrevia “Concluir” mesmo concluído | Nome acessível passa a “Reabrir” quando necessário | TalkBack pendente |
+
+### Fora de escopo / próximos cuidados
+- O filtro de acesso do backend permanece a fonte de autorização; não mudei Firestore.
+- Testar navegação real de deep links por notificações em ambos os aparelhos e validar a permanência do dia após restaurar estado.
+- Testar tarefas importadas com `needsReview` e `needsTimeReview` no aplicativo instalado.
+- Validação de acessibilidade com fonte 1.3x/2x e TalkBack; screenshots em S23 FE e S25 FE pendentes.
+- Resgatar e reconciliar PR #44 (lembretes) antes de mexer na entrega real de notificações.
