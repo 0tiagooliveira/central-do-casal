@@ -274,9 +274,23 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
     }
 }
 
+/** Basic client-side feedback; Firebase remains responsible for authentication. */
+internal fun accountEmailLooksUsable(raw: String): Boolean {
+    val value = raw.trim()
+    val at = value.indexOf('@')
+    return at > 0 && at < value.lastIndex && !value.any(Char::isWhitespace) &&
+        value.indexOf('@',at+1) == -1
+}
+
+internal fun accountFormCanSubmit(
+    email: String, password: String, registering: Boolean, name: String
+): Boolean = accountEmailLooksUsable(email) &&
+    password.isNotBlank() &&
+    (!registering || (name.trim().isNotBlank() && password.length >= 8))
+
 @Composable
 private fun AuthScreen(vm: CentralViewModel, busy: Boolean) {
-    var name by rememberSaveable { mutableStateOf("") }; var email by rememberSaveable { mutableStateOf("") }; var password by rememberSaveable { mutableStateOf("") }; var register by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable { mutableStateOf("") }; var email by rememberSaveable { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var register by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp).statusBarsPadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Spacer(Modifier.height(16.dp)); PlanAccentIcon(HeartLine)
         Text("Um lugar para\na vida a dois.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -284,10 +298,17 @@ private fun AuthScreen(vm: CentralViewModel, busy: Boolean) {
         QuietCard(if(register) "Sua conta individual" else "Que bom ter você aqui", "Cada pessoa entra com sua própria conta.") {
         if (register) Field("Seu nome", name, { name = it })
         Field("E-mail", email, { email = it })
+        if (email.isNotBlank() && !accountEmailLooksUsable(email)) {
+            Text("Confira o endereço de e-mail.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+        }
         OutlinedTextField(password, { password = it }, label = { Text("Senha") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(), shape=RoundedCornerShape(14.dp))
-        Button(onClick = { if (register) vm.action { vm.repo.register(name, email, password) } else vm.action { vm.repo.login(email, password) } }, enabled = !busy && email.isNotBlank() && password.isNotBlank() && (!register || name.isNotBlank()), modifier = Modifier.fillMaxWidth().heightIn(min=52.dp), shape=RoundedCornerShape(16.dp)) { Text(if(busy) "Aguarde…" else if (register) "Criar conta" else "Entrar com e-mail") }
-        TextButton(onClick = { register = !register }, enabled = !busy) { Text(if (register) "Já tenho uma conta" else "Criar minha conta individual") }
-        TextButton(onClick = { vm.action("Se a conta existir, você receberá instruções por e-mail.") { vm.repo.reset(email) } }, enabled = !busy) { Text("Recuperar acesso") }
+        Button(onClick = { if (register) vm.action { vm.repo.register(name, email, password) } else vm.action { vm.repo.login(email, password) } }, enabled = !busy && accountFormCanSubmit(email,password,register,name), modifier = Modifier.fillMaxWidth().heightIn(min=52.dp), shape=RoundedCornerShape(16.dp)) { Text(if(busy) "Aguarde…" else if (register) "Criar conta" else "Entrar com e-mail") }
+        TextButton(onClick = { register = !register; password = "" }, enabled = !busy) { Text(if (register) "Já tenho uma conta" else "Criar minha conta individual") }
+        TextButton(onClick = { vm.action("Se a conta existir, você receberá instruções por e-mail.") { vm.repo.reset(email) } }, enabled = !busy && accountEmailLooksUsable(email)) { Text("Recuperar acesso") }
+        if (register) Text("Para criar a conta, use uma senha com pelo menos 8 caracteres.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         QuietCard("Começar neste aparelho", "Seus registros ficam neste celular. Você pode entrar na sua conta depois.") {
         if (!register) Field("Como quer ser chamado?", name, { name = it })
