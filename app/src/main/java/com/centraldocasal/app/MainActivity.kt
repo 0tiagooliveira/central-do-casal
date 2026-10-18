@@ -366,11 +366,11 @@ private fun TodayScreen(vm: CentralViewModel, session: SessionState, data: DataS
 
 private fun done(task: Record, day: LocalDate, data: DataState) = data.records.any { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") }
 @Composable
-private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralViewModel, edit: (() -> Unit)? = null) {
+private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralViewModel, allowCompletion: Boolean = true, edit: (() -> Unit)? = null) {
     val completed = done(task, day, data)
     val busy by vm.busy.collectAsStateWithLifecycle()
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT))),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         color = if (completed) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -381,11 +381,13 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Checkbox(
+            if (allowCompletion) Checkbox(
                 checked = completed,
                 onCheckedChange = { vm.complete(task, day, it) },
-                modifier = Modifier.semantics { contentDescription = "Concluir tarefa: ${task.text("title")}" },
-                enabled = occurs(task, day) && !busy
+                modifier = Modifier.semantics {
+                    contentDescription = "${if (completed) "Reabrir" else "Concluir"} tarefa: ${task.text("title")}"
+                },
+                enabled = occurs(task, day) && !busy && !task.flag("needsReview") && !task.flag("needsTimeReview")
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(task.text("title"), style = MaterialTheme.typography.bodyLarge,
@@ -393,7 +395,8 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
                     color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                 Text(
                     listOfNotNull(
-                        task.text("time").takeUnless { it.isBlank() || task.flag("needsTimeReview") },
+                        task.text("time").takeUnless { it.isBlank() || task.flag("needsTimeReview") }
+                            ?: "Horário a confirmar",
                         task.text("owner", "Ambos"),
                         task.text("category").takeUnless { it.isBlank() }
                     ).joinToString(" · "),
@@ -438,6 +441,28 @@ internal fun routineVisibleTasks(
     allowed && (!habitsOnly || task.text("repeat") !in setOf("", "Única"))
 }
 
+/**
+ * Deep-links to another date open on the week picker, not on the current-day
+ * tab which resets its date. No clock-dependent logic in the pure function.
+ */
+internal fun initialRoutineSection(requestedDate: String?, today: LocalDate): String {
+    val requested = requestedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    return if (requested != null && requested != today) "Semana" else "Hoje"
+}
+
+/** Treat midnight as madrugada, and unverified or missing time as unscheduled. */
+internal fun routineTaskPeriod(task: Record): String {
+    if (task.flag("needsTimeReview") || task.flag("needsReview")) return "Sem horário"
+    val hour = runCatching { java.time.LocalTime.parse(task.text("time")) }.getOrNull()?.hour
+        ?: return "Sem horário"
+    return when(hour) {
+        in 0..4 -> "Madrugada"
+        in 5..11 -> "Manhã"
+        in 12..17 -> "Tarde"
+        else -> "Noite"
+    }
+}
+
 @Composable
 private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
     var audience by rememberSaveable { mutableStateOf("Tudo") }
@@ -446,6 +471,7 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
         requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }?.let {
             dayText = it
             audience = "Tudo"
+            routineSection = initialRoutineSection(it, LocalDate.now())
         }
     }
     val day = LocalDate.parse(dayText)
@@ -464,8 +490,7 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
     val remindersEnabled=reminderPrefs.getBoolean("enabled",true)
     val notificationAllowed=AndroidInteractions.notificationsAllowed(context)
-    val configured=data.records.count { it.kind=="task" && it.text("time").isNotBlank() && !it.flag("skipReminder") && !it.flag("needsReview") && (it.text("owner","Ambos")=="Ambos" || taskBelongsTo(it,session.name)) }
-    var routineSection by rememberSaveable { mutableStateOf("Hoje") }
+    var routineSection by rememberSaveable { mutableStateOf(initialRoutineSection(requestedDate, LocalDate.now())) }
     LaunchedEffect(routineSection) {
         if (!reviewOnly && routineSection == "Hoje") dayText = LocalDate.now().toString()
     }
@@ -481,7 +506,11 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 ReferenceHeading(if(reviewOnly)"Revisar rotinas" else "Rotina",
                     if(reviewOnly)"Confirme os dados pendentes" else "Seus compromissos, no seu ritmo",
                     Modifier.weight(1f))
-                IconButton(onClick={creating=true}) { Icon(Icons.Default.Add,"Nova tarefa",tint=MaterialTheme.colorScheme.primary) }
+                if(!reviewOnly && routineSection == "Cuidados") {
+                    IconButton(onClick={creating=true},modifier=Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Add,"Criar tarefa",tint=MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
         }
         if(!reviewOnly) item {
@@ -516,15 +545,15 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
         } else {
             item {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                    Text(if(routineSection=="Hábitos")"Hábitos recorrentes" else "Atividades do dia",
+                    Text(if(reviewOnly) "Tarefas para revisar" else if(routineSection=="Hábitos") "Hábitos recorrentes" else "Atividades do dia",
                         style=MaterialTheme.typography.titleLarge,
                         fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
-                    TextButton(onClick={creating=true}) {
+                    if (!reviewOnly) TextButton(onClick={creating=true},modifier=Modifier.heightIn(min=48.dp)) {
                         Icon(Icons.Default.Add,null,Modifier.size(17.dp))
                         Spacer(Modifier.width(4.dp)); Text("Nova tarefa")
                     }
                 }
-                if(tasks.isNotEmpty()) {
+                if(tasks.isNotEmpty() && !reviewOnly) {
                     Text("${completedTasks.size} de ${tasks.size} concluídas",
                         style=MaterialTheme.typography.labelMedium,
                         color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -533,19 +562,13 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 }
             }
             if(tasks.isEmpty()) item {
-                ReferenceEmpty(if(reviewOnly)"Rotinas revisadas" else "Nenhuma tarefa neste período",
-                    if(reviewOnly)"Não há confirmações pendentes."
-                    else "Cadastre uma rotina ou escolha outro dia.")
+                ReferenceEmpty(if(reviewOnly)"Nada para revisar" else "Nenhuma tarefa neste período",
+                    if(reviewOnly)"Nenhuma tarefa precisa de confirmação neste momento."
+                    else "Cadastre uma tarefa ou escolha outro dia.")
             }
-            listOf("Manhã","Tarde","Noite","Sem horário").forEach { period ->
+            listOf("Madrugada","Manhã","Tarde","Noite","Sem horário").forEach { period ->
                 val group=tasks.filter { task ->
-                    val time=runCatching { java.time.LocalTime.parse(task.text("time")) }.getOrNull()
-                    when(period) {
-                        "Manhã" -> time!=null && time.hour in 5..11
-                        "Tarde" -> time!=null && time.hour in 12..17
-                        "Noite" -> time!=null && (time.hour in 18..23 || time.hour in 0..4)
-                        else -> time==null
-                    }
+                    routineTaskPeriod(task) == period
                 }.sortedWith(compareBy<Record> { it.text("time").ifBlank { "99:99" } }.thenBy { it.id })
                 if(group.isNotEmpty()) {
                     item(key="routine-section-$period") {
@@ -556,14 +579,15 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
                                 Text(period,style=MaterialTheme.typography.titleMedium,
                                     color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold,
                                     modifier=Modifier.weight(1f))
-                                Text("${group.count{done(it,day,data)}} de ${group.size}",
+                                Text(if(reviewOnly) "${group.size} para revisar"
+                                    else "${group.count{done(it,day,data)}} de ${group.size}",
                                     style=MaterialTheme.typography.labelMedium,
                                     color=MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                     items(group,key={ "routine-$period-${it.id}" }) { task ->
-                        TaskRow(task,day,data,vm) { editing=task }
+                        TaskRow(task,day,data,vm,allowCompletion = !reviewOnly) { editing=task }
                     }
                 }
             }
