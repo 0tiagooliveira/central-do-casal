@@ -35,6 +35,22 @@ private fun planScope(plan: Record) = if (plan.isPrivate) "Pessoal · só minha 
 private fun planSteps(plan:Record):List<Map<*,*>> = (plan.fields["steps"] as? List<*>)?.mapNotNull { it as? Map<*,*> } ?: emptyList()
 private fun chaptersComplete(plan:Record):Boolean = planSteps(plan).let { it.isNotEmpty() && it.all { step -> step["done"]==true } }
 
+/**
+ * Distinct tabs: "Próximos" are not started, "Ativos" have concrete progress,
+ * and "Concluídos" have all recorded stages confirmed.
+ */
+internal fun planMatchesStatus(plan: Record, records: List<Record>, status: String): Boolean {
+    if (plan.kind != "plan") return false
+    val complete = chaptersComplete(plan)
+    val started = planSteps(plan).any { it["done"] == true } ||
+        planProgress(plan,records).registered > 0L
+    return when(status) {
+        "Concluídos" -> complete
+        "Próximos" -> !complete && !started
+        else -> !complete && started
+    }
+}
+
 @Composable
 internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCreate: () -> Unit, onEdit: (Record) -> Unit, onContribution: (Record) -> Unit, onStartImported: ((Record) -> Unit)? = null, onOpenLinked: (String) -> Unit = {}) {
     var filter by rememberSaveable { mutableStateOf("Todas") }
@@ -59,13 +75,7 @@ internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCrea
     }
     fun visible(record: Record) = when (filter) { "Pessoais" -> record.isPrivate; "Compartilhadas" -> !record.isPrivate; else -> true }
     val plans = data.records.filter { record ->
-        if(record.kind!="plan" || !visible(record)) false
-        else when(status) {
-            "Concluídos" -> chaptersComplete(record)
-            "Próximos" -> !chaptersComplete(record) && planSteps(record).none { it["done"] == true } &&
-                planProgress(record,data.records).registered==0L
-            else -> !chaptersComplete(record)
-        }
+        visible(record) && planMatchesStatus(record,data.records,status)
     }
     val converted=data.records.filter { it.kind=="plan" }.map { it.text("sourcePlanId") }.toSet()
     val imported = data.records.filter { it.kind == "importedPlan" && it.id !in converted && visible(it) }
@@ -165,7 +175,7 @@ private fun PlanListCard(plan: Record, progress: PlanProgress, onOpen: () -> Uni
 
 @Composable
 private fun PlanProgressBar(value: Float) {
-    val progress by animateFloatAsState(value, tween(if (LocalExperience.current.motion) 400 else 0), label = "Progresso registrado")
+    val progress by animateFloatAsState(value, tween(centralMotionDurationMillis(MotionKind.PROGRESS)), label = "Progresso registrado")
     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), gapSize = 0.dp, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
 }
 
