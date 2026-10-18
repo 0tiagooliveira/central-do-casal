@@ -164,7 +164,15 @@ internal fun HomeExperienceScreen(
                 }
             }
         }
-        item { WeatherCard(requestLocationPermission,session.uid,session.name,data.records,requestNotificationsPermission) }
+        item {
+            Column(verticalArrangement=Arrangement.spacedBy(0.dp)) {
+                WeatherCard(requestLocationPermission,session.uid,session.name,data.records,requestNotificationsPermission)
+                TextButton(
+                    onClick={touch{navigate("Sophia")}},
+                    modifier=Modifier.heightIn(min=48.dp).testTag("home-open-sophia")
+                ) { Text("Conversar com a Sophia  →") }
+            }
+        }
         item {
             HomeSection("O QUE IMPORTA AGORA", icon = "☀", accent=accent, trailing = if(now.hour<12) "Manhã" else if(now.hour<18) "Tarde" else "Noite",
                 onTrailing = { touch { selectTab("Rotina") } })
