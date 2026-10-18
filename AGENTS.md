@@ -2,13 +2,31 @@
 
 A Central do Casal é um aplicativo Android nativo (Kotlin, Jetpack Compose, Firebase), não React, Expo ou uma landing page. Preserve os fluxos existentes. Antes de alterar uma tela, leia app/src/main/java/com/centraldocasal/app/Design.kt, Experience.kt, a tela afetada e docs/ESTADO_ATUAL.md.
 
-## Skills do projeto
-As skills em .agents/skills/ são instruções operacionais locais, adaptadas e escritas para este projeto; consulte os repositórios oficiais citados em cada SKILL.md para metodologias completas.
+## Skills originais (fontes primárias, copiadas sob MIT)
 
-- central-ux: quando criar ou redesenhar telas, componentes, paleta, tipografia, hierarquia e fluxos; incorpora a abordagem de Dembrandt e Jakub Krehel.
-- central-motion: quando implementar ou revisar movimento, transições e resposta háptica; aplica critérios de Emil Kowalski e LottieFiles.
-- central-interface-review: em qualquer PR que altere interface, revisar legibilidade, alinhamento, acessibilidade, estado vazio, erro, loading e privacidade.
-- central-animation-runtime: ao escolher Compose, Lottie ou Rive e aprovar recursos animados e suas licenças.
+Em `.agents/skills/` estão os SKILL.md **originais** de Emil Kowalski
+(`animate`, `review-animations`, `improve-animations`), Dembrandt
+(`dembrandt`, `ui-density`, `visual-emphasis-and-hierarchy`,
+`notifications-and-recovery`, `wcag-accessibility`), Jakub Krehel
+(`interface-review`, `better-interface`, `better-*`) e LottieFiles
+(`motion-design`). Licenças originais em `.agents/skills/_licenses/`;
+origem e versão em `docs/SKILLS_ORIGINAIS_EXECUCAO.md`.
+
+**Antes de editar uma tela, LER o SKILL.md original aplicável.**
+A abordagem `dembrandt` define a ordem; `better-interface` e suas seis
+skills de domínio auditam a tela; `interface-review` define escopo e
+regressões do PR. `improve-animations` é **somente auditoria e plano**;
+`animate` implementa mudanças de movimento; `review-animations` revisa
+as animações do diff; `motion-design` orienta intenção e qualidade.
+Nunca representar uma auditoria read-only como implementação executada.
+
+Skills próprias `central-ux`, `central-motion`, `central-interface-review`
+e `central-animation-runtime` são adaptadores de contexto Android.
+**Em caso de divergência**, respeitar primeiro regras do produto,
+segurança/privacidade, restrições nativas do Compose e instruções oficiais
+de escopo de cada skill, registrando a decisão. Não executar receitas
+CSS/Framer Motion em código Android; traduzir comportamento para Compose
+e justificar no relatório.
 
 ## Regras vinculantes do produto
 - Tiago usa acento azul e Rhayra rosa; manter cores sem sacrificar contraste. Não inferir autorização de dados pelo nome ou cor do perfil.
@@ -20,9 +38,9 @@ As skills em .agents/skills/ são instruções operacionais locais, adaptadas e 
 - Alterações devem entrar por branch e PR; CI e revisão são necessários. Não declarar APK validado nem testes físicos sem evidências.
 
 ## Fluxo recomendado em cada PR de UI
-1. Ler a skill de UX, descrever a tarefa e localizar os componentes e estados reais.
-2. Ler a skill de motion quando houver movimento; preferir Compose para transições simples.
-3. Implementar mudanças mínimas e reversíveis com semântica acessível, sem mexer no comportamento dos dados.
-4. Executar testes Android/JVM e regras Firebase quando afetadas; declarar claramente testes não realizados.
-5. Aplicar central-interface-review e registrar evidências de S23 FE e S25 FE.
-6. Documentar decisões em docs/UX_MOTION_SKILLS.md quando afetarem padrões de projeto.
+1. Resolver escopo do PR: `interface-review`; ler `Design.kt`, tela, tokens e diffs (incluindo as linhas removidas).
+2. Executar `dembrandt` com fases pertinentes; `better-interface` + skills de domínio (a11y, layout, writing, typography, colors, ui). Registrar fases puladas.
+3. Para motion: executar análise `improve-animations` sem tocar em código, depois delegar um fix específico a `animate`; revisar usando `review-animations` e `motion-design`.
+4. Implementar mudanças mínimas e reversíveis em Compose com estado real, permissão correta, alt/semântica e suporte a motion reduzido.
+5. Executar Android/JVM e Firebase quando afetados; registrar resultados e revisar PR sem confundir teste estático com QA físico.
+6. Registrar evidências e pendências em `docs/SKILLS_ORIGINAIS_EXECUCAO.md` e, para padrões compartilhados, `docs/UX_MOTION_SKILLS.md`.
