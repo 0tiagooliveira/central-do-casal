@@ -62,6 +62,8 @@ internal fun JourneyExperience(vm: CentralViewModel, session: SessionState, data
     val busy by vm.busy.collectAsStateWithLifecycle()
     val view = LocalView.current
     val options = LocalExperience.current
+    val layoutDuration = centralMotionDurationMillis(MotionKind.LAYOUT)
+    val feedbackDuration = centralMotionDurationMillis(MotionKind.FEEDBACK)
     val active = level != "Desligado"
     val canInvite = !session.local && data.members.distinct().size == 2
     fun touch() { AndroidInteractions.haptic(view, options.haptics); AndroidInteractions.clickSound(view, options.sounds) }
@@ -86,13 +88,13 @@ internal fun JourneyExperience(vm: CentralViewModel, session: SessionState, data
                     }
                 }
             }
-            AnimatedContent(world, transitionSpec = { fadeIn(tween(centralMotionDurationMillis(MotionKind.LAYOUT))) togetherWith fadeOut(tween(centralMotionDurationMillis(MotionKind.FEEDBACK))) }, label = "Mundo da jornada") { selectedWorld ->
+            AnimatedContent(world, transitionSpec = { fadeIn(tween(layoutDuration)) togetherWith fadeOut(tween(feedbackDuration)) }, label = "Mundo da jornada") { selectedWorld ->
                 Box(Modifier.fillMaxWidth().height(if (level == "Discreto") 140.dp else 194.dp).clip(RoundedCornerShape(22.dp))) {
                     WorldArt(selectedWorld, Modifier.fillMaxSize())
                     Surface(Modifier.align(Alignment.BottomStart).padding(14.dp), shape = RoundedCornerShape(12.dp), color = Color(0xE6111827), contentColor = Color.White) { Text(journeyWorlds[selectedWorld], Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium) }
                 }
             }
-            AnimatedContent(targetState = "$world:$card:$revealed", transitionSpec = { fadeIn(tween(centralMotionDurationMillis(MotionKind.LAYOUT))) togetherWith fadeOut(tween(centralMotionDurationMillis(MotionKind.FEEDBACK))) }, label = "Carta de aventura") { state ->
+            AnimatedContent(targetState = "$world:$card:$revealed", transitionSpec = { fadeIn(tween(layoutDuration)) togetherWith fadeOut(tween(feedbackDuration)) }, label = "Carta de aventura") { state ->
                 val parts = state.split(':')
                 val cardWorld = parts[0].toInt()
                 val cardIndex = parts[1].toInt()
