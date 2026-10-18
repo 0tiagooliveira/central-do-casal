@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -478,7 +480,7 @@ internal fun WeatherCard(
         it.time.isAfter(LocalDateTime.now().minusMinutes(30)) && (it.rainChance ?: -1) >= 60
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT))).testTag("home-weather"),
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT), easing=centralEaseOut)).testTag("home-weather"),
         shape = RoundedCornerShape(22.dp),
         color = scheme.primaryContainer.copy(alpha = 0.46f),
         border = androidx.compose.foundation.BorderStroke(1.dp,outline)
@@ -493,9 +495,9 @@ internal fun WeatherCard(
                         fontWeight=FontWeight.Bold,color=scheme.primary)
                 }
                 TextButton(onClick = { expanded = !expanded },
-                    contentPadding=PaddingValues(horizontal=4.dp,vertical=0.dp),
-                    modifier=Modifier.heightIn(min=38.dp)) {
-                    Text(if(expanded) "Fechar" else "Detalhes",style=MaterialTheme.typography.labelSmall)
+                    contentPadding=PaddingValues(horizontal=6.dp,vertical=2.dp),
+                    modifier=Modifier.heightIn(min=48.dp).testTag("home-weather-details")) {
+                    Text(if(expanded) "Ocultar previsão" else "Ver por hora",style=MaterialTheme.typography.labelSmall)
                 }
             }
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
@@ -534,10 +536,6 @@ internal fun WeatherCard(
                     }
                 }
             }
-            if (rainHour != null) {
-                Text("Possibilidade de chuva às ${rainHour.time.format(DateTimeFormatter.ofPattern("HH:mm"))}: ${rainHour.rainChance}%",
-                    style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
-            }
             if (message != null) Text(message.orEmpty(),style=MaterialTheme.typography.bodySmall,
                 color=scheme.error)
             if (current == null) {
@@ -547,6 +545,8 @@ internal fun WeatherCard(
             }
             if (expanded) {
                 if (current != null) {
+                    if (rainHour != null) Text("Possibilidade de chuva às ${rainHour.time.format(DateTimeFormatter.ofPattern("HH:mm"))}: ${rainHour.rainChance}%",
+                        style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
                     Text("Previsão das próximas horas",style=MaterialTheme.typography.titleSmall)
                     val upcoming = current.hours.filter { it.time >= LocalDateTime.now().minusMinutes(30) }.take(8)
                     if(upcoming.isNotEmpty()) LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
@@ -574,7 +574,9 @@ internal fun WeatherCard(
                 if (current != null || enabled) Row(verticalAlignment=Alignment.CenterVertically) {
                     Text("Avisos inteligentes neste aparelho",modifier=Modifier.weight(1f),
                         style=MaterialTheme.typography.bodySmall)
-                    Switch(checked=enabled,onCheckedChange={ next ->
+                    Switch(checked=enabled,
+                        modifier=Modifier.semantics { contentDescription = "Avisos inteligentes neste aparelho" },
+                        onCheckedChange={ next ->
                         if(next) activate() else {
                             SophiaMoments.disable(context,uid)
                             enabled=false

@@ -23,6 +23,12 @@ class MotionTokensTest {
         }
     }
 
+    @Test fun upstreamEaseOutIsResponsiveAndKeepsEndpoints() {
+        org.junit.Assert.assertEquals(0f, centralEaseOut.transform(0f), 0.00001f)
+        org.junit.Assert.assertEquals(1f, centralEaseOut.transform(1f), 0.00001f)
+        org.junit.Assert.assertTrue(centralEaseOut.transform(0.5f) > 0.5f)
+    }
+
     @Test fun twoDisabledInputsRemainDisabled() {
         MotionKind.entries.forEach { kind ->
             assertEquals(0, motionDurationMillis(kind, false, false))

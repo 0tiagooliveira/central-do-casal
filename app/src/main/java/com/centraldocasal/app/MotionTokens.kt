@@ -2,6 +2,7 @@ package com.centraldocasal.app
 
 import android.animation.ValueAnimator
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.CubicBezierEasing
 
 /**
  * Default motion timings for the Central do Casal.
@@ -27,3 +28,9 @@ internal fun centralMotionDurationMillis(kind: MotionKind): Int =
         userAllowsMotion = LocalExperience.current.motion,
         systemAllowsMotion = ValueAnimator.areAnimatorsEnabled()
     )
+
+/**
+ * Strong UI easing from the original Emil Kowalski animate/SKILL.md (ease-out).
+ * Shared rather than hard-coding different curves across screens.
+ */
+internal val centralEaseOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
