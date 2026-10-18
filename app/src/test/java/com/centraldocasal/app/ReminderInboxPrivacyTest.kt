@@ -27,6 +27,38 @@ class ReminderInboxPrivacyTest {
         assertTrue(reminderVisibleTasks(listOf(t,other,done),"Tiago",today).isEmpty())
     }
 
+    @Test fun importedTasksNeedingReviewRemainVisibleEvenWithoutOccurrences() {
+        val records=listOf(
+            Record("shared","task",fields=mapOf("owner" to "Ambos","needsReview" to true,
+                "date" to "", "title" to "Conferir horário")),
+            Record("mine","task",fields=mapOf("owner" to "Tiago","needsTimeReview" to true,
+                "date" to "2026-10-18", "title" to "Reserva")),
+            Record("other","task",fields=mapOf("owner" to "Rhayra","needsReview" to true,
+                "date" to "2026-10-18", "title" to "Privada"))
+        )
+        assertEquals(setOf("shared","mine"),
+            reminderReviewTasks(records,"Tiago").map{it.id}.toSet())
+        assertEquals(setOf("shared","other"),
+            reminderReviewTasks(records,"Rhayra").map{it.id}.toSet())
+    }
+
+    @Test fun schedulingHintNeverClaimsActualDelivery() {
+        assertEquals("Sem horário válido, sem aviso automático.",
+            reminderScheduleHint(task("noTime","Tiago","")))
+        assertEquals("Aviso desligado para esta tarefa.",
+            reminderScheduleHint(Record("muted","task",fields=mapOf(
+                "skipReminder" to true,"time" to "22:00"))))
+        assertEquals("Horário registrado, consulte o estado do alarme.",
+            reminderScheduleHint(task("scheduled","Tiago","22:00")))
+    }
+
+    @Test fun midnightTasksSortBeforeLateNight() {
+        val records=listOf(task("night","Tiago","22:00"),
+            task("midnight","Tiago","00:00"),task("morning","Tiago","07:50"))
+        assertEquals(listOf("midnight","morning","night"),
+            reminderVisibleTasks(records,"Tiago",today).map{it.id})
+    }
+
     @Test fun untimedTasksStillAppearForManualReviewWithoutFakeAlarm() {
         val tasks=reminderVisibleTasks(listOf(task("review","Tiago","")),"Tiago",today)
         assertEquals(listOf("review"),tasks.map{it.id})
