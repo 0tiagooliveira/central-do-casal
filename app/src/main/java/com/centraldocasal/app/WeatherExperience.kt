@@ -480,7 +480,7 @@ internal fun WeatherCard(
         it.time.isAfter(LocalDateTime.now().minusMinutes(30)) && (it.rainChance ?: -1) >= 60
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT))).testTag("home-weather"),
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT), easing=centralEaseOut)).testTag("home-weather"),
         shape = RoundedCornerShape(22.dp),
         color = scheme.primaryContainer.copy(alpha = 0.46f),
         border = androidx.compose.foundation.BorderStroke(1.dp,outline)
