@@ -247,7 +247,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                 data.records.filter { it.kind == "safetyAlert" && it.text("ownerUid") != session.uid && System.currentTimeMillis()-it.number("createdAt") < 7_200_000 }.maxByOrNull { it.number("createdAt") }?.let { alert ->
                     Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
-                Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
+                Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(centralMotionDurationMillis(MotionKind.NAVIGATION)), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
                     "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location, requestNotificationsPermission = notify)
                     "Mais" -> HomeMoreScreen { destination -> route=destination }
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
@@ -349,7 +349,7 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
     val completed = done(task, day, data)
     val busy by vm.busy.collectAsStateWithLifecycle()
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT))),
         shape = RoundedCornerShape(20.dp),
         color = if (completed) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

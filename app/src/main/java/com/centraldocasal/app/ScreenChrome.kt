@@ -32,12 +32,12 @@ internal fun SectionHero(
     onActionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 1.dp).animateContentSize(tween(if (LocalExperience.current.motion) 220 else 0)), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 1.dp).animateContentSize(tween(centralMotionDurationMillis(MotionKind.LAYOUT))), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(icon, null, Modifier.padding(7.dp).size(20.dp), tint = MaterialTheme.colorScheme.tertiary) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (LocalDensity.current.fontScale > 1.15f) 3 else 2)
                 }
             }
             if (!onActionLabel.isNullOrBlank() && onAction != null) {

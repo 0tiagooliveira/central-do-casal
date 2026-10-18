@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -470,7 +471,7 @@ internal fun WeatherCard(
         it.time.isAfter(LocalDateTime.now().minusMinutes(30)) && (it.rainChance ?: -1) >= 60
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize().testTag("home-weather"),
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec=tween(centralMotionDurationMillis(MotionKind.LAYOUT))).testTag("home-weather"),
         shape = RoundedCornerShape(22.dp),
         color = scheme.primaryContainer.copy(alpha = 0.46f),
         border = androidx.compose.foundation.BorderStroke(1.dp,outline)
