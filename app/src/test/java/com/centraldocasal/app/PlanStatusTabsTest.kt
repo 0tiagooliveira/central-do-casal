@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlanStatusTabsTest {
-    private fun plan(id:String,steps:List<Map<String,Any?>>=emptyList()) =
+    private fun plan(id:String,steps: List<Map<String, Any?>> = emptyList()) =
         Record(id,"plan",fields=mapOf("title" to id,"steps" to steps))
     private val next=plan("next")
     private val started=plan("started",listOf(mapOf("id" to "1","title" to "Etapa 1","done" to true),
