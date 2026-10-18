@@ -117,6 +117,140 @@ internal fun weatherInsights(
     return risks.distinctBy { it.title }.take(3)
 }
 
+/**
+ * Three evidence-based ideas shown automatically in the Home.
+ *
+ * Priorities: real appointment risks > next-hour weather > family preparation.
+ * This is a deterministic local planner. It never creates tasks or assumes a
+ * specific family activity exists. When an event is mentioned it comes from
+ * an actual, authorized task supplied by the caller.
+ */
+internal fun dailyWeatherTips(
+    forecast: WeatherSnapshot,
+    tasks: List<Record> = emptyList(),
+    now: LocalDateTime = LocalDateTime.now()
+): List<WeatherInsight> {
+    val candidates = mutableListOf<WeatherInsight>()
+    val hours = forecast.hours.filter {
+        !it.time.isBefore(now.minusMinutes(30)) && !it.time.isAfter(now.plusHours(24))
+    }.sortedBy { it.time }
+    val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+    var linkedRainHour: LocalDateTime? = null
+
+    val appointments = tasks.asSequence()
+        .filter { it.kind == "task" && !it.flag("needsReview") && !it.flag("needsTimeReview") }
+        .mapNotNull { task ->
+            val time = runCatching { java.time.LocalTime.parse(task.text("time")) }.getOrNull()
+                ?: return@mapNotNull null
+            listOf(now.toLocalDate(), now.toLocalDate().plusDays(1))
+                .firstOrNull { day -> occurs(task, day) && !day.atTime(time).isBefore(now) }
+                ?.let { task to it.atTime(time) }
+        }.sortedBy { it.second }.toList()
+
+    appointments.forEach { (task, at) ->
+        if (candidates.any { it.title.startsWith("No horário de ") }) return@forEach
+        val hour = hours.filter { it.time.toLocalDate() == at.toLocalDate() }
+            .minByOrNull { kotlin.math.abs(java.time.Duration.between(it.time, at).toMinutes()) }
+            ?.takeIf { kotlin.math.abs(java.time.Duration.between(it.time, at).toMinutes()) <= 60 }
+        if (hour != null) {
+            val title = task.text("title").trim()
+            when {
+                (hour.rainChance ?: -1) >= 60 -> {
+                    linkedRainHour = hour.time
+                    candidates += WeatherInsight(
+                        "No horário de $title",
+                        "Por volta das ${at.format(timeFmt)}, há ${hour.rainChance}% de chance de chuva. Considere levar um guarda-chuva."
+                    )
+                }
+                hour.temperature >= 29 -> candidates += WeatherInsight(
+                    "No horário de $title",
+                    "Por volta das ${at.format(timeFmt)}, a previsão indica ${hour.temperature.roundToInt()} °C. Prepare água para sair."
+                )
+                hour.temperature <= 14 -> candidates += WeatherInsight(
+                    "No horário de $title",
+                    "Por volta das ${at.format(timeFmt)}, a previsão indica ${hour.temperature.roundToInt()} °C. Separe um agasalho."
+                )
+            }
+        }
+    }
+
+    val nextRain = hours.firstOrNull { (it.rainChance ?: -1) >= 60 }
+    if (nextRain != null && linkedRainHour != nextRain.time) {
+        candidates += WeatherInsight(
+            "Chuva nas próximas horas",
+            "A previsão aponta ${nextRain.rainChance}% de chance de chuva às ${nextRain.time.format(timeFmt)}. Antecipe atividades externas, se possível."
+        )
+    } else if(nextRain == null && (forecast.rainChance ?: -1) >= 60) {
+        candidates += WeatherInsight(
+            "Chuva possível hoje",
+            "A maior probabilidade diária indicada é ${forecast.rainChance}%. Ainda não há horário confirmado para sugerir uma mudança na agenda."
+        )
+    }
+
+    val night = hours.firstOrNull {
+        it.time.toLocalDate() == now.toLocalDate() && it.time.hour in 18..23
+    }
+    if (night != null && night.temperature <= 16) {
+        candidates += WeatherInsight(
+            "Prepare a noite",
+            "Perto das ${night.time.format(timeFmt)} a previsão indica ${night.temperature.roundToInt()} °C. Vale separar roupas mais quentes para a família."
+        )
+    }
+    if (forecast.temperature >= 29 && candidates.none { it.title.startsWith("No horário de ") && it.detail.contains("água") }) {
+        candidates += WeatherInsight(
+            "Calor ao longo do dia",
+            "Agora são ${forecast.temperature.roundToInt()} °C. Deixe água à mão e prefira horários mais frescos para sair."
+        )
+    } else if(forecast.feelsLike <= 13 && night == null) {
+        candidates += WeatherInsight(
+            "Atenção à sensação de frio",
+            "A sensação está em ${forecast.feelsLike.roundToInt()} °C. Considere um agasalho para deslocamentos."
+        )
+    }
+
+    val dryerHour = hours.filter {
+        it.time.toLocalDate() == now.toLocalDate() && (it.rainChance ?: 101) <= 20 && it.time.hour in 7..18
+    }.firstOrNull()
+    if (dryerHour != null && nextRain != null) {
+        candidates += WeatherInsight(
+            "Uma janela para sair",
+            "Às ${dryerHour.time.format(timeFmt)}, a chance de chuva prevista é de ${dryerHour.rainChance}%. Pode ser uma alternativa para tarefas externas."
+        )
+    }
+
+    if (forecast.todayHigh - forecast.todayLow >= 6) {
+        candidates += WeatherInsight(
+            "Roupas para variação de temperatura",
+            "A previsão vai de ${forecast.todayLow.roundToInt()} °C a ${forecast.todayHigh.roundToInt()} °C hoje. Uma camada extra pode ajudar nas saídas."
+        )
+    }
+    if (candidates.size < 3 && forecast.tomorrowHigh != null && forecast.tomorrowLow != null) {
+        candidates += WeatherInsight(
+            "Planeje amanhã",
+            "A previsão é de ${forecast.tomorrowLow.roundToInt()} °C a ${forecast.tomorrowHigh.roundToInt()} °C. Separe o necessário para os compromissos já agendados."
+        )
+    }
+    if (candidates.size < 3) {
+        candidates += WeatherInsight(
+            "Conforto ao sair",
+            "A sensação térmica agora é de ${forecast.feelsLike.roundToInt()} °C. Confira se a roupa está adequada ao momento."
+        )
+    }
+    if (candidates.size < 3) {
+        candidates += WeatherInsight(
+            "Temperatura de hoje",
+            "A mínima prevista é ${forecast.todayLow.roundToInt()} °C e a máxima ${forecast.todayHigh.roundToInt()} °C. Programe os deslocamentos considerando essa diferença."
+        )
+    }
+    if (candidates.size < 3) {
+        candidates += WeatherInsight(
+            "Vento na região",
+            "A velocidade atual informada é de ${forecast.wind.roundToInt()} km/h. Confira as condições antes de atividades ao ar livre."
+        )
+    }
+    return candidates.distinctBy { it.title }.take(3)
+}
+
 internal fun weatherDescription(code: Int): String = when(code) {
     0 -> "Céu limpo"
     1,2 -> "Parcialmente nublado"
@@ -326,12 +460,8 @@ internal fun WeatherCard(
         } else null
     }
     val eligibleTasks = records.filter { it.kind == "task" && SophiaMomentPlanner.belongsTo(it, profileName) }
-    val insight = remember(current, records, uid, enabled) {
-        if (current == null) null else {
-            val personal = if (enabled) SophiaMoments.currentTip(context, uid, profileName, records)?.message else null
-            personal ?: weatherInsights(current, eligibleTasks, LocalDateTime.now())
-                .firstOrNull { it.title != "Clima em acompanhamento" }?.detail
-        }
+    val dailyTips = remember(current, records, uid, enabled) {
+        if (current == null) emptyList() else dailyWeatherTips(current, eligibleTasks, LocalDateTime.now())
     }
     val scheme = MaterialTheme.colorScheme
     val accent = scheme.tertiary
@@ -362,34 +492,38 @@ internal fun WeatherCard(
             }
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
                 horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                Row(Modifier.weight(0.44f),verticalAlignment=Alignment.CenterVertically,
-                    horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text(weatherGlyph(current?.description ?: "Parcialmente nublado"),fontSize=27.sp)
-                    Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                        if (current == null) {
-                            Text("Previsão",style=MaterialTheme.typography.titleMedium,color=scheme.onSurface)
-                            Text("Não consultada",style=MaterialTheme.typography.labelSmall,
-                                color=scheme.onSurfaceVariant)
-                        } else {
-                            Text("${current.temperature.roundToInt()}°",
-                                style=MaterialTheme.typography.headlineMedium,
-                                fontWeight=FontWeight.Bold,color=scheme.onSurface)
-                            Text(current.description,style=MaterialTheme.typography.labelSmall,
-                                color=scheme.onSurfaceVariant,maxLines=2)
-                            Text("${current.todayLow.roundToInt()}° a ${current.todayHigh.roundToInt()}°",
-                                style=MaterialTheme.typography.labelSmall,color=scheme.onSurfaceVariant)
-                        }
+                Text(weatherGlyph(current?.description ?: "Condição a confirmar"),fontSize=27.sp)
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                    if (current == null) {
+                        Text("Previsão ainda não consultada",style=MaterialTheme.typography.titleMedium)
+                        Text("Autorize uma região para começar.",style=MaterialTheme.typography.bodySmall,
+                            color=scheme.onSurfaceVariant)
+                    } else {
+                        Text("${current.temperature.roundToInt()} °C · ${current.description}",
+                            style=MaterialTheme.typography.titleMedium,color=scheme.onSurface)
+                        Text("Mín. ${current.todayLow.roundToInt()} °C · Máx. ${current.todayHigh.roundToInt()} °C",
+                            style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
                     }
                 }
-                VerticalDivider(Modifier.heightIn(min=75.dp),thickness=1.dp,
-                    color=scheme.primary.copy(alpha=0.17f))
-                Column(Modifier.weight(0.56f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                    Text("✧ Dica da Sophia",style=MaterialTheme.typography.labelMedium,
-                        fontWeight=FontWeight.Bold,color=scheme.primary)
-                    Text(if(current==null) "Consulte o clima para receber dicas ligadas às suas atividades."
-                        else insight ?: "Nenhum alerta importante para sua rotina agora.",
-                        style=MaterialTheme.typography.bodySmall,
-                        color=scheme.onSurface,maxLines=5)
+            }
+            if (current != null) {
+                Text("✧ Três dicas para o dia de vocês",style=MaterialTheme.typography.labelMedium,
+                    fontWeight=FontWeight.Bold,color=scheme.primary)
+                dailyTips.forEachIndexed { index, tip ->
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                        Surface(shape=RoundedCornerShape(8.dp),color=scheme.surface,
+                            modifier=Modifier.size(25.dp)) {
+                            Box(contentAlignment=Alignment.Center) {
+                                Text("${index+1}",style=MaterialTheme.typography.labelSmall,color=scheme.primary)
+                            }
+                        }
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                            Text(tip.title,style=MaterialTheme.typography.labelMedium,
+                                fontWeight=FontWeight.SemiBold,color=scheme.onSurface)
+                            Text(tip.detail,style=MaterialTheme.typography.bodySmall,
+                                color=scheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
             if (rainHour != null) {
