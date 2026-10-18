@@ -106,10 +106,10 @@ class UiReviewTest {
         }
         compose.onNodeWithTag("tab-Hoje").performClick()
         compose.onNodeWithContentDescription("Abrir lembretes").performClick()
-        compose.onNodeWithText("Pendências de hoje").assertIsDisplayed()
-        compose.onNodeWithText("Tudo em dia").assertIsDisplayed()
+        compose.onNodeWithText("Tarefas pendentes de hoje").assertIsDisplayed()
+        compose.onNodeWithText("Sem tarefas pendentes").assertIsDisplayed()
         capture("rhayra-lembretes")
-        compose.onNodeWithText("Abrir rotina").performScrollTo().performClick()
+        compose.onNodeWithText("Abrir Rotina").performScrollTo().performClick()
         compose.onNodeWithTag("tab-Rotina").assertIsSelected()
     }
     @Test fun reminderNavigationRequestOpensRoutineWithoutChangingRecords() {
