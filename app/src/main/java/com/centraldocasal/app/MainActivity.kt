@@ -134,6 +134,94 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun save(record: Record) = action { repo.save(record); if (record.kind == "task") Reminders.schedule(getApplication(), repo.session.value.uid, record, repo.session.value.name) }
     fun complete(task: Record, day: LocalDate, completed: Boolean) = action { repo.save(Record(occurrenceId(task.id, day), "occurrence", task.isPrivate, mapOf("taskId" to task.id, "date" to day.toString(), "done" to completed))); if (completed) Reminders.cancel(getApplication(), repo.session.value.uid, task.id, day) }
+    /**
+     * Executa exclusivamente uma proposta aprovada pela pessoa. Revalida conta,
+     * tarefa, permissão e conclusão usando o estado MAIS RECENTE do repositório.
+     * Callback de sucesso só acontece depois da persistência confirmada.
+     */
+    fun executeSophiaOperation(operation: SophiaOperation, onResult: (Boolean, String) -> Unit) {
+        if (busy.value) { onResult(false, "Aguarde a operação atual terminar."); return }
+        busy.value = true
+        viewModelScope.launch {
+            try {
+                val session = repo.session.value
+                require(session.uid.isNotBlank() && session.uid == operation.sessionUid) {
+                    "A conta foi alterada. Refaça o pedido no perfil correto."
+                }
+                val description = when (operation) {
+                    is SophiaOperation.CreateTask -> {
+                        require(operation.title.length in 3..120 &&
+                                operation.day >= LocalDate.now() &&
+                                !operation.day.isAfter(LocalDate.now().plusDays(1))) {
+                            "A data mudou. Refaça o pedido."
+                        }
+                        require(runCatching { java.util.UUID.fromString(operation.recordId) }.isSuccess) {
+                            "Pedido inválido."
+                        }
+                        if (operation.time != null) require(
+                            operation.day.atTime(operation.time).isAfter(java.time.LocalDateTime.now())
+                        ) { "O horário já passou. Escolha outro horário." }
+
+                        val existing = repo.data.value.records.any { it.id == operation.recordId }
+                        if (existing) "Esta tarefa já existe. Não criei uma cópia."
+                        else {
+                            val task = Record(operation.recordId, "task", true, mapOf(
+                                "title" to operation.title,
+                                "note" to "Criada pela Sophia após confirmação explícita",
+                                "date" to operation.day.toString(),
+                                "time" to (operation.time?.toString() ?: ""),
+                                "owner" to session.name.trim().substringBefore(' '),
+                                "category" to "Pessoal",
+                                "repeat" to "Única",
+                                "days" to emptyList<Int>(),
+                                "skipReminder" to (operation.time == null),
+                                "needsReview" to false,
+                                "needsTimeReview" to false
+                            ))
+                            repo.save(task)
+                            if (operation.time != null) {
+                                Reminders.schedule(getApplication(), session.uid, task, session.name)
+                            }
+                            "Tarefa salva: «${operation.title}». Confira na Rotina. O aviso depende das permissões e do Android."
+                        }
+                    }
+                    is SophiaOperation.CompleteTask -> {
+                        val task = repo.data.value.records.singleOrNull {
+                            it.id == operation.taskId && it.kind == "task"
+                        } ?: error("A tarefa não está mais disponível.")
+                        require(SophiaMomentPlanner.belongsTo(task, session.name) &&
+                                occurs(task, operation.day) &&
+                                !task.flag("needsReview") && !task.flag("needsTimeReview")) {
+                            "Esta tarefa não pode ser concluída neste perfil ou dia."
+                        }
+                        require(operation.day == LocalDate.now()) {
+                            "O dia mudou. Refaça o pedido."
+                        }
+                        require(repo.data.value.records.none {
+                            it.kind == "occurrence" &&
+                                it.id == occurrenceId(task.id, operation.day) && it.flag("done")
+                        }) { "A tarefa já foi concluída. Não a marquei novamente." }
+                        repo.save(Record(
+                            occurrenceId(task.id, operation.day), "occurrence", task.isPrivate,
+                            mapOf("taskId" to task.id, "date" to operation.day.toString(), "done" to true)
+                        ))
+                        Reminders.cancel(getApplication(), session.uid, task.id, operation.day)
+                        "Concluí a tarefa «${task.text("title")}» na Rotina."
+                    }
+                }
+                onResult(true, description)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onResult(false, when (e) {
+                    is IllegalArgumentException, is IllegalStateException ->
+                        e.message ?: "Não foi possível concluir a solicitação."
+                    else -> "Não houve confirmação de gravação. Confira a Rotina antes de tentar de novo."
+                })
+            } finally { busy.value = false }
+        }
+    }
+
     fun logout() { Reminders.cancelAll(getApplication(), repo.session.value.uid); repo.logout() }
     override fun onCleared() { repo.close() }
 }
@@ -267,7 +355,9 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Configurações" -> SettingsScreen(vm, session, data, export, notify, navigate = { route = it }, photo = photo)
                     "Casa" -> HomeDevicesScreen(vm, data, busy, requestNearby=nearby)
                     "Segurança" -> SafetyScreen(vm, session, data, busy, requestPermission=location)
-                    "Sophia" -> SophiaReferenceScreen(session,data,location,notify) { destination ->
+                    "Sophia" -> SophiaReferenceScreen(session,data,location,notify,
+                        onOperation = { operation, callback -> vm.executeSophiaOperation(operation, callback) }
+                    ) { destination ->
                         if(destination in listOf("Hoje","Rotina","Compras","Nós","Mais")) { tab=destination;route="" }
                         else route=destination
                     }
