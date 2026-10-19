@@ -253,7 +253,7 @@ internal fun SophiaFiscalScreen(
             if(grouped.isEmpty()) Text("Ainda não há notas registradas por foto.")
             grouped.values.forEach { notes ->
                 val last=notes.maxByOrNull{it.text("date")}?:return@forEach
-                Text(last.text("merchantName")+": "+notes.size+" compra(s)",
+                Text(FiscalVision.storeName(last)+": "+notes.size+" compra(s)",
                     style=MaterialTheme.typography.bodyMedium)
             }
         }
