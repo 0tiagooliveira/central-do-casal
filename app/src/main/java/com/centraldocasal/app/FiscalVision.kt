@@ -214,6 +214,24 @@ internal object FiscalVision {
         return uniqueNew.values.toList()+receipt
     }
 
+    fun storeName(record:Record):String = when(record.kind) {
+        "photoReceipt" -> record.text("merchantName")
+        "importedReceipt" ->
+            ((record.fields["store"] as? Map<*,*>)?.get("nome") as? String)
+                .orEmpty().ifBlank { record.text("title") }
+        else -> record.text("title")
+    }
+
+    /** Group new photo purchases with documented imports when seller identity matches. */
     fun grouped(records:List<Record>):Map<String,List<Record>> =
-        records.filter{it.kind=="photoReceipt"}.groupBy{it.text("merchantId")}
+        records.filter{it.kind in setOf("photoReceipt","importedReceipt")}
+            .groupBy { receipt ->
+                if(receipt.kind=="photoReceipt") receipt.text("merchantId")
+                else {
+                    val store=receipt.fields["store"] as? Map<*,*>
+                    val name=storeName(receipt)
+                    val tax=(store?.get("cnpj") as? String).orEmpty()
+                    runCatching{merchantId(name,tax)}.getOrDefault("imported:"+receipt.id)
+                }
+            }
 }
