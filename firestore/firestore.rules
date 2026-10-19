@@ -12,11 +12,39 @@ service cloud.firestore {
     }
     function validRecord(isPrivate) {
       return request.resource.data.private == isPrivate
-        && request.resource.data.kind in ['task','occurrence','plan','contribution','moment','transaction','health','quest','safetyCheckIn','safetyAlert','smartDevice','careEvent']
+        && request.resource.data.kind in ['task','occurrence','plan','contribution','moment','transaction','health','quest','safetyCheckIn','safetyAlert','smartDevice','careEvent','photoMerchant','photoProduct','photoReceipt']
+        && (!(request.resource.data.kind in ['photoMerchant','photoProduct','photoReceipt']) || isPrivate)
         && (isPrivate || request.resource.data.kind != 'health')
         && (!isPrivate || !(request.resource.data.kind in ['safetyCheckIn','safetyAlert','smartDevice']))
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
+    }
+    // Photo fiscal data lives in the owner's private area; no image or raw OCR
+    // may be written into Firestore via this endpoint.
+    function validFiscalRecord() {
+      let doc = request.resource.data;
+      return !(doc.kind in ['photoMerchant','photoProduct','photoReceipt']) || (
+        doc.private == true && (
+          (doc.kind == 'photoMerchant'
+            && doc.keys().hasOnly(['kind','private','title','cnpj','updatedBy','updatedAt'])
+            && doc.title is string && doc.title.size() >= 3 && doc.title.size() <= 100
+            && doc.cnpj is string && doc.cnpj.size() <= 14)
+          || (doc.kind == 'photoProduct'
+            && doc.keys().hasOnly(['kind','private','title','unit','updatedBy','updatedAt'])
+            && doc.title is string && doc.title.size() >= 3 && doc.title.size() <= 110
+            && doc.unit in ['un','kg','L','pacote'])
+          || (doc.kind == 'photoReceipt'
+            && doc.keys().hasOnly(['kind','private','merchantId','merchantName','cnpj','date','title','totalCents','declaredTotalCents','entries','source','updatedBy','updatedAt'])
+            && doc.merchantId is string && doc.merchantId.size() >= 20 && doc.merchantId.size() <= 100
+            && doc.merchantName is string && doc.merchantName.size() >= 3 && doc.merchantName.size() <= 100
+            && doc.cnpj is string && doc.cnpj.size() <= 14
+            && doc.date is string && doc.date.size() == 10
+            && doc.totalCents is int && doc.totalCents >= 0 && doc.totalCents <= 100000000
+            && doc.declaredTotalCents is int && doc.declaredTotalCents >= -1 && doc.declaredTotalCents <= 100000000
+            && doc.entries is list && doc.entries.size() > 0 && doc.entries.size() <= 120
+            && doc.source == 'Foto reconhecida no dispositivo e conferida manualmente')
+        )
+      );
     }
     function validSafetyIdentity() {
       let info = request.resource.data;
@@ -63,9 +91,9 @@ service cloud.firestore {
       allow create, update: if own(uid) && validProfile(uid);
       match /records/{rid} {
         allow read: if own(uid);
-        allow create: if own(uid) && validRecord(true) && request.resource.data.kind != 'quest' && (request.resource.data.kind != 'careEvent' || validCareEvent());
-        allow update: if own(uid) && validRecord(true) && request.resource.data.kind == resource.data.kind && !(resource.data.kind in ['contribution','careEvent']);
-        allow delete: if own(uid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction','health'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
+        allow create: if own(uid) && validRecord(true) && validFiscalRecord() && request.resource.data.kind != 'quest' && (request.resource.data.kind != 'careEvent' || validCareEvent());
+        allow update: if own(uid) && validRecord(true) && request.resource.data.kind == resource.data.kind && !(resource.data.kind in ['contribution','careEvent','photoMerchant','photoProduct','photoReceipt']);
+        allow delete: if own(uid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction','health','photoMerchant','photoProduct','photoReceipt'] || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid));
       }
     }
     match /households/{hid} {

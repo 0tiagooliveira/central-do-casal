@@ -35,6 +35,7 @@ internal fun SophiaReferenceScreen(
     requestLocationPermission: () -> Unit,
     requestNotificationsPermission: () -> Unit,
     onOperation: (SophiaOperation, (Boolean, String) -> Unit) -> Unit,
+    onFiscalSave: (FiscalDraft, (Boolean, String) -> Unit) -> Unit,
     navigate: (String) -> Unit
 ) {
     val history = remember(session.uid) { mutableStateListOf<SophiaChatTurn>() }
@@ -42,10 +43,17 @@ internal fun SophiaReferenceScreen(
     var input by remember(session.uid) { mutableStateOf("") }
     var executing by remember(session.uid) { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    var fiscalOpen by remember(session.uid) { mutableStateOf(false) }
 
     fun ask(text: String) {
         val prompt = text.trim()
         if (prompt.isBlank() || executing) return
+        if (listOf("nota fiscal", "cupom fiscal", "ler nota", "escanear nota")
+            .any { prompt.contains(it, ignoreCase=true) }) {
+            fiscalOpen = true
+            input = ""
+            return
+        }
         history.add(SophiaChatTurn(false, prompt))
         val decision = SophiaBrain.decide(prompt, session, data, LocalDateTime.now())
         history.add(SophiaChatTurn(true, decision.message, decision.evidence))
@@ -59,6 +67,13 @@ internal fun SophiaReferenceScreen(
         )
     }
 
+    if (fiscalOpen) {
+        SophiaFiscalScreen(
+            session=session, records=data.records,
+            onBack={fiscalOpen=false}, onSave=onFiscalSave
+        )
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.weight(1f).testTag("sophia-conversation"),
@@ -68,6 +83,10 @@ internal fun SophiaReferenceScreen(
         ) {
             item {
                 ReferenceHeading("Sophia", "Central de decisões da família")
+                Button(
+                    onClick={fiscalOpen=true},
+                    modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sophia-fiscal-open")
+                ) { Text("Ler foto de nota fiscal") }
                 Text("O que vamos resolver agora?", style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold)
                 Text("Consulto dados da Central e preparo ações para sua confirmação. " +

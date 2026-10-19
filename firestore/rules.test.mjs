@@ -255,3 +255,45 @@ test('catalog links cannot overwrite imported records or be stored privately',as
  await assertFails(setDoc(doc(d,'households/home/records/new-link'),catalogLink('alice')));
  await assertFails(setDoc(doc(d,'users/alice/records/fixture-sku'),{...catalogLink('alice'),private:true}));
 });
+
+test('Sophia fiscal photos are private, bounded and cannot mutate imported/shared history', async()=>{
+ const alice=db('alice'),bob=db('bob');
+ const merchant={
+   kind:'photoMerchant',private:true,title:'Mercado A',cnpj:'12345678000190',
+   updatedBy:'alice',updatedAt:serverTimestamp()
+ };
+ const product={
+   kind:'photoProduct',private:true,title:'Arroz branco',unit:'un',
+   updatedBy:'alice',updatedAt:serverTimestamp()
+ };
+ const purchase={
+   kind:'photoReceipt',private:true,merchantId:'merchant-123456789abcdef012345678',
+   merchantName:'Mercado A',cnpj:'12345678000190',date:'2026-10-18',
+   title:'Nota de Mercado A',totalCents:2290,declaredTotalCents:2290,
+   entries:[{title:'Arroz branco',productId:'photo-product-123',unit:'un',
+     quantityMilli:1000,unitPriceCents:2290,totalCents:2290}],
+   source:'Foto reconhecida no dispositivo e conferida manualmente',
+   updatedBy:'alice',updatedAt:serverTimestamp()
+ };
+ const batch=writeBatch(alice);
+ batch.set(doc(alice,'users/alice/records/photoMerchant1'),merchant);
+ batch.set(doc(alice,'users/alice/records/photoProduct1'),product);
+ batch.set(doc(alice,'users/alice/records/photoReceipt1'),purchase);
+ await assertSucceeds(batch.commit());
+ await assertSucceeds(getDoc(doc(alice,'users/alice/records/photoReceipt1')));
+ await assertFails(getDoc(doc(bob,'users/alice/records/photoReceipt1')));
+ await assertFails(setDoc(doc(bob,'users/alice/records/attacker'),{...purchase,updatedBy:'bob'}));
+ await assertFails(setDoc(doc(alice,'households/home/records/publicPhoto'),{...purchase,private:false}));
+ await assertFails(updateDoc(doc(alice,'users/alice/records/photoReceipt1'),{
+   entries:[],updatedBy:'alice',updatedAt:serverTimestamp()
+ }));
+ await assertFails(setDoc(doc(alice,'users/alice/records/rawOCR'),{
+   ...purchase,ocrText:'documento com dados sensíveis'
+ }));
+ await assertFails(setDoc(doc(alice,'users/alice/records/forged'),{
+   ...purchase,updatedBy:'bob'
+ }));
+ await assertFails(setDoc(doc(alice,'users/alice/records/big'),{
+   ...purchase,entries:Array.from({length:121},(_,i)=>({title:'Arroz',productId:'p'+i}))
+ }));
+});

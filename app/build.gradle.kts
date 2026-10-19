@@ -30,6 +30,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.2")
     implementation("androidx.work:work-runtime-ktx:2.10.3")
+    // Bundled, on-device Latin OCR model. Photos stay on the handset.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation(platform("com.google.firebase:firebase-bom:34.2.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
