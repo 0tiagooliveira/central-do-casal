@@ -196,12 +196,12 @@ class CentralRepository(context: Context) {
         require(receipt.text("merchantId").isNotBlank() && receipt.text("merchantName").length in 3..100)
         require(runCatching { java.time.LocalDate.parse(receipt.text("date")) }.isSuccess)
         require(entries.all {
-            (it["title"] as? String)?.length in 3..120 &&
+            ((it["title"] as? String)?.length ?: 0) in 3..120 &&
                 (it["productId"] as? String)?.isNotBlank() == true &&
                 (it["unit"] as? String) in setOf("un", "kg", "L", "pacote") &&
-                (it["quantityMilli"] as? Number)?.toLong() in 1..100_000_000 &&
-                (it["unitPriceCents"] as? Number)?.toLong() in 0..100_000_000 &&
-                (it["totalCents"] as? Number)?.toLong() in 0..100_000_000
+                ((it["quantityMilli"] as? Number)?.toLong() ?: -1L) in 1..100_000_000 &&
+                ((it["unitPriceCents"] as? Number)?.toLong() ?: -1L) in 0..100_000_000 &&
+                ((it["totalCents"] as? Number)?.toLong() ?: -1L) in 0..100_000_000
         })
         val unique = records.distinctBy { it.id }
         require(unique.size == records.size && unique.none { old ->
