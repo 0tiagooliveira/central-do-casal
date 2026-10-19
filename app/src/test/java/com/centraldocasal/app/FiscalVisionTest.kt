@@ -91,6 +91,17 @@ class FiscalVisionTest {
         assertEquals(productId,(entries.first() as Map<*,*>)["productId"])
     }
 
+    @Test fun groupsNewPhotosWithImportedReceiptsOfSameMerchant() {
+        val merchant=FiscalVision.merchantId("BOM PRECO","12345678000190")
+        val fromPhoto=Record("photo","photoReceipt",true,mapOf(
+            "merchantId" to merchant,"merchantName" to "BOM PRECO","date" to "2026-10-18"))
+        val older=Record("import_2026_older","importedReceipt",fields=mapOf(
+            "date" to "2026-10-01","store" to mapOf(
+                "nome" to "Bom Preço LTDA","cnpj" to "12.345.678/0001-90")))
+        val grouped=FiscalVision.grouped(listOf(fromPhoto,older))
+        assertEquals(2,grouped.getValue(merchant).size)
+    }
+
     @Test fun rejectsWrongDataInsteadOfGuessingAndDoesNotStoreRawText() {
         assertTrue(FiscalVision.parse("CUPOM\nTOTAL R$ 30,00").lines.isEmpty())
         assertNull(FiscalVision.cents("valor indefinido"))
