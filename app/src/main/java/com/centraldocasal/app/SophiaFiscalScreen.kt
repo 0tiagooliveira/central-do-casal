@@ -57,7 +57,7 @@ internal fun SophiaFiscalScreen(
     var error by remember{mutableStateOf("")}
     var merchant by remember{mutableStateOf("")}
     var cnpj by remember{mutableStateOf("")}
-    var date by remember{mutableStateOf(LocalDate.now().toString())}
+    var date by remember{mutableStateOf("")}
     var declared by remember{mutableStateOf<Long?>(null)}
     var diffAccepted by remember{mutableStateOf(false)}
     var dupAccepted by remember{mutableStateOf(false)}
@@ -78,12 +78,13 @@ internal fun SophiaFiscalScreen(
                         val draft=FiscalVision.parse(text)
                         merchant=draft.merchantName
                         cnpj=draft.cnpj
-                        date=draft.date.ifBlank { LocalDate.now().toString() }
+                        date=draft.date
                         declared=draft.declaredTotalCents
                         rows.clear()
                         rows.addAll(draft.lines.map { line ->
                             EditableFiscalLine(line.title,fiscalQty(line.quantityMilli),
-                                line.unit,fiscalMoney(line.totalCents).removePrefix("R$").trim())
+                                line.unit,fiscalMoney(line.totalCents).removePrefix("R$").trim(),
+                                FiscalVision.exactSuggestion(line,records))
                         })
                         diffAccepted=false;dupAccepted=false
                         message=if(rows.isEmpty())
