@@ -139,6 +139,35 @@ class CentralViewModel(app: Application) : AndroidViewModel(app) {
      * tarefa, permissão e conclusão usando o estado MAIS RECENTE do repositório.
      * Callback de sucesso só acontece depois da persistência confirmada.
      */
+    /**
+     * Sophia Fiscal: no automatic writes from OCR. Caller must explicitly review
+     * merchant, items, units, prices and product identities first.
+     */
+    internal fun saveSophiaFiscalReview(
+        draft: FiscalDraft, sourceUid: String, onResult: (Boolean, String) -> Unit
+    ) {
+        if (busy.value) { onResult(false,"Aguarde a operação atual terminar.");return }
+        busy.value = true
+        viewModelScope.launch {
+            try {
+                val session = repo.session.value
+                require(session.uid.isNotBlank() && session.uid == sourceUid) {
+                    "A conta mudou. Reabra a nota no seu perfil."
+                }
+                val changes = FiscalVision.recordsForReview(draft,repo.data.value.records)
+                require(repo.session.value.uid == sourceUid)
+                repo.savePhotoFiscalRecords(changes)
+                onResult(true,"Nota salva na sua conta. ${draft.lines.size} item(ns) registrados e comparáveis por estabelecimento.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onResult(false, if (e is IllegalArgumentException ||
+                        e is IllegalStateException) e.message ?: "Revise a nota."
+                    else "A gravação não foi confirmada. Confira o histórico antes de tentar novamente.")
+            } finally { busy.value = false }
+        }
+    }
+
     internal fun executeSophiaOperation(operation: SophiaOperation, onResult: (Boolean, String) -> Unit) {
         if (busy.value) { onResult(false, "Aguarde a operação atual terminar."); return }
         busy.value = true
@@ -356,7 +385,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Casa" -> HomeDevicesScreen(vm, data, busy, requestNearby=nearby)
                     "Segurança" -> SafetyScreen(vm, session, data, busy, requestPermission=location)
                     "Sophia" -> SophiaReferenceScreen(session,data,location,notify,
-                        onOperation = { operation, callback -> vm.executeSophiaOperation(operation, callback) }
+                        onOperation = { operation, callback -> vm.executeSophiaOperation(operation, callback) },
+                        onFiscalSave = { draft, callback -> vm.saveSophiaFiscalReview(draft,session.uid,callback) }
                     ) { destination ->
                         if(destination in listOf("Hoje","Rotina","Compras","Nós","Mais")) { tab=destination;route="" }
                         else route=destination
