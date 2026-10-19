@@ -157,6 +157,63 @@ internal object FiscalVision {
         return FiscalComparison(past.first(),past.minBy{it.unitPriceCents},
             line.unitPriceCents-past.first().unitPriceCents)
     }
+    fun productId(name:String,unit:String):String {
+        val basis=key(name)+":"+unit
+        val hash=MessageDigest.getInstance("SHA-256").digest(basis.toByteArray())
+        return "photo-product-"+hash.take(12).joinToString(""){"%02x".format(it)}
+    }
+
+    /**
+     * The reviewed document becomes a private purchase observation; it does not
+     * create a financial transaction or alter historical imported receipts.
+     * Merchant and novel products have stable IDs to group later purchases.
+     */
+    fun recordsForReview(draft:FiscalDraft,existing:List<Record>):List<Record> {
+        require(draft.merchantName.trim().length in 3..100)
+        require(draft.cnpj.isBlank() || draft.cnpj.filter(Char::isDigit).length==14)
+        require(runCatching{LocalDate.parse(draft.date)}.isSuccess)
+        require(draft.lines.isNotEmpty() && draft.lines.size<=120)
+        val merchant=merchantId(draft.merchantName,draft.cnpj)
+        val uniqueNew=linkedMapOf<String,Record>()
+        if(existing.none{it.kind=="photoMerchant"&&it.id==merchant}) {
+            uniqueNew[merchant]=Record(merchant,"photoMerchant",true,mapOf(
+                "title" to draft.merchantName.trim(),"cnpj" to draft.cnpj.filter(Char::isDigit)))
+        }
+        val entries=draft.lines.mapIndexed { index,line->
+            require(line.title.trim().length in 3..110 && line.quantityMilli in 1..100_000_000)
+            require(line.unit in setOf("un","kg","L","pacote"))
+            require(line.totalCents in 0..100_000_000 && line.unitPriceCents in 0..100_000_000)
+            val id=if(line.productId.isNullOrBlank()) productId(line.title,line.unit)
+                else {
+                    val chosen=existing.singleOrNull{it.id==line.productId &&
+                        it.kind in setOf("catalogItem","catalogSku","photoProduct")}
+                        ?: error("Produto não encontrado. Revise o vínculo.")
+                    require(chosen.text("unit").isBlank() || chosen.text("unit")==line.unit){
+                        "Unidades incompatíveis. Confirme a unidade do produto."
+                    }
+                    chosen.id
+                }
+            if(existing.none{it.id==id} && !uniqueNew.containsKey(id)) {
+                uniqueNew[id]=Record(id,"photoProduct",true,mapOf(
+                    "title" to line.title.trim(),"unit" to line.unit))
+            }
+            mapOf("row" to index,"title" to line.title.trim(),"productId" to id,
+                "unit" to line.unit,"quantityMilli" to line.quantityMilli,
+                "unitPriceCents" to line.unitPriceCents,"totalCents" to line.totalCents)
+        }
+        val total=draft.lines.sumOf{it.totalCents}
+        val receipt=Record("photo-receipt-"+java.util.UUID.randomUUID().toString(),
+            "photoReceipt",true,mapOf(
+            "merchantId" to merchant,"merchantName" to draft.merchantName.trim(),
+            "cnpj" to draft.cnpj.filter(Char::isDigit),"date" to draft.date,
+            "title" to "Nota de ${draft.merchantName.trim()}",
+            "totalCents" to total,
+            "declaredTotalCents" to (draft.declaredTotalCents ?: -1L),
+            "entries" to entries,
+            "source" to "Foto reconhecida no dispositivo e conferida manualmente"))
+        return uniqueNew.values.toList()+receipt
+    }
+
     fun grouped(records:List<Record>):Map<String,List<Record>> =
         records.filter{it.kind=="photoReceipt"}.groupBy{it.text("merchantId")}
 }
