@@ -83,7 +83,7 @@ internal fun SophiaFiscalScreen(
                         rows.clear()
                         rows.addAll(draft.lines.map { line ->
                             EditableFiscalLine(line.title,fiscalQty(line.quantityMilli),
-                                line.unit,fiscalMoney(line.totalCents).removePrefix("R$").trim(),
+                                line.unit,BigDecimal.valueOf(line.totalCents,2).toPlainString().replace('.',','),
                                 FiscalVision.exactSuggestion(line,records))
                         })
                         diffAccepted=false;dupAccepted=false
