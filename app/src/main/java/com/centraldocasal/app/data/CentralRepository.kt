@@ -180,6 +180,51 @@ class CentralRepository(context: Context) {
         }
         recordCollection(record.isPrivate).document(record.id).set(record.toMap() + mapOf("updatedBy" to session.value.uid, "updatedAt" to FieldValue.serverTimestamp())).await()
     }
+    /**
+     * Atomic confirmation of an OCR review.
+     * All photo fiscal records are personal by default; imported shared data is read-only.
+     * Never upload the image itself, the unreviewed OCR transcript or a buyer's CPF.
+     */
+    suspend fun savePhotoFiscalRecords(records: List<Record>) {
+        require(records.size in 1..123) { "Quantidade de registros inválida." }
+        require(records.all { it.isPrivate && it.kind in setOf("photoMerchant", "photoProduct", "photoReceipt") })
+        require(records.count { it.kind == "photoReceipt" } == 1)
+        val receipt = records.single { it.kind == "photoReceipt" }
+        @Suppress("UNCHECKED_CAST")
+        val entries = receipt.fields["entries"] as? List<Map<String, Any?>> ?: emptyList()
+        require(entries.isNotEmpty() && entries.size <= 120)
+        require(receipt.text("merchantId").isNotBlank() && receipt.text("merchantName").length in 3..100)
+        require(runCatching { java.time.LocalDate.parse(receipt.text("date")) }.isSuccess)
+        require(entries.all {
+            (it["title"] as? String)?.length in 3..120 &&
+                (it["productId"] as? String)?.isNotBlank() == true &&
+                (it["unit"] as? String) in setOf("un", "kg", "L", "pacote") &&
+                (it["quantityMilli"] as? Number)?.toLong() in 1..100_000_000 &&
+                (it["unitPriceCents"] as? Number)?.toLong() in 0..100_000_000 &&
+                (it["totalCents"] as? Number)?.toLong() in 0..100_000_000
+        })
+        val unique = records.distinctBy { it.id }
+        require(unique.size == records.size && unique.none { old ->
+            data.value.records.any { it.id == old.id && it.kind == "photoReceipt" }
+        }) { "Esta nota já foi registrada. Confira o histórico." }
+        if (session.value.local) {
+            persistLocal(data.value.copy(records =
+                data.value.records.filterNot { saved -> unique.any { it.id == saved.id } } + unique))
+            return
+        }
+        val startUid = session.value.uid
+        require(startUid.isNotBlank() && startUid != "local")
+        // Only a user's private records are mutated. Batch makes merchant + item + receipt atomic.
+        val collection = recordCollection(true)
+        val batch = db.batch()
+        unique.forEach { record ->
+            batch.set(collection.document(record.id), record.toMap() +
+                mapOf("updatedBy" to startUid, "updatedAt" to FieldValue.serverTimestamp()))
+        }
+        require(session.value.uid == startUid)
+        batch.commit().await()
+    }
+
     /** Inventory is user-maintained planning data on a shared catalog item; imported receipt fields stay untouched. */
     suspend fun saveCatalogInventory(item: Record, stockMilli: Long?, storageRoom: String, hasAtHome: Boolean = stockMilli != null && stockMilli > 0L) {
         require(item.kind == "catalogItem" && !item.isPrivate) { "Só produtos da base compartilhada aceitam estoque." }
