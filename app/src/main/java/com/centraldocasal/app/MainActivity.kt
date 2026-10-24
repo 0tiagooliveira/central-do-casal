@@ -197,7 +197,7 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         }
     }
     LaunchedEffect(data.records, session.uid) {
-        val partnerAlert = data.records.filter { it.kind == "safetyAlert" && it.text("ownerUid") != session.uid }
+        val partnerAlert = data.records.filter { freshPartnerSosAlert(it, session.uid) }
             .maxByOrNull { it.number("createdAt") }
         if (partnerAlert != null && alertPrefs.getString("seen", "") != partnerAlert.id) {
             alertPrefs.edit().putString("seen", partnerAlert.id).apply()
@@ -241,8 +241,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                 data.records.firstOrNull { it.kind == "appRelease" && it.number("minimumVersionCode") > BuildConfig.VERSION_CODE }?.let { release ->
                     Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text("Há uma atualização importante do aplicativo", style = MaterialTheme.typography.bodyMedium); TextButton(onClick = { route = "Configurações" }) { Text("Ver atualização") } } }
                 }
-                data.records.filter { it.kind == "safetyAlert" && it.text("ownerUid") != session.uid && System.currentTimeMillis()-it.number("createdAt") < 7_200_000 }.maxByOrNull { it.number("createdAt") }?.let { alert ->
-                    Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("Alerta recebido agora. Abra para ver localização e ligar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
+                data.records.filter { freshPartnerSosAlert(it, session.uid, maxAgeMillis = 7_200_000L) }.maxByOrNull { it.number("createdAt") }?.let { alert ->
+                    Surface(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(16.dp)) { Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SOS de ${alert.text("ownerName","seu parceiro")}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onErrorContainer);Text("SOS registrado às " + java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(alert.number("createdAt"))) + ". Abra para consultar os detalhes disponíveis.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onErrorContainer) };Button(onClick={route="Segurança"}) { Text("Abrir") } } }
                 }
                 Crossfade(targetState = if(route.isNotBlank()) route else tab, animationSpec = tween(if(experience.motion) 180 else 0), modifier = Modifier.weight(1f), label = "Telas") { screen -> screenStates.SaveableStateProvider("${session.uid}:$screen") { when (screen) {
                     "Hoje" -> HomeExperienceScreen(vm, session, data, navigate = { route = it }, selectTab = { destination -> tab = destination; if(destination=="Compras") requestedShoppingMarket=null; if(destination=="Rotina") requestedRoutineDate=null }, requestLocationPermission = location)

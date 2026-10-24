@@ -1,6 +1,7 @@
 package com.centraldocasal.app
 
 import org.junit.Assert.*
+import com.centraldocasal.app.domain.Record
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -19,4 +20,23 @@ class SosFreshLocationTest {
         assertNull(recentSosLocation(SafetyLocation(-25.45,190.0,now),now))
         assertNull(recentSosLocation(SafetyLocation(Double.NaN,-49.30,now),now))
     }
+    @Test fun onlyFreshPartnerSosCanTriggerAnUrgentLocalNotification() {
+        val now=1_800_000_000_000L
+        fun sos(owner:String,whenCreated:Long)=Record("sos-1","safetyAlert",fields=mapOf(
+            "ownerUid" to owner,
+            "ownerName" to "Parceiro",
+            "createdAt" to whenCreated
+        ))
+        assertTrue(freshPartnerSosAlert(sos("other",now-30_000),"me",now))
+        assertTrue(freshPartnerSosAlert(sos("other",now-15*60_000),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("other",now-15*60_000-1),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("other",now+1),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("me",now-30_000),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("",now-30_000),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("other",0),"me",now))
+        assertFalse(freshPartnerSosAlert(sos("other",now-30_000),"",now))
+        assertFalse(freshPartnerSosAlert(Record("t","task",fields=mapOf("createdAt" to now)), "me",now))
+    }
+
+
 }
