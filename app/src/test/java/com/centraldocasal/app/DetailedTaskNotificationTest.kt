@@ -46,15 +46,43 @@ class DetailedTaskNotificationTest {
             "needsTimeReview" to false
         ))
         Reminders.schedule(context,"local",task,"Rhayra")
-        TaskAlarmReceiver().onReceive(context,Intent("com.centraldocasal.app.TASK_ALARM").putExtra("uid","local").putExtra("id","test-notice"))
+        TaskAlarmReceiver().onReceive(context,Intent("com.centraldocasal.app.TASK_ALARM")
+            .putExtra("uid","local").putExtra("id","test-notice")
+            .putExtra("scheduledDay",LocalDate.now().plusDays(1).toString()))
         val notice=shadowOf(manager).allNotifications.single()
         assertEquals("Reservar almoço de segunda",notice.extras.getCharSequence("android.title").toString())
         val body=notice.extras.getCharSequence("android.text").toString()
         assertTrue(body.contains("16:00"))
         assertTrue(body.contains("Rhayra"))
         assertTrue(body.contains("Conferir cardápio"))
+        assertTrue(body.contains(LocalDate.now().plusDays(1).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM"))))
+        assertTrue(body.contains("Responsável: Rhayra"))
         assertEquals("central-tasks-v2",notice.channelId)
     }
+    @Test fun expandedNotificationKeepsMeaningfulLongTaskNote() {
+        val note = "Conferir transporte, entrada, documentos e confirmar com o responsável antes de sair. " +
+            "Levar os itens preparados e revisar o local de encontro quando o compromisso estiver próximo."
+        val day = LocalDate.now().plusDays(1)
+        val task = Record("detailed-note", "task", fields=mapOf(
+            "title" to "Separar itens antes da viagem",
+            "note" to note,
+            "time" to "08:15",
+            "date" to day.toString(),
+            "owner" to "Tiago",
+            "repeat" to "Única"
+        ))
+        Reminders.schedule(context,"local",task,"Tiago")
+        TaskAlarmReceiver().onReceive(context,Intent("com.centraldocasal.app.TASK_ALARM")
+            .putExtra("uid","local").putExtra("id",task.id).putExtra("scheduledDay",day.toString()))
+        val notice = shadowOf(manager).allNotifications.single()
+        val details = notice.extras.getCharSequence("android.text").toString()
+        assertTrue(details.contains("08:15"))
+        assertTrue(details.contains("Responsável: Tiago"))
+        assertTrue(details.contains(note))
+        assertEquals(android.app.Notification.VISIBILITY_PRIVATE,notice.visibility)
+        assertFalse(notice.publicVersion.extras.toString().contains(note))
+    }
+
     @Test fun twoMinuteDiagnosticReallySchedulesAnAndroidAlarmBeforePostingNotification() {
         val result = Reminders.scheduleDeliveryTest(context, "local", "Rhayra")
         assertTrue(result, result.contains("Teste agendado"))
