@@ -1,5 +1,6 @@
 package com.centraldocasal.app
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import com.centraldocasal.app.domain.Record
+import com.centraldocasal.app.domain.occurs
+import java.time.LocalDate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -113,64 +119,114 @@ internal object WeatherSource {
     }
 }
 
+
+/** Tips only from current real forecast and records visible in this authenticated profile. */
+internal fun contextualWeatherTips(weather: WeatherSnapshot, records: List<Record>, day: LocalDate): List<String> {
+    val tasks = records.filter {
+        it.kind == "task" && !it.flag("needsReview") && !it.flag("needsTimeReview") &&
+            it.text("time").isNotBlank() && occurs(it, day)
+    }.sortedBy { it.text("time") }
+    val tips = mutableListOf<String>()
+    val next = tasks.firstOrNull()
+    if ((weather.rainChance ?: 0) >= 60) {
+        val chance = weather.rainChance
+        tips += if(next == null) "Hoje a chance máxima de chuva é ${chance}%. Confiram guarda-chuva e deslocamentos antes de sair."
+            else "Chuva possível hoje (máxima de ${chance}%). ${next.text("title")} está agendada às ${next.text("time")}; confiram o trajeto antes de sair."
+    } else if (next != null) {
+        tips += "A rotina tem ${next.text("title")} às ${next.text("time")}. A previsão de hoje indica máxima de ${weather.todayHigh.roundToInt()} °C."
+    }
+    if ((weather.tomorrowRainChance ?: 0) >= 60) {
+        tips += "Amanhã a chance máxima de chuva chega a ${weather.tomorrowRainChance}%. Planejem o trajeto com antecedência."
+    } else if(weather.tomorrowLow != null && weather.tomorrowHigh != null) {
+        tips += "Amanhã a previsão varia de ${weather.tomorrowLow.roundToInt()} °C a ${weather.tomorrowHigh.roundToInt()} °C. Vale separar o que levar antes de sair."
+    }
+    if(weather.feelsLike <= 15.0) {
+        tips += "Sensação atual de ${weather.feelsLike.roundToInt()} °C. Confiram os agasalhos antes de sair com o Lucca."
+    } else if(weather.feelsLike >= 29.0) {
+        tips += "Sensação atual de ${weather.feelsLike.roundToInt()} °C. Considerem água e pausas nos passeios com o Lucca."
+    } else {
+        tips += "Sensação atual de ${weather.feelsLike.roundToInt()} °C e umidade de ${weather.humidity}%. Ajustem os itens da saída ao clima."
+    }
+    if(tips.size < 3) {
+        tips += "A mínima de hoje é ${weather.todayLow.roundToInt()} °C e a máxima ${weather.todayHigh.roundToInt()} °C. Revejam roupas para os horários de saída."
+    }
+    if(tips.size < 3) {
+        tips += "Vento informado: ${weather.wind.roundToInt()} km/h. Confiram os objetos leves nas áreas externas."
+    }
+    return tips.distinct().take(3)
+}
+
 @Composable
-internal fun WeatherCard(requestLocationPermission: () -> Unit) {
-    val context=LocalContext.current
-    val scope=rememberCoroutineScope()
+internal fun WeatherCard(requestLocationPermission: () -> Unit, profileUid: String = "", records: List<Record> = emptyList()) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var weather by remember { mutableStateOf<WeatherSnapshot?>(null) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val prefs = remember(profileUid) { context.getSharedPreferences("weather_${profileUid}",Context.MODE_PRIVATE) }
+    var automatic by remember(profileUid) { mutableStateOf(prefs.getBoolean("autoWeather", false)) }
+
+    fun refresh() {
+        if(loading) return
+        if(!SafetyLocationReader.permitted(context)) {
+            message = "Autorize a localização para consultar o tempo."
+            return
+        }
+        loading = true
+        message = null
+        SafetyLocationReader.request(context) { loc ->
+            if(loc == null || System.currentTimeMillis() - loc.capturedAt !in 0L..3_600_000L) {
+                message = "Localização recente indisponível. Confira o GPS."
+                loading = false
+            } else scope.launch {
+                runCatching { WeatherSource.fetch(loc.latitude, loc.longitude) }
+                    .onSuccess { weather = it }
+                    .onFailure { message = "Não foi possível consultar a previsão. Confira a conexão." }
+                loading = false
+            }
+        }
+    }
+    LaunchedEffect(automatic, profileUid) {
+        while(automatic && profileUid.isNotBlank() && isActive) {
+            if(SafetyLocationReader.permitted(context)) refresh()
+            delay(15*60*1000L)
+        }
+    }
+
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Text("Tempo onde você está",style=MaterialTheme.typography.titleMedium)
-            val data=weather
+            val data = weather
             if(data!=null) {
-                Text("${data.temperature.toInt()} °C · ${data.description}",style=MaterialTheme.typography.titleLarge)
-                Text("Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(data.fetchedAtMillis))} · atualizado sob demanda",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Sensação de ${data.feelsLike.toInt()} °C · Mín. ${data.todayLow.toInt()} °C · Máx. ${data.todayHigh.toInt()} °C")
-                Text("Umidade ${data.humidity}% · Vento ${data.wind.toInt()} km/h" +
-                    (data.rainChance?.let { " · Chance de chuva $it%" } ?: ""),style=MaterialTheme.typography.bodySmall)
-                if (data.tomorrowHigh != null && data.tomorrowLow != null) {
-                    HorizontalDivider()
-                    Text("Amanhã", style = MaterialTheme.typography.titleSmall)
-                    Text("Mín. ${data.tomorrowLow.roundToInt()} °C · Máx. ${data.tomorrowHigh.roundToInt()} °C" +
-                        (data.tomorrowRainChance?.let { " · Chuva: até $it% de probabilidade" } ?: ""),
-                        style = MaterialTheme.typography.bodySmall)
-                    if ((data.tomorrowRainChance ?: 0) >= 60) {
-                        Text("Pode chover amanhã. Confira a previsão antes de organizar os deslocamentos.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                Text("${data.temperature.roundToInt()} °C · ${data.description}",style=MaterialTheme.typography.titleLarge)
+                Text("Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(data.fetchedAtMillis))}",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Sensação ${data.feelsLike.roundToInt()} °C · Mín. ${data.todayLow.roundToInt()} °C · Máx. ${data.todayHigh.roundToInt()} °C")
+                Text("Umidade ${data.humidity}% · Vento ${data.wind.roundToInt()} km/h" + (data.rainChance?.let { " · Chuva: até ${it}%" } ?: ""),style=MaterialTheme.typography.bodySmall)
+                Text("Três dicas para a família",style=MaterialTheme.typography.titleSmall)
+                contextualWeatherTips(data,records,LocalDate.now()).forEachIndexed { index,tip ->
+                    Text("${index+1}. §tip",style=MaterialTheme.typography.bodySmall)
                 }
             } else {
-                Text("Consulte a previsão para sua localização, somente quando desejar.",style=MaterialTheme.typography.bodySmall)
+                Text("Previsão e dicas aparecerão após uma consulta com a localização permitida.",style=MaterialTheme.typography.bodySmall)
             }
             if(message!=null) Text(message.orEmpty(),color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick={
-                    if(!SafetyLocationReader.permitted(context)) {
-                        message="Permita a localização e toque novamente para consultar."
-                        requestLocationPermission()
-                    } else {
-                        loading=true
-                        message=null
-                        SafetyLocationReader.request(context) { coordinate ->
-                            if(coordinate==null || System.currentTimeMillis()-coordinate.capturedAt > 60*60*1000L) {
-                                loading=false
-                                message="Não encontramos uma localização recente. Ative a localização e tente novamente."
-                            } else scope.launch {
-                                runCatching { WeatherSource.fetch(coordinate.latitude,coordinate.longitude) }
-                                    .onSuccess { weather=it }
-                                    .onFailure { message="Não foi possível buscar a previsão agora. Confira sua conexão." }
-                                loading=false
-                            }
-                        }
-                    }
-                },enabled=!loading) { Text(if(loading) "Consultando…" else if(data!=null) "Atualizar tempo" else "Ver previsão") }
+                Switch(checked=automatic,onCheckedChange={
+                    automatic=it
+                    prefs.edit().putBoolean("autoWeather",it).apply()
+                })
+                Text("Atualizar automaticamente ao abrir Hoje (opcional)",style=MaterialTheme.typography.bodySmall)
             }
-            TextButton(onClick={
-                context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))
-            },contentPadding=PaddingValues(0.dp)) { Text("Previsão: Open-Meteo · CC BY 4.0",style=MaterialTheme.typography.labelSmall) }
-            Text("Enviamos ao Open-Meteo apenas coordenadas arredondadas a 2 casas decimais (cerca de 1 km). Não salvamos localização da previsão no Firebase. A mesma região utiliza cache em memória por até 15 minutos.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            FilledTonalButton(onClick={
+                if(!SafetyLocationReader.permitted(context)) {
+                    message="Permita a localização e toque novamente para consultar."
+                    requestLocationPermission()
+                } else refresh()
+            },enabled=!loading) { Text(if(loading) "Consultando…" else if(data!=null) "Atualizar tempo" else "Ver previsão") }
+            TextButton(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://open-meteo.com/")))},contentPadding=PaddingValues(0.dp)) {
+                Text("Previsão: Open-Meteo · CC BY 4.0",style=MaterialTheme.typography.labelSmall)
+            }
+            Text("Enviamos coordenadas aproximadas ao Open-Meteo. Não salvamos a posição no Firebase. Cache em memória por 15 minutos.",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
