@@ -68,7 +68,7 @@ class HourlyWeatherContextTest {
         ))
         val first=contextualWeatherTips(weather,listOf(task),day).first()
         assertTrue(first,first.contains("chance máxima"))
-        assertTrue(first,first.contains("não temos previsão para a hora"))
+        assertTrue(first,first.contains("não temos previsão específica"))
         assertFalse(first,first.contains("85%"))
     }
 }
