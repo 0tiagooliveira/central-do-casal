@@ -204,7 +204,7 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit, profileUid: Stri
                 Text("Umidade ${data.humidity}% · Vento ${data.wind.roundToInt()} km/h" + (data.rainChance?.let { " · Chuva: até ${it}%" } ?: ""),style=MaterialTheme.typography.bodySmall)
                 Text("Três dicas para a família",style=MaterialTheme.typography.titleSmall)
                 contextualWeatherTips(data,records,LocalDate.now()).forEachIndexed { index,tip ->
-                    Text("${index+1}. §tip",style=MaterialTheme.typography.bodySmall)
+                    Text("${index + 1}. $tip", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
                 Text("Previsão e dicas aparecerão após uma consulta com a localização permitida.",style=MaterialTheme.typography.bodySmall)
