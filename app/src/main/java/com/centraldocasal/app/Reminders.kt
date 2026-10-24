@@ -25,6 +25,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.time.ZonedDateTime
 
 /** User-initiated task notifications use Android alarms, not inexact background jobs. */
@@ -380,9 +382,10 @@ object Reminders {
             return
         }
         val owner=task.text("owner","Ambos")
-        val details="${time} • $owner".let { formatted ->
-            if(task.text("note").isBlank()) formatted else "$formatted • ${task.text("note").take(120)}"
-        }
+        val dateLabel=date.format(DateTimeFormatter.ofPattern("EEE, dd/MM", Locale.forLanguageTag("pt-BR")))
+        val heading="$dateLabel às $time • Responsável: $owner"
+        val note=task.text("note").trim().take(500)
+        val details=if(note.isBlank()) heading else "$heading\n$note"
         val intent=Intent(context,MainActivity::class.java).apply {
             putExtra("taskId",id)
             putExtra("taskDate",date.toString())
