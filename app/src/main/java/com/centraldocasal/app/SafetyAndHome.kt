@@ -89,6 +89,16 @@ internal object SafetyLocationReader {
     }
 }
 
+/** No background tracking: opt-in is valid only while this screen is active, at most one hour. */
+internal fun activeForegroundShareSession(
+    enabled: Boolean,
+    startedElapsed: Long,
+    locationAllowed: Boolean,
+    paired: Boolean,
+    nowElapsed: Long
+): Boolean = enabled && startedElapsed > 0L && locationAllowed && paired &&
+    nowElapsed - startedElapsed in 0L until (60L * 60_000L)
+
 private fun locationTime(value: Long) = runCatching { DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(value)) }.getOrDefault("agora")
 
 @Composable
@@ -109,8 +119,19 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
     var phone by rememberSaveable(session.uid) { mutableStateOf(prefs.getString("partnerPhone", "").orEmpty()) }
     var location by remember { mutableStateOf<SafetyLocation?>(null) }
     var locating by remember { mutableStateOf(false) }
-    var tracking by rememberSaveable(session.uid) { mutableStateOf(prefs.getBoolean("tracking", false)) }
+    // Nunca restaurar automaticamente compartilhamento de posição ao voltar à tela.
+    var tracking by remember(session.uid) { mutableStateOf(false) }
+    var trackingStartedElapsed by remember(session.uid) { mutableLongStateOf(0L) }
     val hasPermission = SafetyLocationReader.permitted(context)
+    val paired = !session.local && data.members.size == 2
+    DisposableEffect(session.uid) {
+        // Limpa o consentimento legado persistido, que não tinha validade temporal.
+        prefs.edit().remove("tracking").apply()
+        onDispose {
+            tracking = false
+            trackingStartedElapsed = 0L
+        }
+    }
     val lastPartner = data.records.filter { it.kind == "safetyCheckIn" && it.text("ownerUid") != session.uid }
         .maxByOrNull { it.number("capturedAt") }?.takeIf { point ->
             recentSosLocation(SafetyLocation(
@@ -174,16 +195,31 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
             )))
         }
     }
-    LaunchedEffect(tracking, hasPermission, session.uid) {
-        while (tracking && hasPermission && isActive) {
-            requestLocation { it?.let { current -> if(!busy) publish(current, "Localização em tempo real atualizada") } }
-            delay(60_000)
+    LaunchedEffect(tracking, trackingStartedElapsed, hasPermission, paired, session.uid) {
+        while (isActive && tracking) {
+            if (!activeForegroundShareSession(
+                    tracking, trackingStartedElapsed, hasPermission, paired,
+                    android.os.SystemClock.elapsedRealtime()
+                )) {
+                tracking = false
+                trackingStartedElapsed = 0L
+                break
+            }
+            requestLocation { fresh ->
+                // O GPS pode responder depois que a tela foi fechada ou o usuário desligou.
+                if (activeForegroundShareSession(
+                        tracking, trackingStartedElapsed, hasPermission, paired,
+                        android.os.SystemClock.elapsedRealtime()
+                    ) && !busy
+                ) fresh?.let { publish(it, "Localização compartilhada nesta sessão") }
+            }
+            delay(60_000L)
         }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("SOS e localização", style=MaterialTheme.typography.headlineMedium, fontWeight=FontWeight.Bold)
-            Text("Acompanhem a localização um do outro com consentimento. O modo em tempo real atualiza enquanto o app está aberto.", style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Acompanhem a localização um do outro com consentimento. Esta versão atualiza a localização enquanto a tela de Segurança está aberta, com consentimento explícito. Não monitora em segundo plano.", style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             ElevatedCard(shape=RoundedCornerShape(20.dp), modifier=Modifier.fillMaxWidth(), colors=CardDefaults.elevatedCardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
@@ -201,7 +237,26 @@ internal fun SafetyScreen(vm: CentralViewModel, session: SessionState, data: Dat
                 if (!hasPermission) Button(onClick=requestPermission, modifier=Modifier.fillMaxWidth()) { Text("Permitir localização enquanto uso o app") }
                 else {
                     Button(enabled=!locating && !busy,onClick={requestLocation { it?.let { publish(it) } }}, modifier=Modifier.fillMaxWidth()) { Text(if(locating) "Obtendo localização…" else "Atualizar e compartilhar agora") }
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) { Switch(tracking,{ tracking=it;prefs.edit().putBoolean("tracking",it).apply() });Column { Text("Compartilhar em tempo real",style=MaterialTheme.typography.bodyMedium);Text(if(tracking) "Atualiza a cada minuto enquanto este app estiver aberto" else "Desativado",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Switch(
+                            checked = tracking,
+                            onCheckedChange = { enabled ->
+                                tracking = enabled
+                                trackingStartedElapsed = if (enabled) android.os.SystemClock.elapsedRealtime() else 0L
+                            },
+                            enabled = paired
+                        )
+                        Column {
+                            Text("Compartilhar nesta tela",style=MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (tracking) "A cada minuto enquanto esta tela estiver aberta. Encerra em até 60 minutos."
+                                else if (!paired) "Conecte as duas contas para compartilhar."
+                                else "Desativado. Nunca reinicia sozinho e não acompanha em segundo plano.",
+                                style=MaterialTheme.typography.bodySmall,
+                                color=MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
                 location?.let { current -> Text("Posição obtida em ${locationTime(current.capturedAt)}", style=MaterialTheme.typography.bodyMedium) } ?: Text("Ainda não há posição obtida neste aparelho.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
                 lastPartner?.let { OutlinedButton(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(it.text("mapUrl")))) }},modifier=Modifier.fillMaxWidth()) { Text("Ver ${it.text("ownerName", "parceiro")} no mapa · ${locationTime(it.number("capturedAt"))}") } }
