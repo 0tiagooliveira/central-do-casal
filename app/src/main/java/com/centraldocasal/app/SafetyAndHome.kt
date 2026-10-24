@@ -45,6 +45,20 @@ internal data class SafetyLocation(val latitude: Double, val longitude: Double, 
 }
 
 /** A location is optional, but if included in SOS it must be physically plausible and fresh. */
+/** Do not present delayed Firestore replay as a new, urgent SOS notification. */
+internal fun freshPartnerSosAlert(
+    record: Record,
+    currentUid: String,
+    now: Long = System.currentTimeMillis(),
+    maxAgeMillis: Long = 15 * 60_000L
+): Boolean {
+    if (currentUid.isBlank() || record.kind != "safetyAlert") return false
+    val owner = record.text("ownerUid")
+    val whenCreated = record.number("createdAt")
+    return owner.isNotBlank() && owner != currentUid && whenCreated > 0 &&
+        now - whenCreated in 0L..maxAgeMillis
+}
+
 internal fun recentSosLocation(location: SafetyLocation?, now: Long = System.currentTimeMillis()): SafetyLocation? =
     location?.takeIf {
         it.latitude.isFinite() && it.longitude.isFinite() &&
