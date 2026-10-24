@@ -1,11 +1,17 @@
 package com.centraldocasal.app
 
 import com.centraldocasal.app.domain.Record
+import android.app.Application
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.time.LocalDate
 import java.time.LocalDateTime
 import org.junit.Assert.*
 import org.junit.Test
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk=[35], application=Application::class)
 class HourlyWeatherContextTest {
     private val day=LocalDate.of(2026,10,24)
 
