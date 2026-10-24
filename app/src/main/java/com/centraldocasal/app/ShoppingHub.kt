@@ -210,18 +210,51 @@ internal fun ShoppingHubScreen(vm: CentralViewModel, data: DataState, session: S
         ProductDetailScreen(vm,busy,product,data,onDismiss={detail=null},onAdd={ selected -> editing=catalogDraft(selected,data.records).let { if(product.kind=="catalogItem") it.copy(sourceBaseId=product.id) else it };detail=null },onReceipt={receiptDetail=it})
         return
     }
-    if(section=="Lista") ShoppingSessionScreen(data,session,busy,{editing=it},{adding=true},{budget=true},{section="Catálogo"},annual,{section="Histórico"},{preparing=true},{closing=true},{market=it},market,::feedback,onQuickSave={ entry -> vm.action { vm.repo.editBasket(market,basket.revision) { current -> require(current.entries.any { it.id==entry.id }) { "Este item mudou. Atualize a lista." }; current.copy(entries=current.entries.map { if(it.id==entry.id) entry else it }) }; feedback() } },onReview={ section="Revisar" })
+    if(section=="Lista") ShoppingSessionScreen(data,session,busy,{editing=it},{adding=true},{budget=true},{section="Catálogo"},annual,{section="Histórico"},{preparing=true},{closing=true},{market=it},market,::feedback,onQuickSave={ entry -> vm.action { vm.repo.editBasket(market,basket.revision) { current -> require(current.entries.any { it.id==entry.id }) { "Este item mudou. Atualize a lista." }; current.copy(entries=current.entries.map { if(it.id==entry.id) entry else it }) }; feedback() } },onReview={ section="Revisar" },onRepurchase={section="Já comprei"})
     else LazyColumn(Modifier.fillMaxSize(), contentPadding=PaddingValues(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
-            val title=when(section) { "Catálogo" -> "Produtos para a sua lista"; "Histórico" -> "Histórico que ajuda a decidir"; else -> "Revisar vínculos" }
-            val subtitle=when(section) { "Catálogo" -> "Padronize nome, unidade e onde guardar antes de planejar."; "Histórico" -> "Compare preços reais, use a última compra e entenda cada diferença."; else -> "Confira sugestões antes de unir um item da nota a um produto planejado." }
+            val title=when(section) { "Já comprei" -> "Comprar novamente"; "Catálogo" -> "Produtos para a sua lista"; "Histórico" -> "Histórico que ajuda a decidir"; else -> "Revisar vínculos" }
+            val subtitle=when(section) { "Já comprei" -> "Produtos realmente comprados antes, prontos para reutilizar sem perder o histórico."; "Catálogo" -> "Padronize nome, unidade e onde guardar antes de planejar."; "Histórico" -> "Compare preços reais, use a última compra e entenda cada diferença."; else -> "Confira sugestões antes de unir um item da nota a um produto planejado." }
             Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 SectionHero(title, subtitle, BasketLine)
-                ChoiceStrip(listOf("Lista","Catálogo","Histórico","Revisar"),section,onSelect = { label -> section=label;search="";feedback() })
+                ChoiceStrip(if(section=="Já comprei") listOf("Lista","Já comprei","Histórico") else listOf("Lista","Catálogo","Histórico","Revisar"),section,onSelect = { label -> section=label;search="";feedback() })
                 ChoiceStrip(listOf("Mercado","Açougue"),market,onSelect = { label -> market=label;search="";feedback() })
             }
         }
-        if(section=="Catálogo") {
+        if(section=="Já comprei") {
+            val previous=repurchaseSuggestions(data.records,market)
+            val filtered=previous.filter { item -> item.title.contains(search,true) || item.store.contains(search,true) }
+            item {
+                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(search,{search=it},label={Text("Buscar produto que já comprei")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                    Text("${previous.size} produto(s) com compra registrada · Mercado e Açougue separados",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("O último preço é apenas referência. Confira valor, unidade e quantidade antes de adicionar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if(filtered.isEmpty()) item {
+                QuietCard(if(search.isBlank()) "Nenhum produto comprado encontrado" else "Nenhum resultado para esta busca",
+                    if(search.isBlank()) "Este espaço ainda não contém recibos finalizados ou histórico fiscal vinculado a este mercado. Confira a conta ativa, a sincronização e as notas importadas." else "Tente outro nome ou confira Histórico e Catálogo.") {
+                    OutlinedButton(onClick={section="Histórico"}) { Text("Ver histórico disponível") }
+                }
+            }
+            items(filtered,key={it.key}) { suggestion ->
+                val linked=alreadyOnShoppingList(suggestion,basket.entries)
+                OutlinedCard(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text(suggestion.title,style=MaterialTheme.typography.titleMedium)
+                        Text("${suggestion.lastDate.ifBlank { "Data não informada" }} · ${suggestion.store} · ${suggestion.unit.ifBlank { "Unidade a confirmar" }}",
+                            style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text(if(suggestion.draft.estimateKnown) "Último preço unitário: ${hubMoney(suggestion.draft.estimated)}" else "Preço a confirmar",
+                                style=MaterialTheme.typography.bodySmall,modifier=Modifier.weight(1f))
+                            TextButton(enabled=!busy && !linked,onClick={editing=suggestion.draft;section="Lista"}) {
+                                Text(if(linked) "Já está na lista" else "Reutilizar")
+                            }
+                        }
+                    }
+                }
+            }
+        } else if(section=="Catálogo") {
             item {
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) { FilterChip(!byStore,{byStore=false},label={Text("Minha base")}); FilterChip(byStore,{byStore=true},label={Text("Por loja")}) }
                 OutlinedTextField(search,{search=it},label={Text("Buscar no catálogo")},modifier=Modifier.fillMaxWidth())

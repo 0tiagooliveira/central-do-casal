@@ -61,7 +61,8 @@ internal fun ShoppingSessionScreen(
     market: String,
     onFeedback: () -> Unit = {},
     onQuickSave: (Entry) -> Unit = {},
-    onReview: () -> Unit = {}
+    onReview: () -> Unit = {},
+    onRepurchase: () -> Unit = {}
 ) {
     val basket = data.baskets[market] ?: remember(market) { Basket(market) }
     var mode by rememberSaveable { mutableStateOf("Planejar") }
@@ -146,6 +147,7 @@ internal fun ShoppingSessionScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { feedback(onPrepareMonth) }, enabled = !busy) { Icon(Icons.Default.DateRange, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (basket.entries.isEmpty()) "Montar lista do mês" else "Revisar lista do mês") }
                     OutlinedButton(onClick = { feedback(onAdd) }, enabled = !busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Produto novo") }
+                    OutlinedButton(onClick = { feedback(onRepurchase) }, enabled = !busy) { Text("Já comprei · usar novamente") }
                 }
                 Text("A pré-lista reúne todos os produtos já cadastrados por cômodo. Escolha comprar, já tenho ou não comprar neste mês.", style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
