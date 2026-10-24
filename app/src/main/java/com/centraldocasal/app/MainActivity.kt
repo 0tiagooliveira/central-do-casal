@@ -249,7 +249,8 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
                     "Compras" -> ShoppingHubScreen(vm, data, session, busy, annual = { route = "Ano de compras" }, requestedMarket = requestedShoppingMarket)
                     "Ano de compras" -> AnnualPurchasesScreen(data, onSelect = { AndroidInteractions.haptic(view,experience.haptics);AndroidInteractions.clickSound(view,experience.sounds) })
                     "Rotina" -> RoutineScreen(vm, session, data, requestedDate = requestedRoutineDate,
-                        requestedTaskId = requestedRoutineTaskId, onTargetOpened = { requestedRoutineTaskId = null })
+                        requestedTaskId = requestedRoutineTaskId, onTargetOpened = { requestedRoutineTaskId = null },
+                        requestNotificationPermission = notify, openNotificationSettings = { route = "Configurações" })
                     "Lembretes" -> ReminderInbox(session,data,openRoutine={route="";requestedRoutineDate=null;tab="Rotina"},openSettings={route="Configurações"})
                     "Revisar rotinas" -> RoutineScreen(vm,session,data,reviewOnly=true)
                     "Nossa vida" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { LifeOverview(data,session,onRoutine={route="";requestedRoutineDate=null;tab="Rotina"},onPlans={route="";tab="Planos"},onMoments={route="";tab="Nós"},onShopping={route="";requestedShoppingMarket=null;tab="Compras"}) }
@@ -349,7 +350,7 @@ private fun TaskRow(task: Record, day: LocalDate, data: DataState, vm: CentralVi
 }
 
 @Composable
-private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}) {
+private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: DataState, reviewOnly: Boolean = false, requestedDate: String? = null, requestedTaskId: String? = null, onTargetOpened: () -> Unit = {}, requestNotificationPermission: () -> Unit = {}, openNotificationSettings: () -> Unit = {}) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf(if(requestedDate != null) "Tudo" else "Para mim") }
     var dayText by rememberSaveable { mutableStateOf(requestedDate?.takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess } ?: LocalDate.now().toString()) }
@@ -379,7 +380,16 @@ private fun RoutineScreen(vm: CentralViewModel, session: SessionState, data: Dat
     val configured=data.records.count { it.kind=="task" && it.text("time").isNotBlank() && !it.flag("skipReminder") && !it.flag("needsReview") && (it.text("owner","Ambos")=="Ambos" || taskBelongsTo(it,session.name)) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { SectionHero(if(reviewOnly) "Revisar rotinas" else "Sua semana",if(reviewOnly) "Confirme os dados para usar estas rotinas." else "Cada dia tem seu próprio ritmo.", CalendarLine) }
-        if(!reviewOnly && (!notificationAllowed || !remindersEnabled)) item { QuietCard("Lembretes precisam de atenção",if(!notificationAllowed) "Permita notificações do Android para receber os avisos das tarefas." else "Os lembretes estão desligados neste aparelho.") { Text("Edite uma tarefa para conferir horário e “Permitir lembrete”.",style=MaterialTheme.typography.bodySmall) } }
+        if(!reviewOnly && (!notificationAllowed || !remindersEnabled)) item {
+            QuietCard("Lembretes precisam de atenção",
+                if(!notificationAllowed) "O Android ainda está bloqueando os avisos com detalhes das tarefas."
+                else "Os lembretes estão desligados neste perfil.") {
+                Text("Uma tarefa precisa ter data, horário, responsável correto e 'Permitir lembrete' ativado.",style=MaterialTheme.typography.bodySmall)
+                if(!notificationAllowed && Build.VERSION.SDK_INT >= 33)
+                    FilledTonalButton(onClick=requestNotificationPermission) { Text("Permitir notificações") }
+                OutlinedButton(onClick=openNotificationSettings) { Text("Diagnosticar e testar avisos") }
+            }
+        }
         if(!reviewOnly && notificationAllowed && remindersEnabled && configured>0) item { Text("$configured lembretes ativos para suas rotinas e as compartilhadas.",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
         if(!reviewOnly) item { ChoiceStrip(listOf("Neste dia","Todos os registros"),if(showAll) "Todos os registros" else "Neste dia",{showAll=it=="Todos os registros"}) }
         if(!reviewOnly) item { WeekRibbon(day, { dayText=it.toString() }) }
@@ -776,6 +786,10 @@ private fun IntegrationScreen(route: String, data: DataState) {
 
 @Composable
 private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, onDismiss: () -> Unit) {
+    val notificationContext=LocalContext.current
+    val requestNotifications=androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        vm.message.value=if(allowed) "Notificações autorizadas. Confira o agendamento desta tarefa." else "O Android bloqueou avisos de tarefas. Libere nas configurações."
+    }
     val id = remember { initial?.id ?: java.util.UUID.randomUUID().toString() }
     var title by remember { mutableStateOf(initial?.text("title") ?: "") }; var note by remember { mutableStateOf(initial?.text("note") ?: "") }
     var date by remember { mutableStateOf(initial?.text("date")?.let(::displayDate) ?: LocalDate.now().format(dateFormat)) }
@@ -801,7 +815,11 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
             else -> emptyMap()
         }
         val record = Record(id, kind, if (kind == "health") true else isPrivate, fields); vm.repo.save(record)
-        if (kind == "task") Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record, vm.repo.session.value.name)
+        if (kind == "task") {
+            Reminders.schedule(vm.getApplication(), vm.repo.session.value.uid, record, vm.repo.session.value.name)
+            val check=Reminders.inspect(vm.getApplication(),vm.repo.session.value.uid,record,vm.repo.session.value.name)
+            vm.message.value="Tarefa salva. ${check.status}"
+        }
         onDismiss()
     } }, busy = busy) {
         Field("Título", title, { title = it }); Field("Data (dd/mm/aaaa)", date, { date = it }); Field(if (kind == "plan") "Próxima ação / descrição" else "Observações", note, { note = it }, singleLine = false)
@@ -815,6 +833,10 @@ private fun RecordEditor(kind: String, initial: Record?, vm: CentralViewModel, o
                 if(initial?.flag("needsReview") == true) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reviewed, { reviewed = it }, modifier = Modifier.semantics { contentDescription = "Confirmar os dados desta rotina" }); Text("Confirmar os dados desta rotina", style = MaterialTheme.typography.bodySmall) }
                 if(initial?.flag("needsTimeReview") == true) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(timeReviewed, { timeReviewed = it }, modifier = Modifier.semantics { contentDescription = "Confirmar o horário registrado" }); Text("Confirmar o horário registrado", style = MaterialTheme.typography.bodySmall) }
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(taskReminder && time.isNotBlank(), { taskReminder = it }, enabled = time.isNotBlank(), modifier = Modifier.semantics { contentDescription = "Permitir lembrete desta tarefa" }); Text(if(time.isBlank()) "Informe um horário para receber aviso desta tarefa." else "Permitir lembrete desta tarefa", style = MaterialTheme.typography.bodySmall) }
+                if(taskReminder && time.isNotBlank() && !AndroidInteractions.notificationsAllowed(notificationContext)) {
+                    Text("O Android ainda bloqueia a notificação. A tarefa será salva, mas o aviso não poderá aparecer enquanto o bloqueio continuar.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                    if(Build.VERSION.SDK_INT>=33) TextButton(onClick={requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)}) { Text("Autorizar avisos agora") }
+                }
             }
             "plan" -> { Choice("Horizonte", listOf("Curto prazo", "Médio prazo", "Longo prazo"), horizon, { horizon = it }); Field("Valor-alvo opcional (R$)", amount, { amount = it }) }
             "transaction" -> { Choice("Tipo", listOf("Receita", "Despesa"), type, { type = it }); Field("Valor (R$)", amount, { amount = it }); Choice("Categoria", listOf("Mercado", "Transporte", "Parcelas/dívidas", "Cuidados pessoais", "Casa", "Lucca", "Outros"), category, { category = it }) }
