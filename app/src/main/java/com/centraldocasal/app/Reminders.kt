@@ -58,6 +58,21 @@ object Reminders {
     private fun prefs(context: Context, uid: String) =
         context.getSharedPreferences("reminders_$uid", Context.MODE_PRIVATE)
 
+    /** Ask Android for permission when the first eligible reminder exists, not only in Settings. */
+    internal fun needsNotificationPermissionPrompt(
+        context: Context,
+        uid: String,
+        profileName: String,
+        records: List<Record>
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < 33 || uid.isBlank()) return false
+        val settings = prefs(context, uid)
+        if (!settings.getBoolean("enabled", true) || settings.getBoolean("notificationAsked", false)) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED) return false
+        return records.any { blockReason(it, profileName) == null }
+    }
+
     /** Create the task channel before the first alarm fires so the Android settings are usable. */
     private fun ensureChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java)

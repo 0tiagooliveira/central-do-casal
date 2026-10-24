@@ -33,6 +33,28 @@ class DetailedTaskNotificationTest {
         context.getSharedPreferences("reminders_local",Context.MODE_PRIVATE).edit()
             .putBoolean("enabled",true).putBoolean("quiet",false).commit()
     }
+    @Test fun eligibleTaskPromptsForMissingPermissionOnlyOnce() {
+        val task = Record("first-reminder", "task", fields = mapOf(
+            "title" to "Dar ração para a Mel",
+            "owner" to "Rhayra",
+            "date" to LocalDate.now().plusDays(1).toString(),
+            "time" to "22:00",
+            "repeat" to "Única"
+        ))
+        val settings = context.getSharedPreferences("reminders_local", Context.MODE_PRIVATE)
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertTrue(Reminders.needsNotificationPermissionPrompt(context, "local", "Rhayra", listOf(task)))
+        assertFalse(Reminders.needsNotificationPermissionPrompt(context, "local", "Tiago", listOf(task)))
+        assertFalse(Reminders.needsNotificationPermissionPrompt(context, "local", "Rhayra", emptyList()))
+        settings.edit().putBoolean("notificationAsked", true).commit()
+        assertFalse(Reminders.needsNotificationPermissionPrompt(context, "local", "Rhayra", listOf(task)))
+        settings.edit().remove("notificationAsked").putBoolean("enabled", false).commit()
+        assertFalse(Reminders.needsNotificationPermissionPrompt(context, "local", "Rhayra", listOf(task)))
+        settings.edit().putBoolean("enabled", true).commit()
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertFalse(Reminders.needsNotificationPermissionPrompt(context, "local", "Rhayra", listOf(task)))
+    }
+
     @Test fun notificationShowsTaskTitleTimeOwnerAndNote() {
         val task=Record("test-notice","task",fields=mapOf(
             "title" to "Reservar almoço de segunda",
