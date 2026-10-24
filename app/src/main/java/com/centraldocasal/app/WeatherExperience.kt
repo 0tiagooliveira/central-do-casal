@@ -165,7 +165,7 @@ internal fun contextualWeatherTips(weather: WeatherSnapshot, records: List<Recor
     } else if ((weather.rainChance ?: 0) >= 60) {
         val chance = weather.rainChance
         tips += if(next == null) "Hoje a chance máxima de chuva é ${chance}%. Confiram guarda-chuva e deslocamentos antes de sair."
-            else "Hoje a chance máxima de chuva é ${chance}%, mas não temos previsão para a hora de ${next.text("title")}. Confiram o trajeto."
+            else "Hoje a chance máxima de chuva é ${chance}%, mas não temos previsão específica para ${next.text("title")} às ${next.text("time")}. Confiram o trajeto."
     } else if (next != null) {
         tips += "A rotina tem ${next.text("title")} às ${next.text("time")}. A previsão de hoje indica máxima de ${weather.todayHigh.roundToInt()} °C."
     }
