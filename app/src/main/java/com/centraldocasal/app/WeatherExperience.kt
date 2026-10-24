@@ -15,6 +15,8 @@ import kotlinx.coroutines.isActive
 import com.centraldocasal.app.domain.Record
 import com.centraldocasal.app.domain.occurs
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -25,6 +27,9 @@ import kotlin.math.roundToInt
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+/** Local hours returned by Open-Meteo timezone=auto, never guessed from daily highs. */
+internal data class HourlyWeather(val time: LocalDateTime, val temperature: Double?, val rainChance: Int?)
 
 internal data class WeatherSnapshot(
     val temperature: Double,
@@ -38,7 +43,8 @@ internal data class WeatherSnapshot(
     val fetchedAtMillis: Long = System.currentTimeMillis(),
     val tomorrowHigh: Double? = null,
     val tomorrowLow: Double? = null,
-    val tomorrowRainChance: Int? = null
+    val tomorrowRainChance: Int? = null,
+    val hours: List<HourlyWeather> = emptyList()
 )
 
 internal fun weatherDescription(code: Int): String = when(code) {
@@ -82,6 +88,22 @@ internal object WeatherSource {
         fun nextDayChance(field: String): Int? = daily.optJSONArray(field)
             ?.takeIf { it.length() > 1 && !it.isNull(1) }
             ?.getInt(1)
+        val hours = root.optJSONObject("hourly")?.let { hourly ->
+            val times = hourly.optJSONArray("time")
+            val temperatures = hourly.optJSONArray("temperature_2m")
+            val rain = hourly.optJSONArray("precipitation_probability")
+            (0 until minOf(times?.length() ?: 0, 48)).mapNotNull { index ->
+                val time = runCatching { LocalDateTime.parse(times!!.getString(index)) }.getOrNull()
+                    ?: return@mapNotNull null
+                HourlyWeather(
+                    time = time,
+                    temperature = temperatures?.takeIf { index < it.length() && !it.isNull(index) }
+                        ?.optDouble(index)?.takeIf { !it.isNaN() },
+                    rainChance = rain?.takeIf { index < it.length() && !it.isNull(index) }
+                        ?.optInt(index)?.takeIf { it in 0..100 }
+                )
+            }
+        } ?: emptyList()
         return WeatherSnapshot(
             current.getDouble("temperature_2m"),
             current.getDouble("apparent_temperature"),
@@ -93,7 +115,8 @@ internal object WeatherSource {
             weatherDescription(current.getInt("weather_code")),
             tomorrowHigh = nextDayDouble("temperature_2m_max"),
             tomorrowLow = nextDayDouble("temperature_2m_min"),
-            tomorrowRainChance = nextDayChance("precipitation_probability_max")
+            tomorrowRainChance = nextDayChance("precipitation_probability_max"),
+            hours = hours
         )
     }
     suspend fun fetch(latitude:Double,longitude:Double):WeatherSnapshot = withContext(Dispatchers.IO) {
@@ -104,7 +127,7 @@ internal object WeatherSource {
         // A previsão não precisa de coordenadas de ~100 metros; usamos uma
         // célula de ~1 km, igual à chave do cache, minimizando dados enviados.
         val (lat,lon)=weatherRequestCoordinates(latitude,longitude)
-        val url=URL("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=auto")
+        val url=URL("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&hourly=temperature_2m,precipitation_probability&forecast_days=2&timezone=auto")
         val connection=url.openConnection() as HttpURLConnection
         try {
             connection.connectTimeout=7000
@@ -127,11 +150,22 @@ internal fun contextualWeatherTips(weather: WeatherSnapshot, records: List<Recor
             it.text("time").isNotBlank() && occurs(it, day)
     }.sortedBy { it.text("time") }
     val tips = mutableListOf<String>()
-    val next = tasks.firstOrNull()
-    if ((weather.rainChance ?: 0) >= 60) {
+    val next = tasks.firstOrNull { runCatching { LocalTime.parse(it.text("time")) }.isSuccess }
+    val hourForecast = next?.let { task ->
+        val time = runCatching { LocalTime.parse(task.text("time")) }.getOrNull()
+        weather.hours.firstOrNull { it.time.toLocalDate() == day && it.time.hour == time?.hour }
+    }
+    if(next != null && hourForecast?.rainChance != null) {
+        val chance = hourForecast.rainChance
+        tips += if(chance >= 60) {
+            "Para ${next.text("title")} às ${next.text("time")}, a previsão indica ${chance}% de chance de chuva nessa hora. Confiram o trajeto."
+        } else {
+            "Para ${next.text("title")} às ${next.text("time")}, a chance de chuva prevista nessa hora é ${chance}%."
+        }
+    } else if ((weather.rainChance ?: 0) >= 60) {
         val chance = weather.rainChance
         tips += if(next == null) "Hoje a chance máxima de chuva é ${chance}%. Confiram guarda-chuva e deslocamentos antes de sair."
-            else "Chuva possível hoje (máxima de ${chance}%). ${next.text("title")} está agendada às ${next.text("time")}; confiram o trajeto antes de sair."
+            else "Hoje a chance máxima de chuva é ${chance}%, mas não temos previsão para a hora de ${next.text("title")}. Confiram o trajeto."
     } else if (next != null) {
         tips += "A rotina tem ${next.text("title")} às ${next.text("time")}. A previsão de hoje indica máxima de ${weather.todayHigh.roundToInt()} °C."
     }
@@ -202,6 +236,18 @@ internal fun WeatherCard(requestLocationPermission: () -> Unit, profileUid: Stri
                 Text("Consultado às ${DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(data.fetchedAtMillis))}",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Sensação ${data.feelsLike.roundToInt()} °C · Mín. ${data.todayLow.roundToInt()} °C · Máx. ${data.todayHigh.roundToInt()} °C")
                 Text("Umidade ${data.humidity}% · Vento ${data.wind.roundToInt()} km/h" + (data.rainChance?.let { " · Chuva: até ${it}%" } ?: ""),style=MaterialTheme.typography.bodySmall)
+                if(data.hours.isNotEmpty()) {
+                    val upcoming=data.hours.filter { it.time.toLocalDate()==LocalDate.now() &&
+                        !it.time.isBefore(LocalDateTime.now().withMinute(0).withSecond(0).withNano(0)) }.take(3)
+                    if(upcoming.isNotEmpty()) {
+                        Text("Nas próximas horas",style=MaterialTheme.typography.labelLarge)
+                        Text(upcoming.joinToString(" · ") { h ->
+                            "${h.time.format(DateTimeFormatter.ofPattern("HH'h'"))}: " +
+                                (h.temperature?.let { "${it.roundToInt()} °C" } ?: "temperatura indisponível") +
+                                (h.rainChance?.let { " · chuva ${it}%" } ?: "")
+                        },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Text("Três dicas para a família",style=MaterialTheme.typography.titleSmall)
                 contextualWeatherTips(data,records,LocalDate.now()).forEachIndexed { index,tip ->
                     Text("${index + 1}. $tip", style = MaterialTheme.typography.bodySmall)
