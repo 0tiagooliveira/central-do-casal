@@ -39,4 +39,16 @@ class SosFreshLocationTest {
     }
 
 
+    @Test fun foregroundLocationRequiresCurrentConsentAndExpiresAfterOneHour() {
+        val start=100_000L
+        assertTrue(activeForegroundShareSession(true,start,true,true,start))
+        assertTrue(activeForegroundShareSession(true,start,true,true,start+59*60_000L))
+        assertFalse(activeForegroundShareSession(true,start,true,true,start+60*60_000L))
+        assertFalse(activeForegroundShareSession(true,start,true,true,start-1L))
+        assertFalse(activeForegroundShareSession(false,start,true,true,start+1000L))
+        assertFalse(activeForegroundShareSession(true,start,false,true,start+1000L))
+        assertFalse(activeForegroundShareSession(true,start,true,false,start+1000L))
+        assertFalse(activeForegroundShareSession(true,0L,true,true,start+1000L))
+    }
+
 }
