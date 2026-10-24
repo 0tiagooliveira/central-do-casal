@@ -15,7 +15,7 @@ import com.centraldocasal.app.domain.occurrenceId
 import java.time.LocalDate
 
 @Composable
-internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: () -> Unit, openSettings: () -> Unit) {
+internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: () -> Unit, openSettings: () -> Unit, openTask: (com.centraldocasal.app.domain.Record) -> Unit) {
     val context=LocalContext.current
     val today=LocalDate.now()
     val prefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
@@ -56,7 +56,7 @@ internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: 
                 Text(check.status,style=MaterialTheme.typography.bodySmall,
                     color=if(check.plannedAt == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick=openRoutine) { Text("Ver na rotina") }
+                    TextButton(onClick={ openTask(task) }) { Text("Abrir esta tarefa") }
                     if(check.plannedAt == null) TextButton(onClick=openSettings) { Text("Corrigir aviso") }
                 }
             }
