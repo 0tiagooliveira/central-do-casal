@@ -186,6 +186,13 @@ fun CentralApp(vm: CentralViewModel, export: () -> Unit, notify: () -> Unit, loc
         }
     }
     LaunchedEffect(session.uid, session.name, data.records) {
+        if (Reminders.needsNotificationPermissionPrompt(context, session.uid, session.name, data.records)) {
+            val settings = context.getSharedPreferences("reminders_${session.uid}", android.content.Context.MODE_PRIVATE)
+            // Persist before opening Android's dialog: a denial must not create a prompt loop.
+            if (settings.edit().putBoolean("notificationAsked", true).commit()) notify()
+        }
+    }
+    LaunchedEffect(session.uid, session.name, data.records) {
         if(session.uid.isNotBlank()) {
             val reminderPrefs=context.getSharedPreferences("reminders_${session.uid}",android.content.Context.MODE_PRIVATE)
             if(!reminderPrefs.contains("enabled")) reminderPrefs.edit().putBoolean("enabled",true).apply()
