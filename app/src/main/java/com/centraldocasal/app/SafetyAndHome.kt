@@ -305,6 +305,14 @@ internal fun smartHomeDevices(records: List<Record>, includeArchived: Boolean, r
         .filter { room == "Todos" || it.text("room", "Casa") == room }
         .sortedWith(compareBy({ it.text("room", "Casa") }, { it.text("title") }))
 
+/** Distingue estado inicial, falha e resultado real da consulta Bluetooth. */
+internal fun bluetoothInventoryMessage(loaded: Boolean, failed: Boolean, count: Int): String = when {
+    failed -> "Não foi possível consultar o Bluetooth. Verifique a permissão e tente novamente."
+    !loaded -> "Toque em Ver aparelhos Bluetooth pareados para consultar este celular."
+    count == 0 -> "Nenhum aparelho pareado neste celular. Faça o pareamento nas configurações Bluetooth."
+    else -> "$count aparelho(s) pareado(s) encontrado(s)."
+}
+
 @Composable
 internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Boolean, requestNearby: () -> Unit = {}) {
     val context=LocalContext.current
@@ -312,9 +320,16 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
     var editingDevice by remember { mutableStateOf<Record?>(null) }
     var showArchived by rememberSaveable { mutableStateOf(false) }
     var paired by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pairedLoaded by remember { mutableStateOf(false) }
+    var pairedError by remember { mutableStateOf(false) }
     val nearbyAllowed=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
     fun refreshPaired() {
-        paired=if(!nearbyAllowed) emptyList() else runCatching { BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }?.sorted().orEmpty() }.getOrDefault(emptyList())
+        if (!nearbyAllowed) { paired=emptyList(); pairedLoaded=false; pairedError=false; return }
+        runCatching {
+            BluetoothAdapter.getDefaultAdapter()?.bondedDevices
+                ?.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }?.distinct()?.sorted().orEmpty()
+        }.onSuccess { paired=it; pairedLoaded=true; pairedError=false }
+            .onFailure { paired=emptyList(); pairedLoaded=false; pairedError=true }
     }
     val devices = smartHomeDevices(data.records, showArchived)
     val activeCount = smartHomeDevices(data.records, false).size
@@ -342,7 +357,7 @@ internal fun HomeDevicesScreen(vm: CentralViewModel, data: DataState, busy: Bool
                 }
             }
             item { HomeAssistantPreviewCard() }
-            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text("Nenhum aparelho pareado encontrado. Use as configurações Bluetooth para parear primeiro.",style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
+            item { ElevatedCard(shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Text("Conectar aparelhos",style=MaterialTheme.typography.titleMedium);Text("Bluetooth mostra aparelhos já pareados neste celular. Nomes iguais não identificam aparelhos diferentes com segurança. Para Alexa, conclua o Wi‑Fi e a conta Amazon no app Alexa.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(!nearbyAllowed) Button(onClick=requestNearby,modifier=Modifier.fillMaxWidth()) { Text("Permitir aparelhos próximos") } else { OutlinedButton(onClick=::refreshPaired,modifier=Modifier.fillMaxWidth()) { Text("Ver aparelhos Bluetooth pareados") };if(paired.isEmpty()) Text(bluetoothInventoryMessage(pairedLoaded,pairedError,paired.size),style=MaterialTheme.typography.bodySmall) else paired.forEach { name -> OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(name,modifier=Modifier.weight(1f));TextButton(
     onClick={
         vm.action("Aparelho Bluetooth registrado") {
             require(!bluetoothNameRegistered(vm.repo.data.value.records, name)) {
