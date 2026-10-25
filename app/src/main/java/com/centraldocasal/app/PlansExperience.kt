@@ -35,12 +35,28 @@ private fun planScope(plan: Record) = if (plan.isPrivate) "Pessoal · só minha 
 private fun planSteps(plan:Record):List<Map<*,*>> = (plan.fields["steps"] as? List<*>)?.mapNotNull { it as? Map<*,*> } ?: emptyList()
 private fun chaptersComplete(plan:Record):Boolean = planSteps(plan).let { it.isNotEmpty() && it.all { step -> step["done"]==true } }
 
+/**
+ * Distinct tabs: "Próximos" are not started, "Ativos" have concrete progress,
+ * and "Concluídos" have all recorded stages confirmed.
+ */
+internal fun planMatchesStatus(plan: Record, records: List<Record>, status: String): Boolean {
+    if (plan.kind != "plan") return false
+    val complete = chaptersComplete(plan)
+    val started = planSteps(plan).any { it["done"] == true } ||
+        planProgress(plan,records).registered > 0L
+    return when(status) {
+        "Concluídos" -> complete
+        "Próximos" -> !complete && !started
+        else -> !complete && started
+    }
+}
+
 @Composable
 internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCreate: () -> Unit, onEdit: (Record) -> Unit, onContribution: (Record) -> Unit, onStartImported: ((Record) -> Unit)? = null, onOpenLinked: (String) -> Unit = {}) {
     var filter by rememberSaveable { mutableStateOf("Todas") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var showAreas by rememberSaveable { mutableStateOf(false) }
-    var status by rememberSaveable { mutableStateOf("Em andamento") }
+    var status by rememberSaveable { mutableStateOf("Ativos") }
     var choosingStatus by remember { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     val selected = data.records.firstOrNull { it.kind == "plan" && it.id == selectedId }
@@ -58,26 +74,81 @@ internal fun PlansExperienceScreen(vm: CentralViewModel, data: DataState, onCrea
         return
     }
     fun visible(record: Record) = when (filter) { "Pessoais" -> record.isPrivate; "Compartilhadas" -> !record.isPrivate; else -> true }
-    val plans = data.records.filter { it.kind == "plan" && visible(it) && when(status){"Em andamento"->!chaptersComplete(it);"Etapas concluídas"->chaptersComplete(it);else->true} }
+    val plans = data.records.filter { record ->
+        visible(record) && planMatchesStatus(record,data.records,status)
+    }
     val converted=data.records.filter { it.kind=="plan" }.map { it.text("sourcePlanId") }.toSet()
     val imported = data.records.filter { it.kind == "importedPlan" && it.id !in converted && visible(it) }
     val areas = data.records.filter { it.kind == "lifeArea" && visible(it) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text("Planos", style=MaterialTheme.typography.titleLarge, fontWeight=FontWeight.SemiBold, modifier=Modifier.weight(1f)); OutlinedButton(onClick=onCreate, enabled=!busy, shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=14.dp, vertical=8.dp)) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Novo plano") } } }
-        item { Column(verticalArrangement=Arrangement.spacedBy(5.dp)) { Text("Qual é o próximo passo?",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold); Text("Uma ideia. Pequenos passos. Algo nosso.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
-        item { ChoiceStrip(listOf("Todas","Compartilhadas","Pessoais"),filter,{filter=it}) }
-        item {Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${plans.size} planos",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.weight(1f));Box{TextButton(onClick={choosingStatus=true}){Text(status);Icon(Icons.Default.KeyboardArrowDown,null,Modifier.size(18.dp))};DropdownMenu(expanded=choosingStatus,onDismissRequest={choosingStatus=false}){listOf("Em andamento","Etapas concluídas","Todos").forEach {option->DropdownMenuItem(text={Text(option)},onClick={status=option;choosingStatus=false})}}}} }
-        items(plans, key = { it.id }) { plan -> PlanListCard(plan, planProgress(plan, data.records)) { selectedId = plan.id } }
-        if (plans.isEmpty()) item {
-            Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(if(status=="Etapas concluídas")"Os capítulos concluídos vão aparecer aqui"else"Um plano começa com uma ideia",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text(if(status=="Etapas concluídas")"Este espaço reúne planos com todas as etapas confirmadas."else"Escolha um próximo passo e acompanhe no seu ritmo.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant);if(status!="Etapas concluídas")TextButton(onClick=onCreate,enabled=!busy){Text("Criar um plano")}}
+        item { Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { ReferenceHeading("Planos",modifier=Modifier.weight(1f)); OutlinedButton(onClick=onCreate,enabled=!busy) { Icon(Icons.Default.Add,null,Modifier.size(17.dp));Spacer(Modifier.width(4.dp));Text("Novo plano") } } }
+        item { ReferenceTabs(listOf("Ativos","Próximos","Concluídos"),status) { status=it } }
+        item { ReferenceTabs(listOf("Todas","Compartilhadas","Pessoais"),filter) { filter=it } }
+        item { Text("${plans.size} planos em $status",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        val featured=plans.firstOrNull { planSteps(it).any { step -> step["done"] == true } } ?: plans.firstOrNull()
+        if(featured!=null) item(key="featured-plan-${featured.id}") {
+            FeaturedPlanReference(featured,planProgress(featured,data.records)) { selectedId=featured.id }
         }
-        if (imported.isNotEmpty()&&status!="Etapas concluídas") item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("Ideias que já estavam no papel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Referências importadas. Preferências e decisões ainda em aberto.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-        items(if(status=="Etapas concluídas")emptyList() else imported, key = { it.id }) { reference ->
+        items(plans.filter { it.id!=featured?.id },key={it.id}) { plan ->
+            PlanListCard(plan,planProgress(plan,data.records)) { selectedId=plan.id }
+        }
+        if (plans.isEmpty()) item {
+            Column(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(if(status=="Concluídos")"Os capítulos concluídos vão aparecer aqui"else"Um plano começa com uma ideia",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text(if(status=="Concluídos")"Este espaço reúne planos com todas as etapas confirmadas."else"Escolha um próximo passo e acompanhe no seu ritmo.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant);if(status!="Concluídos")TextButton(onClick=onCreate,enabled=!busy){Text("Criar um plano")}}
+        }
+        if (imported.isNotEmpty()&&status!="Concluídos") item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("Ideias que já estavam no papel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Referências importadas. Preferências e decisões ainda em aberto.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        items(if(status=="Concluídos")emptyList() else imported, key = { it.id }) { reference ->
             OutlinedCard(onClick={selectedId=reference.id},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(22.dp)){Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Star,null,tint=MaterialTheme.colorScheme.primary);Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){Text(reference.text("title"),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text("Ideia em aberto · ver referência",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)};Icon(Icons.Default.KeyboardArrowRight,"Abrir referência do projeto")} }
         }
         if (areas.isNotEmpty()) item { TextButton(onClick = { showAreas = !showAreas }) { Icon(Icons.Default.Favorite, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (showAreas) "Recolher áreas da vida" else "Explorar áreas da vida") } }
         if (showAreas) items(areas, key = { it.id }) { area ->
             OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(area.text("title"), style = MaterialTheme.typography.titleMedium); Text("${area.text("group")} · ${area.text("status")}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(area.text("note"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        }
+    }
+}
+
+@Composable
+private fun FeaturedPlanReference(plan:Record,progress:PlanProgress,onOpen:()->Unit) {
+    val steps=planSteps(plan)
+    val completed=steps.count { it["done"]==true }
+    Surface(onClick=onOpen,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),
+        color=MaterialTheme.colorScheme.surface,border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+        Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.fillMaxWidth().height(128.dp)
+                .background(Brush.linearGradient(listOf(
+                    MaterialTheme.colorScheme.primaryContainer,MaterialTheme.colorScheme.surfaceContainerLow))),
+                contentAlignment=Alignment.CenterStart) {
+                Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Surface(shape=RoundedCornerShape(40.dp),color=MaterialTheme.colorScheme.surface.copy(alpha=.9f)) {
+                        Text(if(steps.isNotEmpty() && completed==steps.size)"✦ Concluído" else "✦ Em andamento",Modifier.padding(horizontal=12.dp,vertical=6.dp),
+                            style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                    }
+                    Text(plan.text("title"),style=MaterialTheme.typography.headlineSmall,
+                        fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            Column(Modifier.padding(start=16.dp,end=16.dp,bottom=16.dp),
+                verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(if(steps.isEmpty()) "Próximos passos a definir"
+                        else "$completed de ${steps.size} etapas",
+                        modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(steps.isNotEmpty()) Text("${completed*100/steps.size}%",
+                        color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+                }
+                ReferenceProgress(if(steps.isEmpty())0f else completed.toFloat()/steps.size)
+                steps.take(4).forEach { step ->
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Icon(if(step["done"]==true) Icons.Default.Check else Icons.Default.Star,null,
+                            tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text((step["title"] as? String).orEmpty(),modifier=Modifier.weight(1f),
+                            style=MaterialTheme.typography.bodyMedium,maxLines=2)
+                    }
+                }
+                Text("Toque para ver e registrar as etapas",
+                    style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
@@ -104,7 +175,7 @@ private fun PlanListCard(plan: Record, progress: PlanProgress, onOpen: () -> Uni
 
 @Composable
 private fun PlanProgressBar(value: Float) {
-    val progress by animateFloatAsState(value, tween(if (LocalExperience.current.motion) 400 else 0), label = "Progresso registrado")
+    val progress by animateFloatAsState(value, tween(centralMotionDurationMillis(MotionKind.PROGRESS)), label = "Progresso registrado")
     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp), gapSize = 0.dp, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
 }
 

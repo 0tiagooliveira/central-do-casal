@@ -50,7 +50,7 @@ class NativeFlowsTest {
     @After fun closeOwnedRepository() { if (::vm.isInitialized) vm.repo.close() }
 
     private fun scrollTo(matcher: SemanticsMatcher) {
-        compose.onNode(hasScrollAction()).performScrollToNode(matcher)
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(matcher)
     }
 
     private fun capture(name: String) {
@@ -107,8 +107,7 @@ class NativeFlowsTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
         compose.onNodeWithText("Detalhes do plano").assertDoesNotExist()
-        compose.onNodeWithText("Em andamento").performClick()
-        compose.onNodeWithText("Todos").performClick()
+        compose.onNodeWithText("Concluídos").performClick()
         scrollTo(hasText("Nossa viagem fixture"))
         compose.onNodeWithText("Nossa viagem fixture").assertIsDisplayed()
         scrollTo(hasText("Nossa viagem fixture"))
@@ -139,8 +138,7 @@ class NativeFlowsTest {
             assertEquals(persistedRecords, org.json.JSONObject(restarted.export()).getJSONArray("records").toString())
         } finally { restarted.close() }
         // The fixture remounts the list after the editor; show completed plans again.
-        compose.onNodeWithText("Em andamento").performClick()
-        compose.onNodeWithText("Todos").performClick()
+        compose.onNodeWithText("Concluídos").performClick()
         scrollTo(hasText("Nossa próxima viagem fixture"))
         compose.onNodeWithText("Nossa próxima viagem fixture").performClick()
         compose.onNodeWithText("Valor registrado por vocês").assertIsDisplayed()

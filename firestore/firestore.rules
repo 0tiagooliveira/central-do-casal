@@ -39,8 +39,8 @@ service cloud.firestore {
       return event.keys().hasAll(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
         && event.keys().hasOnly(['kind','private','careType','subject','actorUid','actorName','occurredAt','date','updatedBy','updatedAt'])
         && event.kind == 'careEvent'
-        && event.careType in ['diaper','bath','petFood']
-        && ((event.careType in ['diaper','bath'] && event.subject == 'Lucca')
+        && event.careType in ['diaper','bottle','bath','petFood']
+        && ((event.careType in ['diaper','bottle','bath'] && event.subject == 'Lucca')
           || (event.careType == 'petFood' && event.subject == 'Mel'))
         && event.actorUid == request.auth.uid
         && event.actorName is string && event.actorName.size() <= 100
@@ -127,6 +127,20 @@ service cloud.firestore {
       }
       match /records/{rid} {
         allow read: if member(hid);
+        // Imported catalogue stays immutable, except for user-maintained inventory.
+        function validCatalogInventoryUpdate() {
+          let next = request.resource.data;
+          let changed = next.diff(resource.data).affectedKeys();
+          return resource.data.kind == 'catalogItem' && resource.data.private == false
+            && next.kind == 'catalogItem' && next.private == false
+            && changed.hasOnly(['stockKnown','stockMilli','storageRoom','hasAtHome','updatedBy','updatedAt'])
+            && next.stockKnown is bool
+            && next.stockMilli is int && next.stockMilli >= 0 && next.stockMilli <= 100000000
+            && (next.stockKnown || next.stockMilli == 0)
+            && next.storageRoom is string && next.storageRoom.size() <= 60
+            && next.hasAtHome is bool
+            && next.updatedBy == request.auth.uid && next.updatedAt == request.time;
+        }
         function newQuest() {
           return request.resource.data.kind == 'quest'
             && request.resource.data.creatorUid == request.auth.uid
@@ -160,7 +174,7 @@ service cloud.firestore {
         allow create: if member(hid) && ((validRecord(false) && validSafetyIdentity() && (request.resource.data.kind != 'quest' || newQuest()) && (request.resource.data.kind != 'careEvent' || validCareEvent())) || receipt());
         allow update: if member(hid) && ((validRecord(false) && validSafetyIdentity() && validSafetyUpdateOwner()
           && request.resource.data.kind == resource.data.kind
-          && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse());
+          && !(resource.data.kind in ['receipt','contribution','quest','safetyAlert','careEvent'])) || questResponse() || validCatalogInventoryUpdate());
         allow delete: if member(hid) && (resource.data.kind in ['task','occurrence','plan','moment','transaction']
           || (resource.data.kind == 'careEvent' && resource.data.actorUid == request.auth.uid)
           || (resource.data.kind == 'safetyCheckIn' && resource.data.ownerUid == request.auth.uid));
