@@ -56,8 +56,7 @@ internal fun SophiaReferenceScreen(
                 }
             }
         }
-        item { WeatherCard(requestLocationPermission,session.uid,session.name,
-            data.records,requestNotificationsPermission) }
+        item { WeatherCard(requestLocationPermission,session.uid,data.records) }
         item {
             Text("Seu dia hoje",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
             ReferenceCard(Modifier.fillMaxWidth()) {
