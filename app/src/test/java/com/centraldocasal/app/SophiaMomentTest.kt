@@ -24,7 +24,7 @@ class SophiaMomentTest {
         temperature = temp, feelsLike = temp, humidity = 55, wind = 5.0,
         todayHigh = 26.0, todayLow = 18.0, rainChance = 80, description = "Nublado",
         fetchedAtMillis = System.currentTimeMillis(),
-        hours = events.map { WeatherHour(it.first, temp, it.second, 61) }
+        hours = events.map { HourlyWeather(it.first, temp, it.second) }
     )
 
     @Test fun differentUsersNeverReceivePartnersAssignedTasks() {
