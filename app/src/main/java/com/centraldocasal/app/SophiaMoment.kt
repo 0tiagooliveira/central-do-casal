@@ -83,6 +83,7 @@ internal object SophiaMomentPlanner {
                     val outdoor = listOf("buscar", "faculdade", "ponto", "trabalho", "sair", "passeio", "mercado", "creche", "roçar", "mel", "caminhar").any { it in text }
                     val babyCare = ("lucca" in text && ("banho" in text || "roupa" in text))
                     val rain = nearest.rainChance
+                    val temperature = nearest.temperature ?: return@mapNotNull null
                     val lead: Long
                     val priority: Int
                     val message: String
@@ -92,15 +93,15 @@ internal object SophiaMomentPlanner {
                             priority = 100 + rain
                             message = "Há previsão de $rain% de chuva perto de ${time}. Prepare-se antes de $title."
                         }
-                        nearest.temperature <= 14 && (outdoor || babyCare) -> {
+                        temperature <= 14 && (outdoor || babyCare) -> {
                             lead = 60
                             priority = 85
-                            message = "A previsão indica cerca de ${nearest.temperature.toInt()}°C perto de ${time}. Vale se preparar para $title."
+                            message = "A previsão indica cerca de ${temperature.toInt()}°C perto de ${time}. Vale se preparar para $title."
                         }
-                        nearest.temperature >= 30 && outdoor -> {
+                        temperature >= 30 && outdoor -> {
                             lead = 60
                             priority = 80
-                            message = "Pode fazer cerca de ${nearest.temperature.toInt()}°C perto de ${time}. Planeje água e conforto para $title."
+                            message = "Pode fazer cerca de ${temperature.toInt()}°C perto de ${time}. Planeje água e conforto para $title."
                         }
                         else -> return@mapNotNull null
                     }
@@ -215,7 +216,7 @@ internal object SophiaMoments {
             .put("hours", JSONArray().apply {
                 snapshot.hours.forEach { hour ->
                     put(JSONObject().put("at", hour.time.toString()).put("temp", hour.temperature)
-                        .put("rain", hour.rainChance ?: JSONObject.NULL).put("code", hour.code ?: JSONObject.NULL))
+                        .put("rain", hour.rainChance ?: JSONObject.NULL))
                 }
             })
         prefs(context, uid).edit().putString("forecast", json.toString()).apply()
@@ -234,9 +235,8 @@ internal object SophiaMoments {
             rainChance = null, description = "", fetchedAtMillis = at,
             hours = (0 until hours.length()).mapNotNull { i ->
                 runCatching { val h = hours.getJSONObject(i)
-                    WeatherHour(LocalDateTime.parse(h.getString("at")), h.getDouble("temp"),
-                        if (h.isNull("rain")) null else h.getInt("rain"),
-                        if (h.isNull("code")) null else h.getInt("code")) }.getOrNull()
+                    HourlyWeather(LocalDateTime.parse(h.getString("at")), h.getDouble("temp"),
+                        if (h.isNull("rain")) null else h.getInt("rain")) }.getOrNull()
             }
         )
     }.getOrNull()
