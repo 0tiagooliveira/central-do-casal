@@ -1,5 +1,15 @@
 # Central do Casal Web · Mercado, catálogo e modo de compras
 
+## Preços por embalagem, volume, peso e quantidade de peças
+
+O catálogo agora interpreta apresentações **somente quando a informação consta na descrição fiscal, no nome do SKU ou na unidade da nota**. Agrupa cada série por **SKU + apresentação + unidade fiscal**, tanto dentro de um mesmo SKU quanto entre as variantes de uma família. Por exemplo: amaciante de 1 L, 1,5 L e 5 L, hambúrguer avulso, caixa com quantidade de peças documentada e multipacks "6x1 L".
+
+Cada apresentação mostra o valor unitário na nota e, quando seguro, o preço equivalente por **litro, quilo ou peça**. Oferece gráficos separados, menor, média e maior preço, comparação com a compra anterior, loja, data, quantidade registrada, descrição original e valor estimado da linha após rateio (quando existente). A comparação por conteúdo declarado apresenta valores recentes de diferentes embalagens em tabela separada, sem unir curvas de apresentações distintas.
+
+Quando uma nota contém apenas "UN" ou "CX" e não informa tamanho nem número de peças, **a informação não é inventada**. A variação de preço dessas linhas é marcada como inconclusiva, evitando conclusões como "subiu 69%" ao misturar frascos diferentes. Uma caixa sem quantidade explícita não recebe preço por peça. Uma descrição "caixa 12 un, 90 g" não vira "1,08 kg" automaticamente; somente multiplicadores explícitos como "12x90g" permitem esse cálculo. Descrições fiscais diferentes dentro de uma mesma apresentação recebem aviso de revisão.
+
+Nos detalhes da apresentação há um botão **+ Adicionar esta apresentação à lista**. Essa ação usa uma transação Firestore e preserva o vínculo com o SKU original, a unidade fiscal e o preço histórico mais recente como **estimativa**, não como preço atual. O nome da entrada diferencia frasco de 5 L, 1,5 L, caixa e avulso. Os dados originais das notas e as associações confirmadas não são alterados.
+
 ## Famílias de produtos e adição rápida
 
 O catálogo web mostra grupos por família na ficha de cada item-base. Exemplo: **Açúcar** apresenta históricos de açúcar cristal, mascavo e refinado na mesma ficha, com **gráficos separados por SKU/variação**, para não comparar uma embalagem de 1 kg com outra de 5 kg como se fossem o mesmo item. O gráfico principal destaca uma série individual com registros reais. A mesma lógica de família por nome específico e evidências importadas é aplicada a outros produtos da base quando identificáveis.
