@@ -1,5 +1,6 @@
 import {shoppingView,installShoppingUI,getShoppingRoutePrefs,restoreShoppingRoutePrefs} from "./shopping-ui.js";
 import {parseAppRoute,writeAppRoute} from "./navigation.js";
+import {captureViewPosition,saveViewPosition,loadViewPosition,restoreViewPosition} from "./scroll-position.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -18,21 +19,33 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const tabs = [["Hoje","☀️"],["Compras","🛒"],["Rotina","✓"],["Planos","◈"],["Nós","♡"]];
-const initialRoute=parseAppRoute(window.location.hash);
+const initialHash=(()=>{
+  if(window.location.hash)return window.location.hash;
+  try{return sessionStorage.getItem("cdc:last-route")||"";}catch{return "";}
+})();
+if(!window.location.hash&&initialHash)window.history.replaceState(null,"",initialHash);
+const initialRoute=parseAppRoute(initialHash);
 restoreShoppingRoutePrefs(initialRoute);
 const state = { tab:initialRoute.tab, market:initialRoute.market, profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
-const initialScroll=(()=>{try{return Math.max(0,Number(sessionStorage.getItem("cdc-scroll:"+window.location.hash))||0);}catch{return 0;}})();
-let scrollRestored=false;
+const initialPosition=loadViewPosition(window.location.hash);
+const startingHash=window.location.hash;
+let scrollRestored=false,restoreScheduled=false,lastRenderedHash="",pendingScrollSave=null;
 let firstHouseData={shared:false,baskets:false};
 const routeState=()=>({tab:state.tab,market:state.market,...getShoppingRoutePrefs()});
 function saveScroll(){
-  try{sessionStorage.setItem("cdc-scroll:"+window.location.hash,String(window.scrollY));}catch{}
+  if(!scrollRestored||state.tab!=="Compras")return;
+  saveViewPosition(window.location.hash,captureViewPosition(document.getElementById("content")));
 }
 function rememberRoute(){saveScroll();writeAppRoute(routeState());}
 function restoreScrollAfterRefresh(){
-  if(scrollRestored||!state.uid||!state.household||!firstHouseData.shared||!firstHouseData.baskets)return;
-  scrollRestored=true;
-  if(initialScroll>0)requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo({top:initialScroll,behavior:"auto"})));
+  if(scrollRestored||restoreScheduled||!state.uid||!state.household||
+     !firstHouseData.shared||!firstHouseData.baskets)return;
+  restoreScheduled=true;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(window.location.hash===startingHash)
+      restoreViewPosition(initialPosition,document.getElementById("content"));
+    scrollRestored=true;restoreScheduled=false;
+  }));
 }
 let listeners = [];
 let houseListeners = [];
@@ -87,8 +100,18 @@ function renderNos(){
   return `<section class="welcome"><div class="eyebrow">NÓS</div><h2>O que construímos juntos. ♡</h2><p>Momentos compartilhados e os pequenos acontecimentos da vida.</p></section><div class="card-grid">${card("Momentos",String(moments.length),"registros compartilhados ou pessoais")}${card("Cuidados",String(events.length),"eventos registrados")}${card("Nosso espaço",state.household?"Conectado":"Não vinculado","Firebase")}</div><h2 class="section-heading">Memórias</h2><div class="row-list">${moments.length?moments.slice(0,30).map(m=>row(m.title||"Nosso momento",m.date||m.description||"Memória registrada")).join(""):empty("Nenhum momento disponível na nuvem.")}</div>`;
 }
 const views={"Hoje":renderHoje,"Compras":renderCompras,"Rotina":renderRotina,"Planos":renderPlanos,"Nós":renderNos};
+let renderQueued=false;
+function scheduleRender(){
+  if(renderQueued)return;
+  renderQueued=true;
+  requestAnimationFrame(()=>{renderQueued=false;render();});
+}
 function render(){
   if(!$("app")||$("app").hidden) return;
+  const currentHash=window.location.hash;
+  const preserved=(scrollRestored&&currentHash===lastRenderedHash&&state.tab==="Compras")?
+    captureViewPosition($("content")):null;
+  lastRenderedHash=currentHash;
   $("page-title").textContent=state.tab;
   $("profile-name").textContent=safeName();
   $("avatar").textContent=safeName().slice(0,1).toUpperCase();
@@ -98,6 +121,9 @@ function render(){
   $("warning").hidden=!state.error && !!state.household;
   $("warning").textContent=state.error||"Nenhum espaço compartilhado associado a esta conta. A versão web só exibe dados já salvos no Firebase.";
   $("content").innerHTML=views[state.tab]();
+  if(preserved)requestAnimationFrame(()=>{
+    if(window.location.hash===currentHash)restoreViewPosition(preserved,$("content"));
+  });
   document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
     state.tab=b.dataset.tab;
     rememberRoute();
@@ -117,12 +143,17 @@ function clearListeners(){
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
 }
 function watch(reference, callback, source, group="global"){
-  const stop=onSnapshot(reference,{includeMetadataChanges:true},snapshot=>{
-    if(state.uid!==auth.currentUser?.uid) return;
+  // Sem includeMetadataChanges: mudanças só de metadados não precisam
+  // reconstruir todos os cards. Agrupa os snapshots em um único frame.
+  const stop=onSnapshot(reference,snapshot=>{
+    if(state.uid!==auth.currentUser?.uid)return;
     callback(snapshot);
     state.sync=snapshot.metadata.fromCache?"Exibindo cache · conferindo conexão":"Dados recebidos do Firebase";
-    render();
-  },error=>{state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";state.sync="Conexão precisa de atenção";render();});
+    scheduleRender();
+  },error=>{
+    state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";
+    state.sync="Conexão precisa de atenção";scheduleRender();
+  });
   if(group==="house")houseListeners.push(stop);else listeners.push(stop);
 }
 function connectHousehold(householdId){
@@ -138,27 +169,14 @@ function connectHousehold(householdId){
 }
 installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
 
-// Nunca mostrar o formulário enquanto o Firebase ainda verifica a sessão.
-// Persistência local mantém o usuário logado mesmo após recarregar/fechar o navegador;
-// se estiver bloqueada, tenta a persistência da aba atual.
-let persistenceWarning="";
-const persistenceReady=setPersistence(auth,browserLocalPersistence).catch(async()=>{
-  try {
-    await setPersistence(auth,browserSessionPersistence);
-    persistenceWarning="Este navegador só permite manter a sessão durante a aba atual.";
-  }catch{
-    persistenceWarning="Este navegador bloqueou o armazenamento da sessão; o login pode não sobreviver ao recarregamento.";
-  }
-});
-persistenceReady.then(()=>onAuthStateChanged(auth,user=>{
+// getAuth já recupera a persistência local ao iniciar no navegador.
+// Não mover a sessão entre storages em todo refresh: isso atrasava o login.
+onAuthStateChanged(auth,user=>{
   clearListeners();
   $("session-loading").hidden=true;
   if(!user){
     state.uid=""; $("login").hidden=false; $("app").hidden=true;
-    if(persistenceWarning){
-      $("login-error").textContent=persistenceWarning;
-      $("login-error").hidden=false;
-    }
+
     return;
   }
   state.uid=user.uid;
@@ -179,10 +197,19 @@ persistenceReady.then(()=>onAuthStateChanged(auth,user=>{
   $("login").hidden=false;
   $("login-error").textContent="Não foi possível restaurar a sessão ("+(error?.code||"erro de autenticação")+").";
   $("login-error").hidden=false;
-}));
+});
 window.addEventListener("pagehide",saveScroll);
+window.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="hidden")saveScroll();
+});
+window.addEventListener("scroll",()=>{
+  if(!scrollRestored||state.tab!=="Compras")return;
+  if(pendingScrollSave!==null)clearTimeout(pendingScrollSave);
+  pendingScrollSave=setTimeout(()=>{pendingScrollSave=null;saveScroll();},160);
+},{passive:true});
 function applyRouteFromUrl(){
   const route=parseAppRoute(window.location.hash);
+  try{sessionStorage.setItem("cdc:last-route",window.location.hash);}catch{}
   state.tab=route.tab;
   state.market=route.market;
   restoreShoppingRoutePrefs(route);
@@ -194,7 +221,12 @@ $("login-form").addEventListener("submit",async e=>{
   e.preventDefault();
   $("login-error").hidden=true;
   $("login-button").disabled=true; $("login-button").textContent="Entrando…";
-  try{await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value);}
+  try{
+    // Alterar persistência apenas quando a pessoa faz login, nunca no refresh.
+    try{await setPersistence(auth,browserLocalPersistence);}
+    catch{await setPersistence(auth,browserSessionPersistence);}
+    await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value);
+  }
   catch(err){$("login-error").textContent=err?.code==="auth/invalid-credential"?"E-mail ou senha inválidos.": "Falha no login ("+(err?.code||"erro desconhecido")+").";$("login-error").hidden=false;}
   finally{$("login-button").disabled=false;$("login-button").textContent="Entrar";$("password").value="";}
 });
