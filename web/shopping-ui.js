@@ -185,17 +185,17 @@ export function installShoppingUI({root,db,auth,getState,render}) {
   }
   function editor(item=null,buy=false,seed=null){
     const market=getState().market;
-    const e=item||seed||{title:"",unit:"un",plannedMilli:1000,estimated:0,bought:false,group:"Essenciais",estimateKnown:true};
+    const e=item||seed||{title:"",unit:"un",plannedMilli:1000,estimated:0,bought:false,group:"Essenciais",estimateKnown:false};
     const purchased=buy||e.bought;
     dlg.innerHTML=`<form id="shopping-editor" method="dialog">
     <div class="dialog-header"><h2>${item?"Editar produto":"Novo produto"}</h2><button type="button" class="item-btn" data-cancel>Fechar</button></div>
     <label>Nome do produto<input required maxlength="200" name="title" autocomplete="off" value="${clean(e.title)}" placeholder="Ex.: Arroz integral"></label>
     <div class="dialog-grid"><label>Quantidade<input required name="qty" inputmode="decimal" value="${quantity(e.plannedMilli)}"></label>
       <label>Unidade<select name="unit" required><option value="" disabled ${!UNITS.includes(e.unit)?"selected":""}>Escolher unidade</option>${UNITS.map(u=>`<option value="${u}" ${e.unit===u?"selected":""}>${u}</option>`).join("")}</select></label></div>
-    <div class="dialog-grid"><label>Preço estimado (R$)<input name="estimated" inputmode="decimal" value="${e.estimateKnown===false?"":inputMoney(e.estimated)}"></label>
+    <div class="dialog-grid"><label>Preço estimado (R$)<input name="estimated" inputmode="decimal" value="${e.estimateKnown===false||!Number.isSafeInteger(e.estimated)||e.estimated===0?"":inputMoney(e.estimated)}" placeholder="Ex.: 12,90"></label>
       <label>Grupo<input name="group" maxlength="60" value="${clean(e.group||"Essenciais")}"></label></div>
     <label class="check-line"><input type="checkbox" name="bought" ${purchased?"checked":""}> Já comprei este produto</label>
-    <label class="actual-field" ${purchased?"":"hidden"}>Preço real por unidade (R$)<input name="actual" inputmode="decimal" value="${e.actual==null?"":inputMoney(e.actual)}" placeholder="Ex.: 12,90"></label>
+    <label class="actual-field" ${purchased?"":"hidden"}>Preço real por unidade (R$)<input name="actual" inputmode="decimal" value="${e.actual==null||(!item&&e.actual===0)?"":inputMoney(e.actual)}" placeholder="Ex.: 12,90"></label>
     <div class="dialog-actions">${item?`<button class="item-btn danger" type="button" data-remove>Excluir produto</button>`:""}<button class="primary-btn" type="submit">Salvar produto</button></div>
     <div class="info-line">A mesma lista é usada no Android. Não alteramos os produtos duplicados sem sua confirmação.</div></form>`;
     dlg.showModal();
