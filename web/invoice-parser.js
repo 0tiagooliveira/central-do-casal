@@ -52,7 +52,8 @@ export function parseManualInvoiceLines(input) {
     const [name,qty,unit,money]=parts;
     const quantity=Number(qty.replace(",","."));
     if(!name||!Number.isFinite(quantity)||quantity<=0||!unit)throw new Error("Confira os dados na linha "+(index+1)+".");
-    const priceText=money.replace(/^R\$\s*/,"").replace(/\./g,"").replace(",",".");
+    const cleaned=money.replace(/^R\$\s*/,"").replace(/\s/g,"");
+    const priceText=cleaned.includes(",")?cleaned.replace(/\./g,"").replace(",","."):cleaned;
     const price=Number(priceText);
     if(!Number.isFinite(price)||price<0||price>1000000)throw new Error("Preço inválido na linha "+(index+1)+".");
     const unitCents=Math.round(price*100),quantityMilli=Math.round(quantity*1000);
