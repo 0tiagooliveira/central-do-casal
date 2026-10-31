@@ -88,3 +88,16 @@
 .market-row-foot .primary-btn{padding:10px 12px;font-size:.76rem}
 @media(max-width:900px){.catalog-grid{grid-template-columns:1fr}.market-sections{grid-template-columns:1fr}.market-mode-head{flex-direction:column;align-items:stretch}.market-spent{text-align:left}}
 @media(max-width:540px){.catalog-filters{grid-template-columns:1fr}.catalog-card-top{align-items:center}.catalog-price-row strong{font-size:1.08rem}.market-row-foot{align-items:stretch}.market-row-foot .primary-btn{width:100%}.shop-mode-tabs{margin-bottom:17px}.market-row-buttons{width:100%}.market-row-buttons .item-btn{flex:1}.shopping-actions{justify-content:space-between}.qty-controls{margin-right:auto}.shop-tab{padding:10px 12px}}
+
+/* Recuperação auditável dos históricos por item-base */
+.catalog-reference{font-size:.76rem;color:#55729b;background:#edf4fe;border-radius:10px;padding:9px 11px;line-height:1.5}
+.catalog-evidence{font-size:.73rem;color:#926f39;margin:0;line-height:1.5}
+.price-candidates{border:1px solid #d7e6fa;background:#f7fbff;border-radius:11px;padding:11px 12px;margin-top:3px}
+.price-candidates summary{cursor:pointer;color:#265a9a;font-size:.77rem;font-weight:750;line-height:1.5}
+.price-candidate-list{display:grid;gap:11px;margin-top:13px}
+.price-candidate{border-top:1px solid #e3edf8;padding-top:11px;display:flex;justify-content:space-between;align-items:start;gap:11px}
+.price-candidate>div{display:grid;gap:5px;min-width:0}
+.price-candidate strong{font-size:.82rem;color:#28486c;overflow-wrap:anywhere}
+.price-candidate small{font-size:.7rem;color:#8192a6;line-height:1.35}
+.price-candidate .item-btn{font-size:.71rem;white-space:normal;max-width:145px;line-height:1.35}
+@media(max-width:520px){.price-candidate{flex-direction:column}.price-candidate .item-btn{max-width:none;width:100%}}
