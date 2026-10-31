@@ -10,7 +10,7 @@ export function parsePresentation(title,unit="un") {
   const pack=/\b(?:pct\.?|pacote|pack|fardo)\b/.test(s)||["pct","pacote"].includes(u);
   const multipack=s.match(/\b(\d{1,3})\s*[x×]\s*(\d{1,4}(?:[.,]\d{1,3})?)\s*(ml|l|lt|lts|kg|g)\b/);
   const count=s.match(/\b(?:c\/|com\s+|caixa\s+(?:com\s+)?|cx\.?\s+(?:c\/\s*)?|pacote\s+(?:com\s+)?|pct\.?\s+(?:c\/\s*)?|pack\s+(?:com\s+)?)\s*(\d{1,3})\s*(?:un(?:idades?)?|und|unid|pcs?|pecas?|hamburgueres?|hamburguer|hamburgueres?)\b/);
-  const sized=s.match(/\b(\d{1,4}(?:[.,]\d{1,3})?)\s*(ml|lts?|litros?|kg|quilos?|gramas?|gr|g)\b/);
+  const sized=s.match(/\b(\d{1,4}(?:[.,]\d{1,3})?)\s*(ml|l|lts?|litros?|kg|quilos?|gramas?|gr|g)\b/);
   function dimension(value,measure) {
     if(!valid(value))return null;
     if(/^(ml)$/.test(measure))return {kind:"volume",amount:value/1000};
@@ -68,6 +68,8 @@ export function normalizedRate(point) {
   // Registro fiscal já tem preço por L ou KG.
   if(u==="l")return {cents:point.cents,unit:"L",basis:"Preço fiscal por litro"};
   if(u==="kg")return {cents:point.cents,unit:"kg",basis:"Preço fiscal por quilo"};
+  if(u==="g")return {cents:point.cents*1000,unit:"kg",basis:"Preço fiscal por grama convertido em quilo"};
+  if(u==="ml")return {cents:point.cents*1000,unit:"L",basis:"Preço fiscal por mililitro convertido em litro"};
   if(!["un","und","pacote","pct"].includes(u))return null;
   // Somente divide o preço do recipiente quando o volume/massa foi extraído.
   if(p.dimension&&p.dimensionAmount){
