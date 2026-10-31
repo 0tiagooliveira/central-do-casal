@@ -268,3 +268,18 @@
   .market-status-tabs{margin-bottom:13px}
   .shop-market-switch{margin-bottom:5px}
 }
+
+/* Compra inesperada: inclusão direta no carrinho durante o mercado. */
+.market-quick-action{display:flex;align-items:center;gap:12px;padding:0 0 11px}
+.market-quick-action .primary-btn{min-height:45px;padding:11px 16px;white-space:normal;line-height:1.35}
+.market-quick-action>span{font-size:.75rem;color:#6d849c;line-height:1.4}
+.market-instant-suggestions{display:grid;gap:6px;margin-top:-6px;margin-bottom:12px;max-height:215px;overflow-y:auto}
+.market-instant-suggestions button{display:grid;gap:3px;text-align:left;border:1px solid #dae5f3;background:#f8fbff;color:#294766;padding:11px 12px;border-radius:10px}
+.market-instant-suggestions button strong{font-size:.82rem}
+.market-instant-suggestions button small{color:#7a8ea3;font-size:.71rem}
+.market-suggestions-label{font-size:.74rem;color:#6484a7;font-weight:750}
+.market-selected-product{background:#eaf7f1;color:#196c4b;font-size:.76rem;padding:9px;border-radius:8px;margin:0 0 8px}
+.market-inline-adjust{display:flex;gap:9px;align-items:center;justify-content:flex-start;margin:-3px 0 13px}
+.market-inline-adjust button{border-radius:10px;border:1px solid #cedff0;background:#eef5ff;color:#285d98;padding:9px 14px;font-weight:700;font-size:.79rem}
+#market-instant-add .dialog-actions .primary-btn{width:100%;min-height:48px}
+@media(max-width:540px){.market-quick-action{flex-direction:column;align-items:stretch;gap:5px}.market-quick-action>span{font-size:.69rem;text-align:center}.market-quick-action .primary-btn{width:100%}}
