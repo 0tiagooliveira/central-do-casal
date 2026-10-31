@@ -1,6 +1,7 @@
-import {shoppingView,installShoppingUI} from "./shopping-ui.js";
+import {shoppingView,installShoppingUI,getShoppingRoutePrefs,restoreShoppingRoutePrefs} from "./shopping-ui.js";
+import {parseAppRoute,writeAppRoute} from "./navigation.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 // Configuração pública do mesmo projeto usado pelo Android; sem credenciais administrativas.
@@ -17,7 +18,22 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const tabs = [["Hoje","☀️"],["Compras","🛒"],["Rotina","✓"],["Planos","◈"],["Nós","♡"]];
-const state = { tab:"Hoje", market:"Mercado", profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
+const initialRoute=parseAppRoute(window.location.hash);
+restoreShoppingRoutePrefs(initialRoute);
+const state = { tab:initialRoute.tab, market:initialRoute.market, profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
+const initialScroll=(()=>{try{return Math.max(0,Number(sessionStorage.getItem("cdc-scroll:"+window.location.hash))||0);}catch{return 0;}})();
+let scrollRestored=false;
+let firstHouseData={shared:false,baskets:false};
+const routeState=()=>({tab:state.tab,market:state.market,...getShoppingRoutePrefs()});
+function saveScroll(){
+  try{sessionStorage.setItem("cdc-scroll:"+window.location.hash,String(window.scrollY));}catch{}
+}
+function rememberRoute(){saveScroll();writeAppRoute(routeState());}
+function restoreScrollAfterRefresh(){
+  if(scrollRestored||!state.uid||!state.household||!firstHouseData.shared||!firstHouseData.baskets)return;
+  scrollRestored=true;
+  if(initialScroll>0)requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo({top:initialScroll,behavior:"instant"})));
+}
 let listeners = [];
 let houseListeners = [];
 const $ = (id) => document.getElementById(id);
@@ -82,8 +98,18 @@ function render(){
   $("warning").hidden=!state.error && !!state.household;
   $("warning").textContent=state.error||"Nenhum espaço compartilhado associado a esta conta. A versão web só exibe dados já salvos no Firebase.";
   $("content").innerHTML=views[state.tab]();
-  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{state.tab=b.dataset.tab;render();window.scrollTo(0,0)}));
-  document.querySelectorAll("[data-market]").forEach(b=>b.addEventListener("click",()=>{state.market=b.dataset.market;render()}));
+  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
+    state.tab=b.dataset.tab;
+    rememberRoute();
+    render();
+    window.scrollTo(0,0);
+  }));
+  document.querySelectorAll("[data-market]").forEach(b=>b.addEventListener("click",()=>{
+    state.market=b.dataset.market;
+    rememberRoute();
+    render();
+  }));
+  restoreScrollAfterRefresh();
 }
 function clearListeners(){
   for(const stop of [...listeners,...houseListeners]) stop();
@@ -103,19 +129,41 @@ function connectHousehold(householdId){
   for(const stop of houseListeners)stop();
   houseListeners=[];
   state.shared=[];state.links=[];state.baskets={};
+  firstHouseData={shared:false,baskets:false};
   state.household=householdId;
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
-  watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));},"registros compartilhados","house");
+  watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;},"registros compartilhados","house");
   watch(collection(db,"households",householdId,"catalogLinks"),s=>{state.links=s.docs.map(d=>({id:d.id,...d.data()}));},"vínculos do catálogo","house");
-  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));},"listas de compras","house");
+  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));firstHouseData.baskets=true;},"listas de compras","house");
 }
 installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
-onAuthStateChanged(auth,user=>{
-  clearListeners();
-  if(!user){
-    state.uid=""; $("login").hidden=false; $("app").hidden=true; return;
+
+// Nunca mostrar o formulário enquanto o Firebase ainda verifica a sessão.
+// Persistência local mantém o usuário logado mesmo após recarregar/fechar o navegador;
+// se estiver bloqueada, tenta a persistência da aba atual.
+let persistenceWarning="";
+const persistenceReady=setPersistence(auth,browserLocalPersistence).catch(async()=>{
+  try {
+    await setPersistence(auth,browserSessionPersistence);
+    persistenceWarning="Este navegador só permite manter a sessão durante a aba atual.";
+  }catch{
+    persistenceWarning="Este navegador bloqueou o armazenamento da sessão; o login pode não sobreviver ao recarregamento.";
   }
-  state.uid=user.uid; state.sync="Conectando ao Firebase"; $("login").hidden=true; $("app").hidden=false;
+});
+persistenceReady.then(()=>onAuthStateChanged(auth,user=>{
+  clearListeners();
+  $("session-loading").hidden=true;
+  if(!user){
+    state.uid=""; $("login").hidden=false; $("app").hidden=true;
+    if(persistenceWarning){
+      $("login-error").textContent=persistenceWarning;
+      $("login-error").hidden=false;
+    }
+    return;
+  }
+  state.uid=user.uid;
+  state.sync="Conectando ao Firebase";
+  $("login").hidden=true; $("app").hidden=false;
   watch(doc(db,"users",user.uid),s=>{
     const next=s.data()||null;
     const newId=next?.householdId||"";
@@ -125,7 +173,23 @@ onAuthStateChanged(auth,user=>{
   },"perfil");
   watch(collection(db,"users",user.uid,"records"),s=>{state.personal=s.docs.map(d=>({id:d.id,...d.data()}));},"registros pessoais");
   render();
-});
+},error=>{
+  $("session-loading").hidden=true;
+  $("app").hidden=true;
+  $("login").hidden=false;
+  $("login-error").textContent="Não foi possível restaurar a sessão ("+(error?.code||"erro de autenticação")+").";
+  $("login-error").hidden=false;
+}));
+window.addEventListener("pagehide",saveScroll);
+function applyRouteFromUrl(){
+  const route=parseAppRoute(window.location.hash);
+  state.tab=route.tab;
+  state.market=route.market;
+  restoreShoppingRoutePrefs(route);
+  render();
+}
+window.addEventListener("popstate",applyRouteFromUrl);
+window.addEventListener("hashchange",applyRouteFromUrl);
 $("login-form").addEventListener("submit",async e=>{
   e.preventDefault();
   $("login-error").hidden=true;
