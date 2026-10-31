@@ -128,6 +128,11 @@ export function shoppingView({state}) {
           ${invoice.totalCents!=null?`<span>Total da nota: ${currency(invoice.totalCents)}</span>`:""}
           ${report?.differenceCents!=null?`<span>Diferença: ${currency(report.differenceCents)}</span>`:""}
           ${invoice.filename?`<button type="button" class="item-btn" data-shop-action="invoice-download" data-receipt-id="${clean(r.id)}">Baixar comprovante</button>`:""}
+          ${report?.lines?.length?`<details class="receipt-invoice-lines"><summary>Ver comparação de cada produto (${report.lines.length})</summary>
+          ${report.lines.map(line=>`<div class="receipt-invoice-line"><strong>${clean(line.name)}</strong>
+            <span>Nota ${currency(line.noteTotalCents)}${line.cartTotalCents!=null?" · Mercado "+currency(line.cartTotalCents):""}</span>
+            <small>${line.status==="matched"?"✓ Preço confere":line.status==="different"?"⚠ Divergência "+currency(line.differenceCents):"Não conferido"}</small>
+          </div>`).join("")}</details>`:""}
           <small>Valores documentados pelo arquivo enviado, sem verificação fiscal externa.</small></div>`:
         '<p class="info-line">Compra sem nota fiscal vinculada.</p>';
       return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
