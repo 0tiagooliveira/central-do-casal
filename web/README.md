@@ -4,6 +4,16 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Conferência fiscal no fim da compra
+
+Em **Compras > No mercado > Conferir nota e finalizar** ou **Minha lista > Conferir nota e finalizar**, anexe o comprovante antes de salvar o histórico. O fluxo é opcional: **Salvar sem nota** registra a compra identificando explicitamente que a conferência fiscal não foi realizada.
+
+**XML NFC-e/NF-e**: o navegador lê os campos `infNFe/ide`, `emit`, `total/ICMSTot/vNF` e `det/prod` (nome, código, quantidade, unidade, preço e desconto) do XML recebido, sem enviar o arquivo a serviços externos. Confere a quantidade e o valor efetivo das linhas da nota com os produtos marcados no carrinho. Faz sugestão de vínculo somente quando **nome e unidade são exatamente iguais** e a correspondência é única, podendo o usuário revisar e escolher manualmente outra linha. Exibe divergências individuais, itens não conciliados, diferença do total e loja. A autenticidade fiscal não é consultada na SEFAZ e, portanto, a etiqueta **Preços conferidos com o XML** não significa que o documento foi autenticado.
+
+**Foto/PDF**: anexa o comprovante reduzido diretamente ao registro do histórico no Firestore, com limite conservador para respeitar 1 MiB por documento. Esses arquivos **não passam por OCR**: o usuário pode informar o total impresso e, se quiser, digitar as linhas no formato `Descrição; quantidade; unidade; preço unitário`. Valores digitados são confrontados, mas não apresentados como conferência documental automática. Arquivos grandes exigem XML ou uma foto menor. O comprovante fica acessível apenas ao casal com permissão de leitura do histórico no Firebase.
+
+Ao salvar, o código cria o registro `receipt` e avança a cesta na **mesma transação Firestore**. O histórico guarda XML original ou comprovante comprimido, valor da nota, linhas extraídas, associações revisadas, diferenças, status e dados da compra, com opção de baixar o arquivo. Se houver diferença, ela é preservada como pendência; preços anotados no mercado nunca são corrigidos silenciosamente para igualar à nota. A compra antiga fica imutável pelas regras atuais. Estes recursos não requerem uma nova configuração de Firebase Storage, mas anexos grandes não são suportados nessa abordagem.
+
 ## Incluir compras imprevistas sem passar por Falta comprar
 
 Em **Compras > No mercado**, o botão **+ Produto direto no carrinho** abre um formulário curto. Pesquise um item já cadastrado em Minha base/Por loja ou digite um produto novo, informe a quantidade, unidade e preço real pago. O formulário permite ajustar a quantidade com botões de mais/menos e preencher a categoria.
