@@ -51,6 +51,43 @@ export function createShoppingActions(db,auth,getState) {
     checkEntry(entry);
     return {...old,entries:[...(old.entries||[]),{id:crypto.randomUUID(),title:entry.title.trim(),unit:entry.unit,plannedMilli:entry.plannedMilli,actualMilli:entry.plannedMilli,estimated:entry.estimated,actual:entry.bought?entry.actual:null,bought:entry.bought,estimateKnown:entry.estimateKnown!==false,unitReviewed:entry.unitReviewed!==false,quantityReviewed:entry.quantityReviewed!==false,sourceBaseId:entry.sourceBaseId||"",sourceSkuId:entry.sourceSkuId||"",category:entry.category||"",storageRoom:entry.storageRoom||"",recipient:entry.recipient||"Casa",group:entry.group||"Essenciais",subgroup:entry.subgroup||"",priority:entry.priority||"Normal",sourcePlanId:entry.sourcePlanId||"",sourceStepId:entry.sourceStepId||""}]};
   });
+  /** Compra imprevista no supermercado: entra em No carrinho em uma transação.
+   * Se já existe exatamente um pendente do mesmo item/variação e unidade,
+   * move-o em vez de duplicar. Não altera notas ou catálogo.
+   */
+  const addToCart=(market,entry)=>modify(market,old=>{
+    const purchased={...entry,bought:true,actualMilli:entry.plannedMilli,
+      estimated:entry.estimated??entry.actual,
+      actual:entry.actual,estimateKnown:true,
+      unitReviewed:true,quantityReviewed:true};
+    checkEntry(purchased);
+    const normalized=str=>String(str||"").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"").trim().toLowerCase().replace(/\s+/g," ");
+    const entries=old.entries||[];
+    const same=entries.filter(e=>!e.bought&&e.unit===purchased.unit&&
+      normalized(e.title)===normalized(purchased.title)&&
+      (!purchased.sourceSkuId||!e.sourceSkuId||e.sourceSkuId===purchased.sourceSkuId)&&
+      (!purchased.sourceBaseId||!e.sourceBaseId||e.sourceBaseId===purchased.sourceBaseId));
+    if(same.length===1){
+      return {...old,entries:entries.map(e=>e.id!==same[0].id?e:{
+        ...e,bought:true,actual:purchased.actual,actualMilli:purchased.plannedMilli,
+        plannedMilli:purchased.plannedMilli,estimated:e.estimateKnown!==false?e.estimated:purchased.actual,
+        estimateKnown:true,unitReviewed:true,quantityReviewed:true,
+        sourceBaseId:e.sourceBaseId||purchased.sourceBaseId||"",
+        sourceSkuId:e.sourceSkuId||purchased.sourceSkuId||""
+      })};
+    }
+    const record={id:crypto.randomUUID(),title:purchased.title.trim(),unit:purchased.unit,
+      plannedMilli:purchased.plannedMilli,actualMilli:purchased.plannedMilli,
+      estimated:purchased.actual,actual:purchased.actual,bought:true,
+      estimateKnown:true,unitReviewed:true,quantityReviewed:true,
+      sourceBaseId:purchased.sourceBaseId||"",sourceSkuId:purchased.sourceSkuId||"",
+      category:purchased.category||"",storageRoom:purchased.storageRoom||"",
+      recipient:purchased.recipient||"Casa",group:purchased.group||"Essenciais",
+      subgroup:purchased.subgroup||"",priority:purchased.priority||"Normal",
+      sourcePlanId:"",sourceStepId:""};
+    return {...old,entries:[...entries,record]};
+  });
   const updateItem=(market,id,entry)=>modify(market,old=>{
     const entries=old.entries||[];
     const original=entries.find(e=>e.id===id);
@@ -120,5 +157,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup};
+  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup};
 }
