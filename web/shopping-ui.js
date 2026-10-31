@@ -1,5 +1,7 @@
 import {writeAppRoute} from "./navigation.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
+import {showInvoiceCheckout} from "./invoice-checkout.js";
+import {labelInvoiceStatus} from "./invoice-reconcile.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
@@ -118,7 +120,19 @@ export function shoppingView({state}) {
     <p class="info-line">Reutilize os produtos que já compraram. Nada é consolidado automaticamente.</p>
     <div class="row-list">${receipts.length?receipts.slice(0,30).map(r=>{
       const purchased=(r.entries||[]).filter(e=>e.bought);
-      return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary><div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
+      const invoice=r.invoice||null;
+      const report=invoice?.comparison||null;
+      const invoiceInfo=invoice?
+        `<div class="receipt-invoice"><strong>${clean(labelInvoiceStatus(report?.status||"pending"))}</strong>
+          ${invoice.issuer?`<span>Loja: ${clean(invoice.issuer)}</span>`:""}
+          ${invoice.totalCents!=null?`<span>Total da nota: ${currency(invoice.totalCents)}</span>`:""}
+          ${report?.differenceCents!=null?`<span>Diferença: ${currency(report.differenceCents)}</span>`:""}
+          ${invoice.filename?`<button type="button" class="item-btn" data-shop-action="invoice-download" data-receipt-id="${clean(r.id)}">Baixar comprovante</button>`:""}
+          <small>Valores documentados pelo arquivo enviado, sem verificação fiscal externa.</small></div>`:
+        '<p class="info-line">Compra sem nota fiscal vinculada.</p>';
+      return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
+        ${invoiceInfo}
+        <div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
     }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
     <div class="backup-panel"><div><strong>Compras antigas no Android?</strong><p>Você pode importar as listas de um JSON exportado pelo aplicativo. Itens existentes são preservados e títulos repetidos não são mesclados automaticamente.</p></div><button type="button" class="item-btn" data-shop-action="import">Importar lista antiga</button></div>`;
 }
@@ -406,8 +420,26 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="close"){
       const b=s.baskets[market];
       if(!b?.entries?.some(e=>e.bought))return;
-      if(confirm("Finalizar compra de "+market+"? Isso salva o histórico e inicia nova lista. Não é possível desfazer automaticamente."))
-        run(()=>actions.closeBasket(market),"Compra registrada no histórico");
+      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>
+        run(()=>actions.closeBasket(market,invoice,mapping),"Compra e conferência salvas no histórico")
+      });
+      return;
+    }
+    if(act==="invoice-download"){
+      const receipt=s.shared.find(r=>r.kind==="receipt"&&r.id===button.dataset.receiptId);
+      const invoice=receipt?.invoice;
+      if(!invoice){notify("Nenhum comprovante encontrado.",true);return;}
+      const a=document.createElement("a");
+      if(typeof invoice.xmlContent==="string"&&invoice.xmlContent.length){
+        const blob=new Blob([invoice.xmlContent],{type:"application/xml"});
+        a.href=URL.createObjectURL(blob);
+      }else if(typeof invoice.fileData==="string"&&/^data:(image\/jpeg|application\/pdf);base64,/.test(invoice.fileData)){
+        a.href=invoice.fileData;
+      }else{notify("O arquivo original não está disponível neste registro.",true);return;}
+      a.download=String(invoice.filename||"nota-fiscal").replace(/[^a-zA-Z0-9._-]/g,"_");
+      document.body.append(a);a.click();a.remove();
+      if(a.href.startsWith("blob:"))setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+      return;
     }
     if(act==="repurchase"){
       const entry=(s.shared.find(r=>r.id===button.dataset.receiptId&&r.kind==="receipt")?.entries||[]).find(e=>e.id===button.dataset.itemId);
