@@ -235,7 +235,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       shopPrefs.mode=act.slice(5);
       rememberShoppingRoute();
       render();
-      window.scrollTo({top:0,behavior:"instant"});
+      window.scrollTo({top:0,behavior:"auto"});
       return;
     }
     if(act==="source-base"||act==="source-store"){
