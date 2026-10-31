@@ -1,3 +1,4 @@
+import {suggestedEstimate} from "./shopping-estimates.js";
 import {subtotal} from "./shopping.js";
 const money=c=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(c)||0)/100);
 const qty=m=>(Number(m??1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
@@ -11,8 +12,9 @@ export function quantityControls(item,marketMode=false) {
     <button type="button" data-shop-action="quick-qty" data-item-id="${esc(item.id)}" data-qty-field="${field}" data-delta="1" aria-label="Aumentar quantidade de ${esc(item.title)}">+</button>
   </div>`;
 }
-function marketRow(e) {
+function marketRow(e,state) {
   const title=esc(e.title||"Produto sem nome");
+  const suggested=e.estimateKnown===false?suggestedEstimate(e,state.shared,state.links||[],state.market):null;
   const ready=typeof e.unit==="string"&&e.unit!=="Escolher"&&e.unitReviewed!==false&&e.quantityReviewed!==false;
   const bought=e.bought;
   const price=e.actual==null?"":(Number(e.actual)/100).toFixed(2).replace(".",",");
@@ -24,7 +26,7 @@ function marketRow(e) {
       <label class="market-price">Preço real por ${esc(e.unit||"un")} (R$)
         <input aria-label="Preço real de ${title}" data-market-price-id="${esc(e.id)}" inputmode="decimal" placeholder="0,00" value="${esc(price)}" autocomplete="off">
       </label></div>
-    <div class="market-row-foot"><span>${bought?`Total no carrinho: <strong>${money(subtotal(e.actual||0,realQty))}</strong>`:e.estimateKnown===false?"Sem preço de referência":`Referência: ${money(e.estimated||0)}/${esc(e.unit)}`}</span>
+    <div class="market-row-foot"><span>${bought?`Total no carrinho: <strong>${money(subtotal(e.actual||0,realQty))}</strong>`:e.estimateKnown===false?(suggested?.cents?`Referência sugerida: ${money(suggested.cents)}/${esc(e.unit)} · confirmar`:"Sem preço de referência"):`Referência: ${money(e.estimated||0)}/${esc(e.unit)}`}</span>
       ${bought?`<div class="market-row-buttons"><button type="button" class="item-btn" data-shop-action="unbuy-inline" data-item-id="${esc(e.id)}">Retirar do carrinho</button><button type="button" class="item-btn buy" data-shop-action="price-save" data-item-id="${esc(e.id)}">Salvar preço</button></div>`:
       `<button type="button" class="primary-btn" data-shop-action="buy-inline" data-item-id="${esc(e.id)}">✓ Colocar no carrinho</button>`}
     </div>
@@ -46,9 +48,9 @@ export function marketView(state,{section="pending"}={}) {
   </nav>
   ${active==="pending"?
   `<section class="market-focus-section"><div class="market-section-head"><h3>Falta comprar</h3><span>${remaining.length} item(ns)</span></div>
-  <div class="market-list">${remaining.length?remaining.map(marketRow).join(""):`<div class="empty">Tudo o que estava na lista foi para o carrinho. <button type="button" class="item-btn" data-shop-action="market-section-bought">Ver meu carrinho</button></div>`}</div></section>`:
+  <div class="market-list">${remaining.length?remaining.map(e=>marketRow(e,state)).join(""):`<div class="empty">Tudo o que estava na lista foi para o carrinho. <button type="button" class="item-btn" data-shop-action="market-section-bought">Ver meu carrinho</button></div>`}</div></section>`:
   `<section class="market-focus-section"><div class="market-section-head"><h3>✓ No carrinho</h3><span>${bought.length} item(ns)</span></div>
-  <div class="market-list">${bought.length?bought.map(marketRow).join(""):`<div class="empty">Você ainda não colocou produtos no carrinho. <button type="button" class="item-btn" data-shop-action="market-section-pending">Ver o que falta</button></div>`}</div></section>`}
+  <div class="market-list">${bought.length?bought.map(e=>marketRow(e,state)).join(""):`<div class="empty">Você ainda não colocou produtos no carrinho. <button type="button" class="item-btn" data-shop-action="market-section-pending">Ver o que falta</button></div>`}</div></section>`}
   <div class="checkout-card"><div><strong>Finalizar compra</strong><p>Confira quantidades e preços antes de salvar a compra no histórico. Você pode devolver itens do carrinho para a lista a qualquer momento.</p></div>
   <button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Concluir e salvar</button></div>`;
 }
