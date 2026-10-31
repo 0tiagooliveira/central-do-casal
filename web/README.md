@@ -4,6 +4,14 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Total do carrinho durante compra offline
+
+A página **No mercado** calcula sempre os totais da cesta apresentada. Quando o Firestore retorna quota excedida, as operações ficam no diário `localStorage` de contingência e são projetadas imediatamente na tela, sem depender de uma nova leitura da nuvem. O resumo e a faixa de **Modo local** exibem o **total dos itens comprados**, o **orçamento** e o **saldo disponível**. O mesmo cálculo contabiliza frascos/caixas/quantidades corretamente (por exemplo, 2 unidades a R$ 6,29 = R$ 12,58). Alterar orçamento também tem fallback local.
+
+Ao digitar um preço, o total armazenado não é adulterado antes do comando explícito **Colocar no carrinho** ou **Salvar preço**. Uma faixa azul mostra, separadamente, a **prévia do carrinho com preços ainda não salvos** e o **valor hipotético caso os produtos pendentes com preço digitado sejam adicionados**. A digitação atualiza a prévia imediatamente, sem transações Firebase. O valor digitado é preservado entre reconstruções de tela dentro da sessão; após salvar, a prévia é removida e o preço entra no total real, mesmo no modo offline. Campos inválidos não afetam os cálculos.
+
+Nenhum total local deve ser apresentado como sincronizado com outros aparelhos. O usuário precisa exportar o backup e sincronizar manualmente após recuperar a cota. A atualização não acessa os dados privados do usuário de fora do navegador nem cadastra automaticamente os produtos informados no chat.
+
 ## Contingência quando Firestore retornar quota excedida
 
 O Firebase pode recusar gravações com `resource-exhausted` / `Quota exceeded` quando o banco ultrapassa limites de uso. **Não** reiterar automaticamente transações, pois isso pode consumir ainda mais cota.
