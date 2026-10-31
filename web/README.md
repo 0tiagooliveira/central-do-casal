@@ -1,3 +1,11 @@
+## Lote por link para compras urgentes (offline)
+
+O endereço da Central pode incluir `?compra=<base64url JSON>` com `{v:1,id,items:[[nome,quantidadeEmMilésimos,preçoUnitárioEmCentavos],...]}` para compartilhar um lote de até 30 produtos sem credenciais. Na área **Compras** do usuário autenticado, a importação mostra quantidade, total e possíveis duplicações, além do botão **Adicionar ao carrinho offline**. A importação só ocorre depois do toque; nenhuma compra é adicionada em segundo plano ao abrir uma URL.
+
+A operação `batchAddToCart` grava de uma só vez no diário de contingência localStorage, isolado por usuário, household e mercado. Itens comprados com mesmo nome/unidade são preservados, um único item pendente correspondente é movido ao carrinho, duplicatas ambíguas ficam pendentes de revisão. IDs de novos itens permanecem estáveis ao sincronizar. O resumo e o orçamento atualizam imediatamente pela cesta projetada, mesmo sem Firestore. O link é consumido após gravação confirmada no dispositivo; o botão **Baixar backup** preserva o registro local. O usuário deve usar **Tentar sincronizar** quando o Firebase voltar, pois o outro aparelho não enxerga o diário local. O replay verifica conflitos de itens pendentes alterados em outro aparelho.
+
+O sistema também mantém uma cópia local da última cesta recebida do Firestore (por usuário/household/mercado). Se a leitura falhar por quota após recarregar, essa cópia pode ser usada para iniciar a contingência e fica explicitamente identificada como não confirmada. Os links não ignoram as regras de acesso, e a importação não publica os dados em outras contas.
+
 # Central do Casal Web · Mercado, catálogo e modo de compras
 
 ### Escolher quantidade antes de adicionar
