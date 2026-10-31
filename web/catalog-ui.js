@@ -52,14 +52,14 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
       <div class="catalog-price-row"><div><span class="eyebrow">${family&&history.length?"PREÇO DA VARIAÇÃO EM DESTAQUE":"ÚLTIMO PREÇO DOCUMENTADO"}</span><strong>${lastPrice}</strong><small>${lastDate}</small></div>
        <div class="trend-pill ${trendKind}">${trend.kind==="up"?"↗":trend.kind==="down"?"↘":"•"} ${esc(trend.label)}</div></div>
       ${family&&history.length?`<div class="family-main-label">${esc(family.label)} · ${family.confirmed?"vínculo confirmado":"prévia por família"}</div>`:""}
-      <div class="catalog-chart">${sparkline(history)}<div class="chart-dates"><span>${trend.points.length?humanDate(trend.points[0].date):"Sem histórico"}</span><span>${trend.points.length?humanDate(trend.points[trend.points.length-1].date):""}</span></div></div>
+      ${history.length?`<div class="catalog-chart">${sparkline(history)}<div class="chart-dates"><span>${trend.points.length?humanDate(trend.points[0].date):"Sem histórico"}</span><span>${trend.points.length?humanDate(trend.points[trend.points.length-1].date):""}</span></div></div>`:`<div class="catalog-no-history">Sem preços de compras associados a esta família na base atual.</div>`}
       <div class="catalog-foot">${trend.points.length} preço(s) comparável(is) ${trend.unit?"· unidade: "+esc(trend.unit):""}${trend.excluded?" · "+trend.excluded+" em outras unidades não comparadas":""}</div>
       ${reference?`<div class="catalog-reference">Preço de referência cadastrado: <strong>${money(reference)}</strong> · sem data de compra confirmada</div>`:""}
       ${!history.length&&product.previousState&&/comprad/i.test(product.previousState)?'<p class="catalog-evidence">A base registra este item como comprado antes, mas faltam notas vinculadas para construir o gráfico.</p>':""}
       ${familyDetails}
     </article>`;
   };
-  return `<section class="catalog-browser">
+  return `<section class="catalog-browser">\n    <div class="switcher catalog-market-switch">${["Mercado","Açougue"].map(market=>`<button type="button" data-market="${market}" aria-pressed="${state.market===market}">${market}</button>`).join("")}</div>
     <div class="catalog-explainer"><strong>Escolha os produtos na sua base</strong><p>Produtos que já existem no Firebase, com histórico das notas e preços unitários quando documentados. Selecione para colocar na lista sem digitar tudo novamente.</p></div>
     <div class="catalog-subnav"><button class="item-btn ${source==="base"?"active":""}" data-shop-action="source-base" type="button" aria-pressed="${source==="base"}">Minha base (${catalogItems(state.shared,state.market,"base").length})</button><button class="item-btn ${source==="store"?"active":""}" type="button" data-shop-action="source-store" aria-pressed="${source==="store"}">Por loja (${catalogItems(state.shared,state.market,"store").length})</button></div>
     <div class="catalog-filters"><label>Buscar produto<input type="search" placeholder="Nome, marca, categoria ou loja" id="shop-catalog-search" value="${esc(search)}" autocomplete="off"></label><label>Categoria<select id="shop-catalog-category">${categoriesMarkup}</select></label></div>
