@@ -111,6 +111,10 @@ export function priceTrend(history) {
   const {points,unit,excluded}=comparableHistory(history);
   if(!points.length)return {label:"Sem preços documentados",kind:"unknown",points,unit,excluded};
   if(points.length===1)return {label:"1 preço documentado",kind:"unknown",points,unit,excluded};
+  if(["un","pacote"].includes(unit)&&points.some(p=>
+    !p.presentation?.dimensionAmount&&!p.presentation?.unitCount)){
+    return {label:"Embalagem sem medida · variação não confiável",kind:"unknown",points,unit,excluded};
+  }
   const first=points[0].cents,last=points[points.length-1].cents;
   const delta=last-first;
   const pct=first>0?Math.round((delta/first)*100):null;
