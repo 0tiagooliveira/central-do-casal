@@ -318,3 +318,12 @@
 .receipt-invoice-line{display:grid;gap:4px;padding:10px 3px;border-bottom:1px solid #dfeaf6}
 .receipt-invoice-line strong{font-size:.77rem;color:#324c68}
 .receipt-invoice-line span,.receipt-invoice-line small{font-size:.7rem;color:#5e7590}
+
+/* Contingência de uso do Firestore: nunca confundir local com sincronizado. */
+.emergency-banner{margin:12px 0 16px;background:#fff4e4;border:2px solid #e6ad57;border-radius:16px;padding:15px;display:grid;gap:10px}
+.emergency-banner strong{color:#8d4a0e;font-size:.89rem;line-height:1.4}
+.emergency-banner p{color:#6e5b43;font-size:.78rem;line-height:1.5;margin:0}
+.emergency-banner small{font-size:.72rem;color:#806b53;line-height:1.4}
+.emergency-buttons{display:flex;gap:9px;flex-wrap:wrap}
+.emergency-buttons button{flex:1;min-width:132px;min-height:43px;padding:10px 12px;font-weight:750;font-size:.78rem}
+@media(max-width:540px){.emergency-buttons{flex-direction:column}.emergency-buttons button{width:100%}}
