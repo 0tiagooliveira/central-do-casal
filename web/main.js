@@ -1,3 +1,4 @@
+import {shoppingView,installShoppingUI} from "./shopping-ui.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -54,25 +55,7 @@ function renderHoje(){
   <div class="split-head"><h2 class="section-heading">Para hoje</h2><span class="read-only">Visualização, sem alterações</span></div>
   <div class="row-list">${due.length?due.slice(0,12).map(t=>row(t.title||"Tarefa sem título", [t.owner,t.time,t.category].filter(Boolean).join(" · "),"","Pendente")).join(""):empty("Nenhuma tarefa pendente encontrada para hoje.")}</div>`;
 }
-function renderCompras(){
-  const b=currentBasket();
-  const entries=Array.isArray(b.entries)?b.entries:[];
-  const suspicious=entries.filter(e=>!String(e.title||"").trim()||!["un","kg","g","L","mL","pacote"].includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
-  const normalizedCount=new Map();
-  for(const e of entries){const key=normalize(e.title);if(key)normalizedCount.set(key,(normalizedCount.get(key)||0)+1);}
-  const duplicates=entries.filter(e=>normalizedCount.get(normalize(e.title))>1);
-  const receipts=records("receipt").filter(r=>r.market===state.market).sort((a,b)=>String(b.updatedAt?.seconds||b.createdAt||"").localeCompare(String(a.updatedAt?.seconds||a.createdAt||"")));
-  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===state.market}">${x}</button>`).join("");
-  return `<div class="split-head"><div><p class="info-line">Lista compartilhada da casa, sem alterar dados no Android.</p></div><div class="switcher">${options}</div></div>
-    <div class="card-grid">${card("Orçamento",fmt(b.budget),"definido no aplicativo")}${card("Itens",String(entries.length),String(entries.filter(x=>!x.bought).length)+" pendentes")}${card("Atenção",String(suspicious.length),"itens que exigem revisão")}</div>
-    ${suspicious.length?`<div class="banner warning" style="margin-top:18px">Existem ${suspicious.length} item(ns) com dados incompletos. Confira nome, unidade e quantidade no Android antes de fechar a compra.</div>`:""}
-    ${duplicates.length?`<section class="panel" style="margin-top:17px"><div class="split-head"><strong>Possíveis duplicações</strong><span class="pill warn">Conferência manual</span></div><p class="info-line">Títulos iguais não significam produtos iguais. Compare unidades e origem antes de qualquer ajuste.</p>${duplicates.map(e=>row(e.title||"Sem nome",`Unidade: ${e.unit||"indefinida"} · ID: ${e.id||"sem ID"}`)).join("")}</section>`:""}
-    <div class="split-head"><h2 class="section-heading">Produtos da lista</h2><span class="mini-count">${entries.length}</span></div>
-    <div class="row-list">${entries.length?entries.map(e=>row(e.title||"Item sem nome",`${(Number(e.plannedMilli)||1000)/1000} ${e.unit||"sem unidade"} · ${e.group||"Sem grupo"}`,e.estimateKnown===false?"Preço a revisar":fmt(e.estimated),!String(e.title||"").trim()||!e.unit||e.unitReviewed===false||e.quantityReviewed===false?"Revisar":e.bought?"Feito":"")).join(""):empty("Nenhuma lista sincronizada para "+state.market+".")}</div>
-    <div class="split-head"><h2 class="section-heading">Histórico de compras confirmadas</h2><span class="mini-count">${receipts.length}</span></div>
-    <p class="info-line">Recibos registrados no Firebase. Compras antigas apenas no armazenamento do APK não podem ser recuperadas automaticamente pela versão web.</p>
-    <div class="row-list">${receipts.length?receipts.slice(0,40).map(r=>row("Compra registrada",`${(r.entries||[]).filter(e=>e.bought).length} itens · ${r.market||state.market} · ID: ${r.id}`,fmt(r.total))).join(""):empty("Ainda não há compras confirmadas sincronizadas nesta categoria.")}</div>`;
-}
+function renderCompras(){ return shoppingView({state}); }
 function renderRotina(){
   const items=records("task").sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
   return `<section class="welcome"><div class="eyebrow">ROTINA VIVA</div><h2>Organização sem correria.</h2><p>Tarefas pessoais e compartilhadas, inclusive as recorrentes.</p></section><div class="split-head"><h2 class="section-heading">Tarefas cadastradas</h2><span class="mini-count">${items.length}</span></div><div class="row-list">${items.length?items.map(t=>row(t.title||"Tarefa sem nome", [t.owner,t.category,t.repeat,t.date,t.time].filter(Boolean).join(" · "),"",t.needsReview?"Revisar":"")).join(""):empty("Nenhuma tarefa disponível na nuvem.")}</div>`;
@@ -123,6 +106,7 @@ function connectHousehold(householdId){
   watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));},"registros compartilhados");
   watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));},"listas de compras");
 }
+installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
 onAuthStateChanged(auth,user=>{
   clearListeners();
   if(!user){
