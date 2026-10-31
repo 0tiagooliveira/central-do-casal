@@ -1,3 +1,5 @@
+import {packageDetailCards,familyEquivalentComparison,money4} from "./pricing-details-ui.js";
+import {normalizedRate} from "./product-presentation.js";
 import {primaryFamilySeries,familyVariants} from "./catalog-families.js";
 import {unmatchedHistoryCandidates} from "./catalog-matches.js";
 import {catalogItems,catalogCategories,queryCatalog,alreadyAdded} from "./catalog.js";
@@ -29,34 +31,36 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
     const trendKind=trend.kind==="up"?"up":trend.kind==="down"?"down":"neutral";
     const variants=family?.variants||[];
     const familyDetails=variants.length?`<details class="family-details">
-      <summary>Ver ${variants.length} variação(ões) da família · ${variants.reduce((n,v)=>n+v.history.length,0)} preços históricos</summary>
+      <summary>Ver ${variants.length} variação(ões) · ${variants.reduce((n,v)=>n+v.history.length,0)} compras com preços</summary>
+      ${familyEquivalentComparison(variants)}
       <div class="family-variants">
-        ${variants.map(v=>{
-          const t=priceTrend(v.history);
-          const last=t.points.at(-1);
-          return `<article class="family-variant">
-            <div class="variant-top"><strong>${esc(v.sku.title)}</strong><small>${esc(v.sku.store||"Loja não informada")} · ${esc(v.status)}</small></div>
-            <div class="variant-value"><strong>${last?money(last.cents)+"/"+esc(t.unit):"Preço a confirmar"}</strong>
-              <span class="trend-pill ${t.kind==="up"?"up":t.kind==="down"?"down":"neutral"}">${esc(t.label)}</span></div>
-            <div class="variant-chart">${sparkline(v.history)}</div>
-            <div class="variant-foot">${t.points.length} observações comparáveis · ${t.unit?esc(t.unit):"unidade não definida"} ${t.excluded?" · "+t.excluded+" em outras unidades":""}</div>
-            ${v.needsReview?`<button type="button" class="item-btn" data-shop-action="confirm-association" data-base-id="${esc(product.id)}" data-sku-id="${esc(v.sku.id)}">Confirmar vínculo exato</button>`:""}
-          </article>`;
-        }).join("")}
+        ${variants.map(v=>`<article class="family-variant">
+          <div class="variant-top"><strong>${esc(v.sku.title)}</strong>
+            <small>${esc(v.sku.store||"Loja não informada")} · ${esc(v.status)}</small></div>
+          ${packageDetailCards(v.history)}
+          ${v.needsReview?`<button type="button" class="item-btn" data-shop-action="confirm-association" data-base-id="${esc(product.id)}" data-sku-id="${esc(v.sku.id)}">Confirmar associação à base</button>`:""}
+        </article>`).join("")}
       </div>
-      <p class="info-line">As variações estão agrupadas para consulta, sem misturar preços de açúcar refinado, cristal, mascavo ou embalagens diferentes. Vínculos não confirmados não são gravados automaticamente.</p>
+      <p class="info-line">Os preços ficam separados por apresentação. Associação por nome é apenas uma prévia, não um vínculo gravado.</p>
     </details>`:"";
+    const storeDetails=source==="store"&&history.length?`<details class="family-details">
+      <summary>Ver embalagens, histórico e estatísticas</summary>${packageDetailCards(history)}</details>`:"";
+    const referenceRate=last?normalizedRate(last):null;
+    const presentationLabel=(family?.presentation||last?.presentation)?.display||"";
     return `<article class="catalog-card">
       <div class="catalog-card-top"><div class="catalog-title"><strong>${esc(product.title)}</strong><span>${esc(product.category||"Sem categoria")}${product.store?" · "+esc(product.store):""}</span></div>
       <button type="button" class="item-btn ${added?"subtle":"buy"}" data-shop-action="choose-catalog" data-catalog-id="${esc(product.id)}" ${added?"disabled":""}>${added?"✓ Na lista":"+ Adicionar"}</button></div>
       <div class="catalog-price-row"><div><span class="eyebrow">${family&&history.length?"PREÇO DA VARIAÇÃO EM DESTAQUE":"ÚLTIMO PREÇO DOCUMENTADO"}</span><strong>${lastPrice}</strong><small>${lastDate}</small></div>
        <div class="trend-pill ${trendKind}">${trend.kind==="up"?"↗":trend.kind==="down"?"↘":"•"} ${esc(trend.label)}</div></div>
-      ${family&&history.length?`<div class="family-main-label">${esc(family.label)} · ${family.confirmed?"vínculo confirmado":"prévia por família"}</div>`:""}
+      ${history.length?`<div class="family-main-label">${family?esc(family.label)+" · "+(family.confirmed?"vínculo confirmado":"prévia por família")+" · ":""}${esc(presentationLabel)}</div>`:""}
       ${history.length?`<div class="catalog-chart">${sparkline(history)}<div class="chart-dates"><span>${trend.points.length?humanDate(trend.points[0].date):"Sem histórico"}</span><span>${trend.points.length?humanDate(trend.points[trend.points.length-1].date):""}</span></div></div>`:`<div class="catalog-no-history">Sem preços de compras associados a esta família na base atual.</div>`}
       <div class="catalog-foot">${trend.points.length} preço(s) comparável(is) ${trend.unit?"· unidade: "+esc(trend.unit):""}${trend.excluded?" · "+trend.excluded+" em outras unidades não comparadas":""}</div>
+      ${referenceRate?`<div class="catalog-reference"><strong>${money4(referenceRate.cents)}/${esc(referenceRate.unit)}</strong> · ${esc(referenceRate.basis)}</div>`:""}
+      ${history.length&&trend.kind==="unknown"&&trend.points.length>1?`<div class="catalog-evidence">A variação não foi calculada porque a apresentação da embalagem não está identificada.</div>`:""}
       ${reference?`<div class="catalog-reference">Preço de referência cadastrado: <strong>${money(reference)}</strong> · sem data de compra confirmada</div>`:""}
       ${!history.length&&product.previousState&&/comprad/i.test(product.previousState)?'<p class="catalog-evidence">A base registra este item como comprado antes, mas faltam notas vinculadas para construir o gráfico.</p>':""}
       ${familyDetails}
+      ${storeDetails}
     </article>`;
   };
   return `<section class="catalog-browser">\n    <div class="switcher catalog-market-switch">${["Mercado","Açougue"].map(market=>`<button type="button" data-market="${market}" aria-pressed="${state.market===market}">${market}</button>`).join("")}</div>
@@ -67,6 +71,6 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
     <div class="catalog-result-summary"><strong>${results.length} produto(s) encontrado(s)</strong><span>Exibindo ${visible.length} de ${results.length}</span></div>
     <div class="catalog-grid">${visible.length?visible.map(card).join(""):`<div class="empty">${catalog.length?"Nenhum produto corresponde aos filtros.":"Nenhum produto dessa base disponível no Firebase para este espaço."}</div>`}</div>
     ${visible.length<results.length?`<div class="catalog-more"><button class="item-btn" data-shop-action="show-more" type="button">Mostrar mais ${Math.min(40,results.length-visible.length)} produtos</button></div>`:""}
-    <p class="info-line">O gráfico usa notas documentadas e compras com vínculo confirmado. Cada família mostra as variações com gráficos próprios, sem combinar preços de diferentes apresentações. Vínculos sugeridos aparecem como prévia e só se tornam oficiais se você os confirmar.</p>
+    <p class="info-line">O gráfico usa notas documentadas e compras com vínculo confirmado. Cada família mostra gráficos por embalagem e preço equivalente por litro/quilo/peça quando a nota fornece o tamanho exato. Vínculos sugeridos aparecem como prévia e só se tornam oficiais se você os confirmar.</p>
   </section>`;
 }
