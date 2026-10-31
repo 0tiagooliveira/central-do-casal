@@ -10,7 +10,7 @@ const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false};
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{}};
 function entryHTML(e) {
   const name=clean(e.title||"Produto sem nome");
   const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
@@ -137,6 +137,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
   }
   let catalogSearchTimer;
   root.addEventListener("input",event=>{
+    if(event.target.matches("[data-shop-qty]")){
+      shopPrefs.quantities[event.target.dataset.qtyKey]=event.target.value;return;
+    }
     if(event.target.id!=="shop-catalog-search")return;
     shopPrefs.search=event.target.value;shopPrefs.limit=40;
     const cursor=event.target.selectionStart??shopPrefs.search.length;
@@ -157,6 +160,21 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const s=getState(),act=button.dataset.shopAction,market=s.market;
     if(act.startsWith("view-")){shopPrefs.mode=act.slice(5);render();return;}
     if(act==="source-base"||act==="source-store"){shopPrefs.source=act==="source-base"?"base":"store";shopPrefs.category="Todas";shopPrefs.limit=40;render();return;}
+    if(act==="catalog-qty-step"){
+      const wrap=button.closest(".catalog-qty-control");
+      const field=wrap?.querySelector("[data-shop-qty]");
+      if(!field)return;
+      const unit=wrap.dataset.qtyUnit;
+      const increment=["kg","L"].includes(unit)?500:["g","mL"].includes(unit)?100000:1000;
+      let previous;
+      try{previous=milliQty(field.value);}catch{previous=increment;}
+      const next=previous+Number(button.dataset.delta)*increment;
+      if(next<=0){notify("A quantidade precisa ser maior que zero.");return;}
+      if(next>100000000){notify("Quantidade acima do limite. Use uma quantidade menor.",true);return;}
+      field.value=(next/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
+      shopPrefs.quantities[field.dataset.qtyKey]=field.value;
+      return;
+    }
     if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
@@ -188,9 +206,13 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         notify("Esta apresentação já está na lista. Ajuste a quantidade em Minha lista.");
         return;
       }
+      const field=button.closest(".package-card")?.querySelector("[data-shop-qty]");
+      let chosenQuantity;
+      try{chosenQuantity=milliQty(field?.value||"1");}
+      catch(err){notify("Quantidade inválida: "+err.message,true);field?.focus();return;}
       const draft=catalogQuickDraft(sku);
-      Object.assign(draft,{title,unit:last.unit,unitReviewed:true,plannedMilli:1000,
-        actualMilli:1000,quantityReviewed:true,
+      Object.assign(draft,{title,unit:last.unit,unitReviewed:true,plannedMilli:chosenQuantity,
+        actualMilli:chosenQuantity,quantityReviewed:true,
         estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
         estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
         sourceSkuId:sku.id});
@@ -201,7 +223,12 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const p=s.shared.find(p=>p.id===button.dataset.catalogId&&(p.kind==="catalogSku"||p.kind==="catalogItem"));
       if(!p){notify("Produto não encontrado na base. Atualize a página.",true);return;}
       if(alreadyAdded(p,s.baskets[market]?.entries||[])){notify("Este produto já está na lista. Use + e − em Minha lista para ajustar a quantidade.");return;}
+      const field=button.closest(".catalog-card")?.querySelector(":scope > .catalog-qty-control [data-shop-qty]");
+      let chosenQuantity;
+      try{chosenQuantity=milliQty(field?.value||"1");}
+      catch(err){notify("Quantidade inválida: "+err.message,true);field?.focus();return;}
       const d=catalogQuickDraft(p);
+      d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
       run(()=>actions.addItem(market,d),"Produto adicionado à lista");
       return;
     }
