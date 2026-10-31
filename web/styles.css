@@ -234,3 +234,12 @@
 .shopping-search-field input{font-size:16px;padding:12px 11px}
 .shopping-search-field button{padding:10px 9px}
 }
+
+/* Tela neutra durante restauração do Firebase: evita piscar formulário no refresh. */
+.session-card{text-align:center;display:grid;justify-items:center;gap:12px}
+.session-card .brand{justify-content:center}
+.session-card h1{font-size:1.3rem;margin:0}
+.session-card p{margin:0;font-size:.87rem}
+.session-spinner{height:34px;width:34px;border:3px solid #dfebfa;border-top-color:#2765c3;border-radius:50%;animation:session-rotate .8s linear infinite;margin:23px 0 7px}
+@keyframes session-rotate{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.session-spinner{animation:none;border-top-color:#2765c3}}
