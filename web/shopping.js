@@ -76,7 +76,6 @@ export function createShoppingActions(db,auth,getState) {
     const visible=state.baskets[market];
     if(!visible||!visible.generation)throw new Error("Lista não encontrada.");
     const expected=Number(visible.revision||0);
-    const house=doc(db,"households",state.household);
     const ref=basketRef(state,market);
     const receiptRef=doc(db,"households",state.household,"records",visible.generation);
     await runTransaction(db,async tx=>{
@@ -94,7 +93,8 @@ export function createShoppingActions(db,auth,getState) {
           throw new Error("Revise nome, quantidade, unidade e preço real de "+(e.title||"um produto")+".");
       }
       const total=bought.reduce((n,e)=>n+subtotal(e.actual,e.actualMilli),0);
-      const date=new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
+      const dateParts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+      const date=dateParts.year+"-"+dateParts.month+"-"+dateParts.day;
       const receipt={...b,kind:"receipt",private:false,total,date,updatedBy:state.uid,updatedAt:serverTimestamp()};
       tx.set(receiptRef,receipt);
       const nextEntries=entries.map(e=>e.bought?{...e,estimated:e.actual,actual:null,bought:false,estimateKnown:true,unitReviewed:true,quantityReviewed:true}:e);
