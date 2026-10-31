@@ -14,7 +14,7 @@ export function quantitySelector(key,unit="un",quantities={}){
     '<button type="button" data-shop-action="catalog-qty-step" data-delta="1" aria-label="Aumentar quantidade">+</button>'+
     '<span>'+esc(label)+'</span></div></div>';
 }
-export function packageDetailCards(points,{skuId='',baseId=''}={}){
+export function packageDetailCards(points,{skuId='',baseId='',quantities={}}={}){
   const groups=presentationSeries(points);
   if(!groups.length)return '<div class="catalog-no-history">Não há compra com preço e data para esta apresentação.</div>';
   return '<div class="package-detail-grid">'+groups.map(g=>{
