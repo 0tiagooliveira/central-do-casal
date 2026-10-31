@@ -182,7 +182,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(!packageGroup||!packageGroup.points.length){notify("Histórico desta embalagem não encontrado.",true);return;}
       const last=packageGroup.points.at(-1);
       const display=packageGroup.presentation?.display||"Apresentação não identificada";
-      const compact=x=>String(x||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+      const compact=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
       const title=compact(sku.title).includes(compact(display))?sku.title:sku.title+" · "+display;
       if((s.baskets[market]?.entries||[]).some(e=>e.sourceSkuId===sku.id&&compact(e.title)===compact(title))){
         notify("Esta apresentação já está na lista. Ajuste a quantidade em Minha lista.");
