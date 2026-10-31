@@ -29,6 +29,10 @@ export function readEmergency(state,market=state.market){
 }
 function applyOperation(basket,operation) {
   const entries=basket.entries||[];
+  if(operation.type==="budget"){
+    if(!Number.isSafeInteger(operation.budget)||operation.budget<0)throw Error("Orçamento inválido.");
+    return {...basket,budget:operation.budget};
+  }
   if(operation.type==="update"){
     if(!entries.some(e=>e.id===operation.id))
       throw Error("Este item não está no backup local. Não foi alterado.");
@@ -113,8 +117,15 @@ export function downloadEmergency(state,market){
 export function emergencyBanner(state) {
   const draft=readEmergency(state,state.market);
   if(!draft)return "";
+  const spent=draft.basket.entries.filter(e=>e.bought).reduce((sum,e)=>
+    sum+Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000),0);
+  const fmt=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n/100);
+  const budget=Number(draft.basket.budget)||0;
   return '<section class="emergency-banner" role="status">'+
     '<strong>⚠ Modo local: '+draft.operations.length+' alteração(ões) NÃO sincronizada(s)</strong>'+
+    '<div class="emergency-live-totals"><span>No carrinho neste aparelho: <strong>'+fmt(spent)+'</strong></span>'+
+    '<span>Restante'+(budget?" do orçamento":" (orçamento não definido)")+
+    ': <strong>'+(budget?fmt(budget-spent):"não disponível")+'</strong></span></div>'+
     '<p>O Firebase atingiu um limite. Você pode continuar comprando neste aparelho. Não limpe os dados do navegador e baixe um backup antes de sair.</p>'+
     '<div class="emergency-buttons"><button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>'+
     '<button type="button" class="primary-btn" data-shop-action="emergency-sync">Tentar sincronizar</button></div>'+
