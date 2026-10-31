@@ -10,7 +10,7 @@ const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{}};
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending"};
 function entryHTML(e) {
   const name=clean(e.title||"Produto sem nome");
   const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
@@ -43,7 +43,7 @@ export function shoppingView({state}) {
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
   const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
-  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state);
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
     <section class="shopping-summary">
       <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa: <strong>${currency(subtotalExpected)}</strong> · Já comprado: <strong>${currency(actual)}</strong></p></div>
@@ -158,6 +158,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=getState(),act=button.dataset.shopAction,market=s.market;
+    if(act==="market-section-pending"||act==="market-section-bought"){
+      shopPrefs.marketSection=act==="market-section-bought"?"bought":"pending";
+      render();
+      return;
+    }
     if(act.startsWith("view-")){shopPrefs.mode=act.slice(5);render();return;}
     if(act==="source-base"||act==="source-store"){shopPrefs.source=act==="source-base"?"base":"store";shopPrefs.category="Todas";shopPrefs.limit=40;render();return;}
     if(act==="catalog-qty-step"){
@@ -250,11 +255,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
       const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
-      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto devolvido à lista");return;}
+      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto voltou para Falta comprar");return;}
       if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
       try{
         const price=moneyCents(priceInput.value);
-        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto colocado no carrinho":"Preço do carrinho atualizado");
+        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado");
       }catch(e){notify(e.message,true);priceInput.focus();}
       return;
     }
