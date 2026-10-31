@@ -54,7 +54,7 @@ export function createShoppingActions(db,auth,getState) {
     const entries=old.entries||[];
     const original=entries.find(e=>e.id===id);
     if(!original)throw new Error("Produto não encontrado. Atualize a lista.");
-    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?entry.plannedMilli:original.actualMilli||entry.plannedMilli,actual:entry.bought?entry.actual:null};
+    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?(entry.actualMilli??entry.plannedMilli):(entry.actualMilli??original.actualMilli??entry.plannedMilli),actual:entry.bought?entry.actual:null};
     checkEntry(next);
     return {...old,entries:entries.map(e=>e.id===id?next:e)};
   });
