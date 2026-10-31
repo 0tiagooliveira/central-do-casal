@@ -25,6 +25,7 @@ export function formatAppRoute(route) {
 }
 export function writeAppRoute(route,{replace=false}={}) {
   const target=formatAppRoute(route);
+  try{sessionStorage.setItem("cdc:last-route",target);}catch{}
   if(window.location.hash===target)return;
   if(replace)window.history.replaceState(null,"",target);
   else window.history.pushState(null,"",target);
