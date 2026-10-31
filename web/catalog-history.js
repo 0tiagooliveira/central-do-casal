@@ -7,12 +7,14 @@ const asText=v=>typeof v==="string"?v.trim():"";
 const parseCents=value=>{
   let v=asText(value).replace(/R\$/gi,"").replace(/\s/g,"");
   if(v.includes(","))v=v.replace(/\./g,"").replace(",",".");
-  if(!/^\d+(\.\d{1,2})?$/.test(v))return null;
+  if(!/^\d+(\.\d{1,4})?$/.test(v))return null;
   const [whole,dec=""]=v.split(".");
-  const n=Number(whole)*100+Number(dec.padEnd(2,"0"));
-  return Number.isSafeInteger(n)&&n>=0&&n<=1000000000?n:null;
+  // Preserve fiscal precision: imported unit prices may carry 3-4 decimal places.
+  const raw10000=Number(whole)*10000+Number(dec.padEnd(4,"0"));
+  const cents=raw10000/100;
+  return Number.isSafeInteger(raw10000)&&cents>=0&&cents<=1000000000?cents:null;
 };
-const priceBRL=value=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(value/100);
+const priceBRL=value=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2,maximumFractionDigits:Number.isInteger(value)?2:4}).format(value/100);
 const safe=s=>String(s??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 const validDate=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||"");
 const linkFor=(sku,links)=>{
