@@ -1,46 +1,34 @@
-# Central do Casal · versão Web (consulta)
+# Central do Casal Web · Mercado sincronizado
 
-Primeira versão web responsiva, com **somente leitura**, criada para validar a issue #69 sem alterar dados de compras.
+## Funcionalidades prontas na branch
+A versão web disponibiliza login Firebase e as telas Hoje, Compras, Rotina, Planos e Nós. **Mercado e Açougue são totalmente editáveis**: criar/editar/excluir produtos, marcar comprado e registrar preço real, orçamento, duas listas, histórico e reposição de produtos antigos. As demais telas ainda estão em expansão e não devem ser tratadas como paridade total com o Android.
 
-## O que já funciona no código
+As operações nas listas usam a mesma coleção `households/{id}/baskets` e o mesmo esquema de dados do APK. Todas as mutações ocorrem em transações do Firestore com revisão esperada; caso outro dispositivo atualize antes, a gravação é recusada e o usuário revisa. O fechamento da compra gera um recibo de ID `generation` e cria nova revisão com os preços reais, preservando o histórico. Itens com mesmo título e unidades diferentes não são mesclados.
 
-- Login por e-mail e senha usando Firebase Authentication do mesmo projeto `central-do-casal`;
-- consulta aos registros privados e compartilhados a que o usuário autenticado já tem acesso;
-- abas **Hoje, Compras, Rotina, Planos e Nós**;
-- listas Mercado/Açougue e histórico dos recibos confirmados no Firestore;
-- alertas visuais para produtos com dados incompletos e títulos aparentemente duplicados, sem mesclar itens;
-- PWA responsiva, utilizável no navegador do celular ou desktop;
-- nenhuma gravação/exclusão de dados, nenhum fechamento de compra, nenhum envio de SOS ou disparo de notificações.
+**Importante:** a web só sincroniza dados que já existem no Firestore. Registros exclusivos do armazenamento local do APK antigo precisam ser exportados/migrados com revisão humana. Não limpe ou desinstale o APK.
 
-**Limitações:** recursos Android nativos não foram portados; a web não vê SharedPreferences, banco local nem dados da variante `com.centraldocasal.app.dev` que ainda não tenham sido sincronizados no Firebase. Nunca desinstale/limpe o APK para testar a web sem backup e confirmação de sincronização. Não há transferência automática de dados locais.
+## Publicar no Firebase Hosting
+Há um workflow `.github/workflows/deploy-web-firebase.yml` que tenta publicar automaticamente ao atualizar a branch `main`. Ele usa os secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` e `GCP_SERVICE_ACCOUNT` existentes no repositório para autenticação Workload Identity Federation. A conta de serviço deve possuir também permissões para **Firebase Hosting** (não apenas Firestore Rules Admin).
 
-## Publicar gratuitamente pelo Firebase Hosting
+Se faltar permissão, verifique a execução em GitHub → Actions → **Publicar Central do Casal Web no Firebase Hosting**. Para publicar manualmente:
 
-1. No **Firebase Console → Configurações do projeto → Seus apps**, registre um app **Web** no projeto `central-do-casal`. Confira a configuração pública devolvida. Se o console informar `appId`, adicione-o ao objeto `firebaseConfig` em `web/main.js`; substitua os outros valores se forem diferentes dos atuais. A chave pública referenciada veio de `app/src/main/assets/firebase-config.json`. **Não use conta de serviço nem chave privada no frontend.**
-2. Confirme no Firebase Authentication que o login por **e-mail/senha** está habilitado e que os domínios de hospedagem estão autorizados (Authorization domains). Publique/valide as regras Firestore separadamente, com o fluxo já existente. O build web não implanta regras.
-3. Com Node 22 e o Firebase CLI autenticado em sua conta do projeto, execute na raiz do repositório:
-   ```bash
-   npx firebase-tools login
-   npx firebase-tools deploy --only hosting --project central-do-casal
-   ```
-4. Use a URL exibida pelo deploy, normalmente o domínio `web.app` do projeto. **Não presuma que ela existe antes de um deploy confirmado.**
-5. Entre com a mesma conta do Android e valide a sincronização e o `householdId` em dois dispositivos.
+```bash
+npm ci
+npx firebase-tools login
+npx firebase-tools deploy --only hosting --project central-do-casal
+```
 
-A configuração de Hosting está em `firebase.json`, sem alterar os emuladores ou regras existentes.
+A URL será mostrada na saída do deploy. No console Firebase, registre um aplicativo Web no projeto `central-do-casal`, confira `web/main.js` (configuração Firebase pública) e confirme que o login e os domínios autorizados funcionam. Não exponha credenciais privadas em JavaScript ou no GitHub.
 
-## Alternativa GitHub Pages
+Uma segunda opção é o workflow GitHub Pages `.github/workflows/web-pages.yml`. Se o repositório privado não tiver Pages habilitado pelo plano, use Firebase Hosting.
 
-Foi incluído o workflow `.github/workflows/web-pages.yml` que publica apenas `web/` após merge em `main` ou acionamento manual. Em **Settings → Pages**, selecione **GitHub Actions** como fonte. Para repositórios privados, a disponibilidade de Pages depende do plano GitHub. A URL, se habilitada, é informada na execução do workflow. O domínio publicado deve estar autorizado no Firebase Auth.
+## Teste em dois dispositivos
+1. Entre na web com a mesma conta Android. Se o Android usa modo local, conecte/exporte esses dados antes.
+2. Confirme espaço `householdId` e listas.
+3. Adicione um produto na web. Confira se aparece no Android, e vice-versa.
+4. Marque um produto e altere orçamento. Verifique em ambos.
+5. Finalize uma compra real apenas após todos os preços reais terem sido conferidos. Confira histórico no Android.
+6. Verifique que duplicações não foram unificadas.
+7. Se uma operação exibir erro de permissão, não altere regras para públicas; confirme usuário, espaço compartilhado, versão das regras e deploy.
 
-## Checklist específico da issue #69
-
-- [ ] Testar e-mail/senha no navegador com **mesmo UID** usado no Android.
-- [ ] Confirmar `householdId`, orçamento e quantidade de itens da lista no Firestore.
-- [ ] Confirmar se recibos antigos aparecem na web. Se só existem no aparelho, preservá-los/exportá-los antes da migração.
-- [ ] Revisar títulos repetidos como «Alho» sem juntar unidades diferentes.
-- [ ] Revisar qualquer item sem nome/unidade, **sem** finalizar compra.
-- [ ] Testar notificações **no APK físico**, pois a versão web de leitura não implementa esse recurso.
-
-## Segurança
-
-A versão web usa apenas Firebase Auth + Firestore, com regras por UID e household; não contém token de servidor nem segredo administrativo. É possível executar os arquivos estáticos em um servidor HTTPS ou local; não carregar via `file://`. **Não altere as regras para acesso público** a fim de fazê-la funcionar. Se aparecer `permission-denied`, diagnostique membership, identidade e deploy das regras.
+Outras funções nativas como lembretes de Android, localização e SOS não são portadas para browser nesta entrega. A migração do armazenamento local continua necessária para compatibilidade total.
