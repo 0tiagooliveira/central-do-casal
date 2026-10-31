@@ -1,6 +1,6 @@
 import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
-import {catalogDraft} from "./catalog.js";
+import {catalogDraft,catalogQuickDraft,alreadyAdded} from "./catalog.js";
 import {priceHistory,priceTrend} from "./catalog-history.js";
 import {marketView,quantityControls} from "./shopping-market.js";
 import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
@@ -176,13 +176,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="choose-catalog"){
       const p=s.shared.find(p=>p.id===button.dataset.catalogId&&(p.kind==="catalogSku"||p.kind==="catalogItem"));
       if(!p){notify("Produto não encontrado na base. Atualize a página.",true);return;}
-      const d=catalogDraft(p);
-      const trend=priceTrend(priceHistory(p,s.shared,s.links||[]));
-      if(trend.points.length){
-        const recent=trend.points[trend.points.length-1];
-        d.unit=recent.unit;d.unitReviewed=true;d.estimated=recent.cents;d.estimateKnown=true;
-      }
-      editor(null,false,d);return;
+      if(alreadyAdded(p,s.baskets[market]?.entries||[])){notify("Este produto já está na lista. Use + e − em Minha lista para ajustar a quantidade.");return;}
+      const d=catalogQuickDraft(p);
+      run(()=>actions.addItem(market,d),"Produto adicionado à lista");
+      return;
     }
     if(act==="remove-inline"&&item){
       const wasBought=item.bought?" (já está no carrinho)":"";

@@ -1,10 +1,18 @@
 # Central do Casal Web · Mercado, catálogo e modo de compras
 
+## Famílias de produtos e adição rápida
+
+O catálogo web mostra grupos por família na ficha de cada item-base. Exemplo: **Açúcar** apresenta históricos de açúcar cristal, mascavo e refinado na mesma ficha, com **gráficos separados por SKU/variação**, para não comparar uma embalagem de 1 kg com outra de 5 kg como se fossem o mesmo item. O gráfico principal destaca uma série individual com registros reais. A mesma lógica de família por nome específico e evidências importadas é aplicada a outros produtos da base quando identificáveis.
+
+As famílias de nome ou sugestão são **pré-visualizações**, não associações oficiais gravadas no Firebase; uma decisão explícita de separar ou associar a outra base sempre prevalece. Quando não há evidência segura, o gráfico não inventa histórico. Os vínculos exatos continuam confirmáveis manualmente. As séries originais, notas e IDs não são alterados.
+
+**+ Adicionar** no Catálogo agora insere o item na lista **com um toque**, sem abrir um formulário. Se a unidade ou preço não têm suporte na base, o item entra com quantidade inicial de 1 e sinalização de revisão; o campo de preço não é preenchido com dados de embalagens diferentes. Depois use **Minha lista → +/− ou Editar** para ajustar e **No mercado** para registrar o preço real. A transação Firestore preserva os campos `unitReviewed`, `quantityReviewed`, `estimateKnown` e os IDs de origem, garantindo sincronização conservadora com Android.
+
 ## Preparar a lista usando a base de produtos
 
 Na web, abra **Compras** e escolha uma das três áreas:
 
-- **Catálogo**: veja **Minha base** (`catalogItem`) ou **Por loja** (`catalogSku`) conforme os registros compartilhados no Firestore. Busque nome, marca, categoria ou loja, filtre por categoria, avance em grupos de 40 produtos e toque em **Adicionar** para escolher unidade/quantidade/preço e inserir na lista.
+- **Catálogo**: veja **Minha base** (`catalogItem`) ou **Por loja** (`catalogSku`) conforme os registros compartilhados no Firestore. Busque nome, marca, categoria ou loja, filtre por categoria, avance em grupos de 40 produtos e toque em **Adicionar** para inserir na lista diretamente; ajuste unidade, quantidade e preço na lista caso estejam incompletos.
 - **Minha lista**: planeje e ajuste quantidades pelos controles `+` e `−`, ou abra **Editar** para especificar valores exatos.
 - **No mercado**: veja **Falta comprar** e **No carrinho** separadamente. Ajuste quantidade, preencha o preço real do produto e toque em **Colocar no carrinho**. Corrija preços com **Salvar preço** ou devolva itens à lista com **Retirar do carrinho**. Ao terminar, use **Concluir e salvar**.
 
