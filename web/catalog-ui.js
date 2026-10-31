@@ -13,7 +13,7 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
   const entries=state.baskets[state.market]?.entries||[];
   const links=state.links||[];
   const filtered=queryCatalog(catalog,search,selected);
-  const recoverable=source==="base"?filtered.filter(p=>familyVariants(p,state.shared,links).some(v=>v.needsReview)):[];
+  const recoverable=source==="base"&&recoverableOnly?filtered.filter(p=>familyVariants(p,state.shared,links).some(v=>v.needsReview)):[];
   const results=source==="base"&&recoverableOnly?recoverable:filtered;
   const visible=results.slice(0,limit);
   const categoriesMarkup=categories.map(c=>`<option value="${esc(c)}" ${selected===c?"selected":""}>${esc(c)}</option>`).join("");
@@ -63,7 +63,7 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
     <div class="catalog-explainer"><strong>Escolha os produtos na sua base</strong><p>Produtos que já existem no Firebase, com histórico das notas e preços unitários quando documentados. Selecione para colocar na lista sem digitar tudo novamente.</p></div>
     <div class="catalog-subnav"><button class="item-btn ${source==="base"?"active":""}" data-shop-action="source-base" type="button" aria-pressed="${source==="base"}">Minha base (${catalogItems(state.shared,state.market,"base").length})</button><button class="item-btn ${source==="store"?"active":""}" type="button" data-shop-action="source-store" aria-pressed="${source==="store"}">Por loja (${catalogItems(state.shared,state.market,"store").length})</button></div>
     <div class="catalog-filters"><label>Buscar produto<input type="search" placeholder="Nome, marca, categoria ou loja" id="shop-catalog-search" value="${esc(search)}" autocomplete="off"></label><label>Categoria<select id="shop-catalog-category">${categoriesMarkup}</select></label></div>
-    ${source==="base"?`<label class="catalog-recovery-filter"><input type="checkbox" data-catalog-recovery ${recoverableOnly?"checked":""}> Mostrar famílias com preços agrupáveis e vínculos pendentes (${recoverable.length})</label>`:""}
+    ${source==="base"?`<label class="catalog-recovery-filter"><input type="checkbox" data-catalog-recovery ${recoverableOnly?"checked":""}> Mostrar famílias com preços agrupáveis e vínculos pendentes${recoverableOnly?" ("+recoverable.length+")":""}</label>`:""}
     <div class="catalog-result-summary"><strong>${results.length} produto(s) encontrado(s)</strong><span>Exibindo ${visible.length} de ${results.length}</span></div>
     <div class="catalog-grid">${visible.length?visible.map(card).join(""):`<div class="empty">${catalog.length?"Nenhum produto corresponde aos filtros.":"Nenhum produto dessa base disponível no Firebase para este espaço."}</div>`}</div>
     ${visible.length<results.length?`<div class="catalog-more"><button class="item-btn" data-shop-action="show-more" type="button">Mostrar mais ${Math.min(40,results.length-visible.length)} produtos</button></div>`:""}
