@@ -21,7 +21,7 @@ function marketRow(e,state) {
   const price=e.actual==null?"":(Number(e.actual)/100).toFixed(2).replace(".",",");
   const group=esc(e.group||e.category||"Essenciais");
   const realQty=Number(e.actualMilli??e.plannedMilli??1000);
-  return `<article class="market-row ${bought?"done":""}">
+  return `<article class="market-row ${bought?"done":""}" data-shopping-entry-id="${esc(e.id)}">
     <div class="market-row-head"><div><strong>${title}</strong><span>${group}${ready?"":" · Revisar unidade"}</span></div><div class="market-card-menu"><button type="button" class="item-btn" data-shop-action="edit" data-item-id="${esc(e.id)}">Detalhes</button><button type="button" class="item-btn danger" data-shop-action="remove-inline" data-item-id="${esc(e.id)}">Remover</button></div></div>
     <div class="market-purchase-line">${quantityControls(e,true)}
       <label class="market-price">Preço real por ${esc(e.unit||"un")} (R$)
