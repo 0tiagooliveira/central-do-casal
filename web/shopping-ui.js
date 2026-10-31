@@ -1,3 +1,4 @@
+import {presentationSeries} from "./product-presentation.js";
 import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
 import {catalogDraft,catalogQuickDraft,alreadyAdded} from "./catalog.js";
@@ -171,6 +172,29 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         +"Registros encontrados: "+history.length+(value?"\\nÚltimo: "+(value.cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})+"/"+value.unit:"")
         +"\\n\\nEsta confirmação associará os históricos ao produto na sua base, inclusive no Android. Os recibos originais serão preservados. Continuar?";
       if(confirm(message))run(()=>confirmCatalogAssociation(db,auth,getState,base.id,sku.id),"Histórico vinculado à sua base");
+      return;
+    }
+    if(act==="add-package"){
+      const sku=s.shared.find(x=>x.id===button.dataset.skuId&&x.kind==="catalogSku");
+      if(!sku){notify("Esta apresentação não foi encontrada na base. Atualize a página.",true);return;}
+      const packageGroup=presentationSeries(priceHistory(sku,s.shared,s.links||[]))
+        .find(g=>g.key===button.dataset.packageKey);
+      if(!packageGroup||!packageGroup.points.length){notify("Histórico desta embalagem não encontrado.",true);return;}
+      const last=packageGroup.points.at(-1);
+      const display=packageGroup.presentation?.display||"Apresentação não identificada";
+      const compact=x=>String(x||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+      const title=compact(sku.title).includes(compact(display))?sku.title:sku.title+" · "+display;
+      if((s.baskets[market]?.entries||[]).some(e=>e.sourceSkuId===sku.id&&compact(e.title)===compact(title))){
+        notify("Esta apresentação já está na lista. Ajuste a quantidade em Minha lista.");
+        return;
+      }
+      const draft=catalogQuickDraft(sku);
+      Object.assign(draft,{title,unit:last.unit,unitReviewed:true,plannedMilli:1000,
+        actualMilli:1000,quantityReviewed:true,
+        estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
+        estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
+        sourceSkuId:sku.id});
+      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista");
       return;
     }
     if(act==="choose-catalog"){
