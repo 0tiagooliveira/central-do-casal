@@ -23,6 +23,8 @@ export function saveViewPosition(hash,position,store=sessionStorage){
 export function loadViewPosition(hash,store=sessionStorage){
   try{
     const saved=JSON.parse(store.getItem(key(hash))||"null");
+    // Migração: versões anteriores armazenavam só o número de pixels.
+    if(Number.isFinite(saved)&&saved>=0)return {y:saved,anchor:"",offset:0};
     if(saved&&Number.isFinite(saved.y)&&saved.y>=0)
       return {y:saved.y,anchor:typeof saved.anchor==="string"?saved.anchor:"",
         offset:Number.isFinite(saved.offset)?saved.offset:0};
