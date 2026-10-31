@@ -1,0 +1,33 @@
+name: Publicar Central do Casal Web no Firebase Hosting
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.github/workflows/deploy-web-firebase.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: central-web-hosting
+  cancel-in-progress: false
+jobs:
+  hosting:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Autenticar sem chave JSON (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - run: npm ci --no-audit --no-fund
+      - name: Publicar somente Hosting (nunca alterar regras automaticamente)
+        run: npx firebase-tools deploy --only hosting --project central-do-casal --non-interactive
