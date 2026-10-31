@@ -4,6 +4,12 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Incluir compras imprevistas sem passar por Falta comprar
+
+Em **Compras > No mercado**, o botão **+ Produto direto no carrinho** abre um formulário curto. Pesquise um item já cadastrado em Minha base/Por loja ou digite um produto novo, informe a quantidade, unidade e preço real pago. O formulário permite ajustar a quantidade com botões de mais/menos e preencher a categoria.
+
+Ao confirmar, a inclusão usa `addToCart` em uma **transação Firestore**. O item entra com `bought=true`, preço real e quantidade efetivamente comprada, e a interface navega para **No carrinho**. Se já existe **exatamente um** produto pendente de mesmo nome e unidade, a transação o atualiza em vez de criar uma cópia. Em caso de nomes repetidos ou embalagens diferentes, os registros ficam separados para não mesclar indevidamente. O total e contadores são atualizados a partir da mesma cesta sincronizada. Nada disso altera o histórico anterior nem o catálogo de origem.
+
 ## Recarregamento robusto e modo mercado mais rápido
 
 O site agora conserva **a tela/aba na URL, o mercado selecionado e o card que estava visível**, não apenas o deslocamento em pixels. A posição é salva durante a rolagem, quando a aba fica em segundo plano e ao fechar/recarregar, usando apenas sessionStorage da aba. O texto pesquisado em Catálogo, Minha lista e No mercado também é recuperado na mesma aba. O carregamento do modo mercado pode restaurar a posição assim que os documentos da cesta chegam, sem esperar todos os registros do catálogo. O navegador não disputa a restauração com o app. Links sem fragmento tentam recuperar a última rota aberta na mesma sessão.
