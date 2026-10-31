@@ -71,6 +71,19 @@ export function createShoppingActions(db,auth,getState) {
     const next={...e,id:crypto.randomUUID(),bought:false,actual:null,actualMilli:e.plannedMilli,estimated:estimate,estimateKnown:estimate!=null,unitReviewed:UNITS.includes(e.unit),quantityReviewed:Number(e.plannedMilli)>0};
     return {...old,entries:[...(old.entries||[]),next]};
   });
+  /** Merge a user-exported Android shopping basket, never replacing cloud entries or IDs. */
+  const importBackup=(market,backup)=>modify(market,old=>{
+    const incoming=Array.isArray(backup?.entries)?backup.entries:[];
+    if(incoming.length>200)throw new Error("Backup ultrapassa 200 itens. Revise o arquivo.");
+    const ids=new Set((old.entries||[]).map(e=>e.id));
+    const additions=incoming.filter(e=>e&&typeof e.id==="string"&&e.id.length>0&&!ids.has(e.id));
+    if(additions.some(e=>typeof e.title!=="string"||typeof e.unit!=="string"))
+      throw new Error("Backup possui produtos incompletos ou incompatíveis.");
+    if((old.entries||[]).length+additions.length>200)
+      throw new Error("Total acima de 200 produtos. Revise a lista antes de importar.");
+    const budget=old.budget===0&&Number.isSafeInteger(backup.budget)&&backup.budget>=0?backup.budget:old.budget;
+    return {...old,budget,entries:[...(old.entries||[]),...additions]};
+  });
   async function closeBasket(market) {
     const state=getState();assertSession(state,auth);
     const visible=state.baskets[market];
@@ -101,5 +114,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,updateItem,removeItem,changeBudget,repurchase,closeBasket};
+  return {addItem,updateItem,removeItem,changeBudget,repurchase,closeBasket,importBackup};
 }
