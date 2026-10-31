@@ -160,7 +160,11 @@ export function downloadEmergency(state,market){
 }
 export function emergencyBanner(state) {
   const draft=readEmergency(state,state.market);
-  if(!draft)return "";
+  if(!draft){
+    return state.cachedBasketOnly?
+      '<section class="emergency-banner" role="status"><strong>⚠ Lista recuperada do próprio aparelho</strong>'+
+      '<p>O Firebase ainda não confirmou esta lista. Confira os itens antes de continuar e não limpe os dados do navegador.</p></section>':"";
+  }
   const spent=draft.basket.entries.filter(e=>e.bought).reduce((sum,e)=>
     sum+Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000),0);
   const fmt=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n/100);
@@ -183,6 +187,13 @@ export function replayEmergency(remote,draft){
   const nowById=new Map((remote.entries||[]).map(e=>[e.id,e]));
   const changedIds=new Set(draft.operations
     .filter(o=>o.type==="update"||o.type==="remove").map(o=>o.id).filter(Boolean));
+  for(const op of draft.operations.filter(o=>o.type==="batchAddToCart")){
+    for(const entry of op.entries||[]){
+      const baselinePending=(draft.baseline.entries||[]).filter(e=>!e.bought&&
+        e.unit===entry.unit&&normalize(e.title)===normalize(entry.title));
+      if(baselinePending.length===1)changedIds.add(baselinePending[0].id);
+    }
+  }
   for(const id of changedIds){
     const baseline=oldById.get(id),latest=nowById.get(id);
     if(JSON.stringify(baseline)!==JSON.stringify(latest))
