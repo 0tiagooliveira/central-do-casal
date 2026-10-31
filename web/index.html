@@ -10,7 +10,15 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="login" class="auth-shell">
+  <div id="session-loading" class="auth-shell" role="status" aria-live="polite">
+    <div class="auth-card session-card">
+      <div class="brand"><span class="brand-icon">✦</span> Central do Casal</div>
+      <div class="session-spinner" aria-hidden="true"></div>
+      <h1>Voltando ao seu espaço</h1>
+      <p class="muted">Restaurando sua sessão e a tela onde você estava…</p>
+    </div>
+  </div>
+  <div id="login" class="auth-shell" hidden>
     <div class="auth-card">
       <div class="brand"><span class="brand-icon">✦</span> Central do Casal <span class="tiny-label">WEB</span></div>
       <h1>Nosso espaço, em qualquer tela.</h1>

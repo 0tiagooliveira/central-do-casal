@@ -4,6 +4,12 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Recarregar sem perder tela e sessão
+
+A web usa rotas no fragmento da URL (`#/`) para registrar a posição atual. Exemplos: `#/compras/mercado/catalogo/minha-base`, `#/compras/mercado/minha-lista`, `#/compras/acougue/no-mercado/carrinho`, `#/hoje`, `#/rotina`. Ao atualizar ou abrir um link guardado, a navegação principal, Mercado/Açougue e subaba de Compras são restaurados. O histórico do navegador (Voltar/Avançar) também troca de tela sem carregar outro documento. A posição vertical é salva apenas na sessão do navegador e recuperada após o primeiro carregamento dos registros compartilhados.
+
+O formulário de login permanece oculto enquanto o Firebase verifica o usuário. A autenticação usa **browserLocalPersistence** para manter a sessão após recarregamento e fechamento, com fallback para **browserSessionPersistence** quando o armazenamento local é bloqueado pelo navegador. Se nenhum armazenamento estiver disponível, o site informa a limitação e pode exigir autenticação novamente; nenhuma senha é salva manualmente na página. **Sair da conta** continua a encerrar a sessão. A rota é estado de interface, não conteúdo privado.
+
 ## Pesquisa em Minha lista e No mercado
 
 Em **Compras > Minha lista**, a barra de busca fica logo abaixo da escolha Mercado/Açougue e filtra simultaneamente pendentes e itens comprados, por nome do produto, grupo, categoria, subgrupo, apresentação, unidade ou cômodo. Em **Compras > No mercado**, outra barra filtra as abas **Falta comprar** e **No carrinho**, com resultados e contadores próprios em cada situação. O catálogo já dispõe de pesquisa por nome, categoria e loja.
