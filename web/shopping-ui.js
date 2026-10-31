@@ -14,6 +14,23 @@ const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFraction
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
+try{
+  const remembered=JSON.parse(sessionStorage.getItem("cdc:shopping-filters")||"null");
+  if(remembered&&typeof remembered==="object"){
+    for(const key of ["search","category"])
+      if(typeof remembered[key]==="string")shopPrefs[key]=remembered[key].slice(0,160);
+    for(const key of ["listSearch","marketSearch"])
+      for(const market of ["Mercado","Açougue"])
+        if(typeof remembered[key]?.[market]==="string")
+          shopPrefs[key][market]=remembered[key][market].slice(0,160);
+  }
+}catch{}
+function persistShoppingFilters(){
+  try{sessionStorage.setItem("cdc:shopping-filters",JSON.stringify({
+    search:shopPrefs.search,category:shopPrefs.category,
+    listSearch:shopPrefs.listSearch,marketSearch:shopPrefs.marketSearch
+  }));}catch{}
+}
 export function getShoppingRoutePrefs(){
   return {shopMode:shopPrefs.mode,catalogSource:shopPrefs.source,marketSection:shopPrefs.marketSection};
 }
@@ -186,6 +203,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const state=getState();
       const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
       prefs[state.market]=event.target.value;
+      persistShoppingFilters();
       const caret=event.target.selectionStart??event.target.value.length;
       clearTimeout(shoppingSearchTimer);
       shoppingSearchTimer=setTimeout(()=>{
@@ -205,6 +223,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(event.target.id!=="shop-catalog-search")return;
     shopPrefs.search=event.target.value;shopPrefs.limit=40;
+    persistShoppingFilters();
     const cursor=event.target.selectionStart??shopPrefs.search.length;
     clearTimeout(catalogSearchTimer);
     catalogSearchTimer=setTimeout(()=>{
@@ -214,7 +233,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     },140);
   });
   root.addEventListener("change",event=>{
-    if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;render();}
+    if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
     if(event.target.matches("[data-catalog-recovery]")){shopPrefs.recoverableOnly=event.target.checked;shopPrefs.limit=40;render();}
   });
   root.addEventListener("click",event=>{
@@ -226,6 +245,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(area==="list"||area==="market"){
         const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
         prefs[market]="";
+        persistShoppingFilters();
         clearTimeout(shoppingSearchTimer);
         render();
         root.querySelector('[data-shopping-search="'+area+'"]')?.focus({preventScroll:true});
@@ -248,6 +268,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="source-base"||act==="source-store"){
       shopPrefs.source=act==="source-base"?"base":"store";
       shopPrefs.category="Todas";shopPrefs.limit=40;
+      persistShoppingFilters();
       rememberShoppingRoute();
       render();
       return;
