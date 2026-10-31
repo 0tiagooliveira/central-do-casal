@@ -1,4 +1,5 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
+import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
@@ -106,6 +107,22 @@ export function createShoppingActions(db,auth,getState) {
   const fillMissingEstimates=(market,proposals)=>modify(market,old=>({
     ...old,entries:applyMissingEstimates(old.entries||[],proposals)
   }));
+  async function synchronizeEmergency(market,draft) {
+    const state=getState();assertSession(state,auth);
+    if(!draft||draft.market!==market||draft.uid!==state.uid||
+      draft.household!==state.household||!Array.isArray(draft.operations)||
+      draft.operations.length===0||draft.operations.length>300)
+      throw Error("Backup local inválido para sincronização.");
+    return runTransaction(db,async tx=>{
+      const ref=basketRef(state,market),snap=await tx.get(ref);
+      if(!snap.exists())throw Error("A lista não existe mais no Firebase. Preserve o backup.");
+      const remote=snap.data();
+      const next=replayEmergency(remote,draft);
+      if(!Array.isArray(next.entries)||next.entries.length>200)
+        throw Error("A lista ficou acima de 200 itens. Revise antes de sincronizar.");
+      tx.set(ref,{...next,localPending:false,revision:Number(remote.revision||0)+1});
+    });
+  }
   const changeBudget=(market,budget)=>modify(market,old=>({...old,budget}));
   const repurchase=(market,receiptId,itemId)=>modify(market,old=>{
     const source=getState().shared.find(r=>r.kind==="receipt"&&r.id===receiptId&&r.market===market);
@@ -174,5 +191,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup};
+  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency};
 }
