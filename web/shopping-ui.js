@@ -1,4 +1,5 @@
 import {writeAppRoute} from "./navigation.js";
+import {showMarketAddDialog} from "./market-add-dialog.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
@@ -14,6 +15,23 @@ const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFraction
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
+try{
+  const remembered=JSON.parse(sessionStorage.getItem("cdc:shopping-filters")||"null");
+  if(remembered&&typeof remembered==="object"){
+    for(const key of ["search","category"])
+      if(typeof remembered[key]==="string")shopPrefs[key]=remembered[key].slice(0,160);
+    for(const key of ["listSearch","marketSearch"])
+      for(const market of ["Mercado","Açougue"])
+        if(typeof remembered[key]?.[market]==="string")
+          shopPrefs[key][market]=remembered[key][market].slice(0,160);
+  }
+}catch{}
+function persistShoppingFilters(){
+  try{sessionStorage.setItem("cdc:shopping-filters",JSON.stringify({
+    search:shopPrefs.search,category:shopPrefs.category,
+    listSearch:shopPrefs.listSearch,marketSearch:shopPrefs.marketSearch
+  }));}catch{}
+}
 export function getShoppingRoutePrefs(){
   return {shopMode:shopPrefs.mode,catalogSource:shopPrefs.source,marketSection:shopPrefs.marketSection};
 }
@@ -35,7 +53,7 @@ function entryHTML(e,state) {
     '<span class="estimate-context">'+clean(suggestion.source)+(suggestion.safe?" · disponível para aplicar":" · exige confirmação")+'</span>':
     e.estimateKnown!==false&&e.unitReviewed===false?
     '<span class="estimate-context">Preço provisório. Confirme unidade e embalagem para calcular o total.</span>':"";
-  return `<article class="shopping-item ${e.bought?"purchased":""}">
+  return `<article class="shopping-item ${e.bought?"purchased":""}" data-shopping-entry-id="${clean(e.id)}">
     <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
       <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}${priceNote}</div></div>
     <div class="shopping-actions">
@@ -48,12 +66,19 @@ function entryHTML(e,state) {
 }
 export function shoppingView({state}) {
   const market=state.market;
+  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
+  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
+  // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
+  // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
+  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
+    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||""});
   const b=state.baskets[market]||{market,entries:[],budget:0};
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
   const bought=entries.filter(e=>e.bought);
   const listQuery=shopPrefs.listSearch[market]||"";
-  const marketQuery=shopPrefs.marketSearch[market]||"";
   const visibleList=filterShoppingEntries(list,listQuery);
   const visibleBought=filterShoppingEntries(bought,listQuery);
   const flagged=entries.filter(e=>!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
@@ -61,16 +86,16 @@ export function shoppingView({state}) {
   const indicative=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed===false&&
     Number.isSafeInteger(e.estimated)&&Number.isSafeInteger(e.plannedMilli)&&e.plannedMilli>0)
     .reduce((n,e)=>n+subtotal(e.estimated,e.plannedMilli),0);
-  const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit)).reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
+  const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit))
+    .reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
   const actual=bought.reduce((n,e)=>n+subtotal(Number(e.actual)||0,e.actualMilli||e.plannedMilli||1000),0);
   const receipts=state.shared.filter(r=>r.kind==="receipt"&&r.market===market).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
-  const seen=new Map();for(const e of entries){const k=String(e.title||"").trim().toLowerCase();if(k)seen.set(k,(seen.get(k)||0)+1);}
+  const seen=new Map();
+  for(const e of entries){
+    const k=String(e.title||"").trim().toLowerCase();
+    if(k)seen.set(k,(seen.get(k)||0)+1);
+  }
   const duplicates=[...seen.entries()].filter(([,n])=>n>1).map(([name])=>name);
-  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
-  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
-  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection,search:marketQuery});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
     ${shoppingSearchBar({area:"list",query:listQuery,total:entries.length,
       shown:visibleList.length+visibleBought.length,label:"Pesquisar na lista e no carrinho"})}
@@ -179,6 +204,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const state=getState();
       const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
       prefs[state.market]=event.target.value;
+      persistShoppingFilters();
       const caret=event.target.selectionStart??event.target.value.length;
       clearTimeout(shoppingSearchTimer);
       shoppingSearchTimer=setTimeout(()=>{
@@ -198,6 +224,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(event.target.id!=="shop-catalog-search")return;
     shopPrefs.search=event.target.value;shopPrefs.limit=40;
+    persistShoppingFilters();
     const cursor=event.target.selectionStart??shopPrefs.search.length;
     clearTimeout(catalogSearchTimer);
     catalogSearchTimer=setTimeout(()=>{
@@ -207,7 +234,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     },140);
   });
   root.addEventListener("change",event=>{
-    if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;render();}
+    if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
     if(event.target.matches("[data-catalog-recovery]")){shopPrefs.recoverableOnly=event.target.checked;shopPrefs.limit=40;render();}
   });
   root.addEventListener("click",event=>{
@@ -219,6 +246,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(area==="list"||area==="market"){
         const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
         prefs[market]="";
+        persistShoppingFilters();
         clearTimeout(shoppingSearchTimer);
         render();
         root.querySelector('[data-shopping-search="'+area+'"]')?.focus({preventScroll:true});
@@ -241,6 +269,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="source-base"||act==="source-store"){
       shopPrefs.source=act==="source-base"?"base":"store";
       shopPrefs.category="Todas";shopPrefs.limit=40;
+      persistShoppingFilters();
       rememberShoppingRoute();
       render();
       return;
@@ -262,6 +291,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
+    if(act==="market-add-cart"){
+      showMarketAddDialog({dialog:dlg,state:s,notify,
+        onSubmit:entry=>run(async()=>{
+          await actions.addToCart(market,entry);
+          shopPrefs.marketSection="bought";
+          rememberShoppingRoute();
+          render();
+        },"Produto registrado diretamente no carrinho")});
+      return;
+    }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
     if(act==="confirm-association"){
       const base=s.shared.find(x=>x.id===button.dataset.baseId&&x.kind==="catalogItem");

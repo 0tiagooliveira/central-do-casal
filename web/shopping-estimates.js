@@ -7,10 +7,34 @@ import {presentationSeries} from "./product-presentation.js";
 const exactId=(a,b)=>!!a&&!!b&&(String(a)===String(b)||
   String(a).replace(/^import_2026_/,"")===String(b).replace(/^import_2026_/,""));
 const finiteCents=n=>Number.isFinite(n)&&n>0&&n<=1000000000?Math.round(n):null;
+const keyId=value=>String(value??"").replace(/^import_2026_/,"");
+const estimateLookupCache=new WeakMap();
+function estimateLookup(records,links,market){
+  // A coleção tem centenas de documentos. Indexar 1 vez por snapshot evita
+  // varrer catálogo/notas em cada card e em cada atualização do Firebase.
+  let scoped=estimateLookupCache.get(records);
+  if(!scoped){scoped=new Map();estimateLookupCache.set(records,scoped);}
+  const current=scoped.get(market);
+  if(current&&current.links===links)return current;
+  const idx={links,skuById:new Map(),baseById:new Map(),byName:new Map(),histories:new Map()};
+  for(const rec of records){
+    if(rec.private===true||rec.market!==market)continue;
+    if(rec.kind==="catalogSku")idx.skuById.set(keyId(rec.id),rec);
+    if(rec.kind==="catalogItem"){
+      idx.baseById.set(keyId(rec.id),rec);
+      const name=normalizeCatalogText(rec.title);
+      if(!idx.byName.has(name))idx.byName.set(name,[]);
+      idx.byName.get(name).push(rec);
+    }
+  }
+  scoped.set(market,idx);
+  return idx;
+}
 const isPending=e=>e&&e.bought!==true&&(e.estimateKnown===false||e.estimateKnown==null)&&
   !(Number.isSafeInteger(e.estimated)&&e.estimated>0);
-function fromSku(entry,sku,records,links){
-  const history=priceHistory(sku,records,links);
+function fromSku(entry,sku,records,links,index){
+  if(!index.histories.has(sku.id))index.histories.set(sku.id,priceHistory(sku,records,links));
+  const history=index.histories.get(sku.id);
   const groups=presentationSeries(history);
   let group=null;
   if(groups.length===1)group=groups[0];
@@ -39,14 +63,13 @@ function fromSku(entry,sku,records,links){
 }
 export function suggestedEstimate(entry,records=[],links=[],market="Mercado"){
   if(!entry)return null;
-  const srcSku=(records||[]).find(r=>r.kind==="catalogSku"&&r.private!==true&&
-    r.market===market&&exactId(r.id,entry.sourceSkuId));
+  const index=estimateLookup(records,links,market);
+  const srcSku=entry.sourceSkuId?index.skuById.get(keyId(entry.sourceSkuId)):null;
   if(srcSku){
     // Se há SKU explícito, jamais substituir por uma média da família.
-    return fromSku(entry,srcSku,records,links);
+    return fromSku(entry,srcSku,records,links,index);
   }
-  const srcBase=(records||[]).find(r=>r.kind==="catalogItem"&&r.private!==true&&
-    r.market===market&&exactId(r.id,entry.sourceBaseId));
+  const srcBase=entry.sourceBaseId?index.baseById.get(keyId(entry.sourceBaseId)):null;
   if(srcBase){
     const reference=catalogPrice(srcBase);
     if(reference.known&&reference.cents>0)
@@ -59,8 +82,7 @@ export function suggestedEstimate(entry,records=[],links=[],market="Mercado"){
   if(entry.sourceBaseId||entry.sourceSkuId)return null;
   const name=normalizeCatalogText(entry.title);
   if(!name)return null;
-  const matching=(records||[]).filter(r=>r.kind==="catalogItem"&&r.private!==true&&
-    r.market===market&&normalizeCatalogText(r.title)===name);
+  const matching=index.byName.get(name)||[];
   if(matching.length!==1)return null;
   const reference=catalogPrice(matching[0]);
   return reference.known&&reference.cents>0?

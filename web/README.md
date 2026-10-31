@@ -4,6 +4,22 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Incluir compras imprevistas sem passar por Falta comprar
+
+Em **Compras > No mercado**, o botão **+ Produto direto no carrinho** abre um formulário curto. Pesquise um item já cadastrado em Minha base/Por loja ou digite um produto novo, informe a quantidade, unidade e preço real pago. O formulário permite ajustar a quantidade com botões de mais/menos e preencher a categoria.
+
+Ao confirmar, a inclusão usa `addToCart` em uma **transação Firestore**. O item entra com `bought=true`, preço real e quantidade efetivamente comprada, e a interface navega para **No carrinho**. Se já existe **exatamente um** produto pendente de mesmo nome e unidade, a transação o atualiza em vez de criar uma cópia. Em caso de nomes repetidos ou embalagens diferentes, os registros ficam separados para não mesclar indevidamente. O total e contadores são atualizados a partir da mesma cesta sincronizada. Nada disso altera o histórico anterior nem o catálogo de origem.
+
+## Recarregamento robusto e modo mercado mais rápido
+
+O site agora conserva **a tela/aba na URL, o mercado selecionado e o card que estava visível**, não apenas o deslocamento em pixels. A posição é salva durante a rolagem, quando a aba fica em segundo plano e ao fechar/recarregar, usando apenas sessionStorage da aba. O texto pesquisado em Catálogo, Minha lista e No mercado também é recuperado na mesma aba. O carregamento do modo mercado pode restaurar a posição assim que os documentos da cesta chegam, sem esperar todos os registros do catálogo. O navegador não disputa a restauração com o app. Links sem fragmento tentam recuperar a última rota aberta na mesma sessão.
+
+As mudanças de cache/metadata do Firebase não causam reconstruções de interface; os snapshots de dados são renderizados uma vez por frame, preservando a rolagem quando a seção não muda. O app assina as cestas **antes** dos catálogos grandes. A inicialização usa a persistência de login padrão local do Firebase sem chamar `setPersistence` em todo refresh; escolha explícita e fallback de persistência só ocorrem no **login**. Isto evita migrações desnecessárias do estado de autenticação a cada atualização, sem guardar senhas.
+
+No **No mercado**, cálculos de preços e histórico exclusivos da página **Minha lista** não são mais executados. As referências de preços restantes usam índice e cache por snapshot, evitando varrer centenas de produtos repetidamente. O Chrome pode deixar os cards fora da tela sem pintura/layout até serem necessários. A barra de pesquisa aparece primeiro e o resumo ocupa menos espaço no celular. Nada disso modifica produtos ou notas do Firestore.
+
+Estas melhorias foram validadas por testes sintáticos e simulados, não por teste de uma sessão Firebase autenticada no navegador do usuário. A rede/armazenamento do dispositivo ainda podem causar atrasos ou impedir persistência de login.
+
 ## Recarregar sem perder tela e sessão
 
 A web usa rotas no fragmento da URL (`#/`) para registrar a posição atual. Exemplos: `#/compras/mercado/catalogo/minha-base`, `#/compras/mercado/minha-lista`, `#/compras/acougue/no-mercado/carrinho`, `#/hoje`, `#/rotina`. Ao atualizar ou abrir um link guardado, a navegação principal, Mercado/Açougue e subaba de Compras são restaurados. O histórico do navegador (Voltar/Avançar) também troca de tela sem carregar outro documento. A posição vertical é salva apenas na sessão do navegador e recuperada após o primeiro carregamento dos registros compartilhados.
