@@ -523,7 +523,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
-      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
+      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
       if(readEmergency(getState(),market)){
