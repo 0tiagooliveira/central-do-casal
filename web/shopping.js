@@ -48,13 +48,13 @@ export function createShoppingActions(db,auth,getState) {
   }
   const addItem=(market,entry)=>modify(market,old=>{
     checkEntry(entry);
-    return {...old,entries:[...(old.entries||[]),{id:crypto.randomUUID(),title:entry.title.trim(),unit:entry.unit,plannedMilli:entry.plannedMilli,actualMilli:entry.plannedMilli,estimated:entry.estimated,actual:entry.bought?entry.actual:null,bought:entry.bought,estimateKnown:entry.estimateKnown,unitReviewed:true,quantityReviewed:true,sourceBaseId:"",sourceSkuId:"",category:entry.category||"",storageRoom:"",recipient:"Casa",group:entry.group||"Essenciais",subgroup:"",priority:"Normal",sourcePlanId:"",sourceStepId:""}]};
+    return {...old,entries:[...(old.entries||[]),{id:crypto.randomUUID(),title:entry.title.trim(),unit:entry.unit,plannedMilli:entry.plannedMilli,actualMilli:entry.plannedMilli,estimated:entry.estimated,actual:entry.bought?entry.actual:null,bought:entry.bought,estimateKnown:entry.estimateKnown,unitReviewed:true,quantityReviewed:true,sourceBaseId:entry.sourceBaseId||"",sourceSkuId:entry.sourceSkuId||"",category:entry.category||"",storageRoom:entry.storageRoom||"",recipient:entry.recipient||"Casa",group:entry.group||"Essenciais",subgroup:entry.subgroup||"",priority:entry.priority||"Normal",sourcePlanId:entry.sourcePlanId||"",sourceStepId:entry.sourceStepId||""}]};
   });
   const updateItem=(market,id,entry)=>modify(market,old=>{
     const entries=old.entries||[];
     const original=entries.find(e=>e.id===id);
     if(!original)throw new Error("Produto não encontrado. Atualize a lista.");
-    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?entry.plannedMilli:original.actualMilli||entry.plannedMilli,actual:entry.bought?entry.actual:null};
+    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?(entry.actualMilli??entry.plannedMilli):(entry.actualMilli??original.actualMilli??entry.plannedMilli),actual:entry.bought?entry.actual:null};
     checkEntry(next);
     return {...old,entries:entries.map(e=>e.id===id?next:e)};
   });

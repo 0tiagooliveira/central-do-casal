@@ -1,9 +1,14 @@
+import {catalogView} from "./catalog-ui.js";
+import {catalogDraft} from "./catalog.js";
+import {priceHistory,priceTrend} from "./catalog-history.js";
+import {marketView,quantityControls} from "./shopping-market.js";
 import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
 
 const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(n)||0)/100);
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40};
 function entryHTML(e) {
   const name=clean(e.title||"Produto sem nome");
   const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
@@ -13,6 +18,7 @@ function entryHTML(e) {
     <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
       <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}</div></div>
     <div class="shopping-actions">
+      ${quantityControls(e)}
       <button type="button" class="item-btn ${e.bought?"subtle":"buy"}" data-shop-action="toggle" data-item-id="${clean(e.id)}" aria-label="${e.bought?"Desmarcar":"Registrar compra de"} ${name}">${e.bought?"Desfazer":"✓ Comprei"}</button>
       <button type="button" class="item-btn" data-shop-action="edit" data-item-id="${clean(e.id)}">Editar</button>
     </div>
@@ -31,7 +37,11 @@ export function shoppingView({state}) {
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const seen=new Map();for(const e of entries){const k=String(e.title||"").trim().toLowerCase();if(k)seen.set(k,(seen.get(k)||0)+1);}
   const duplicates=[...seen.entries()].filter(([,n])=>n>1).map(([name])=>name);
-  return `<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
+  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
+  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state);
+  return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
     <section class="shopping-summary">
       <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa: <strong>${currency(subtotalExpected)}</strong> · Já comprado: <strong>${currency(actual)}</strong></p></div>
       <button type="button" data-shop-action="budget" class="item-btn">Alterar orçamento</button>
@@ -89,16 +99,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       dlg.querySelectorAll("button").forEach(b=>b.disabled=false);}
     finally{busy=false;}
   }
-  function editor(item=null,buy=false){
+  function editor(item=null,buy=false,seed=null){
     const market=getState().market;
-    const e=item||{title:"",unit:"un",plannedMilli:1000,estimated:0,bought:false,group:"Essenciais",estimateKnown:true};
+    const e=item||seed||{title:"",unit:"un",plannedMilli:1000,estimated:0,bought:false,group:"Essenciais",estimateKnown:true};
     const purchased=buy||e.bought;
     dlg.innerHTML=`<form id="shopping-editor" method="dialog">
     <div class="dialog-header"><h2>${item?"Editar produto":"Novo produto"}</h2><button type="button" class="item-btn" data-cancel>Fechar</button></div>
     <label>Nome do produto<input required maxlength="200" name="title" autocomplete="off" value="${clean(e.title)}" placeholder="Ex.: Arroz integral"></label>
     <div class="dialog-grid"><label>Quantidade<input required name="qty" inputmode="decimal" value="${quantity(e.plannedMilli)}"></label>
-      <label>Unidade<select name="unit">${UNITS.map(u=>`<option value="${u}" ${e.unit===u?"selected":""}>${u}</option>`).join("")}</select></label></div>
-    <div class="dialog-grid"><label>Preço estimado (R$)<input name="estimated" inputmode="decimal" value="${inputMoney(e.estimated)}"></label>
+      <label>Unidade<select name="unit" required><option value="" disabled ${!UNITS.includes(e.unit)?"selected":""}>Escolher unidade</option>${UNITS.map(u=>`<option value="${u}" ${e.unit===u?"selected":""}>${u}</option>`).join("")}</select></label></div>
+    <div class="dialog-grid"><label>Preço estimado (R$)<input name="estimated" inputmode="decimal" value="${e.estimateKnown===false?"":inputMoney(e.estimated)}"></label>
       <label>Grupo<input name="group" maxlength="60" value="${clean(e.group||"Essenciais")}"></label></div>
     <label class="check-line"><input type="checkbox" name="bought" ${purchased?"checked":""}> Já comprei este produto</label>
     <label class="actual-field" ${purchased?"":"hidden"}>Preço real por unidade (R$)<input name="actual" inputmode="decimal" value="${e.actual==null?"":inputMoney(e.actual)}" placeholder="Ex.: 12,90"></label>
@@ -116,18 +126,66 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         const q=milliQty(form.elements.qty.value);
         const bought=form.elements.bought.checked;
         const actual=bought?moneyCents(form.elements.actual.value):null;
-        const entry={title:form.elements.title.value.trim(),plannedMilli:q,unit:form.elements.unit.value,estimated:moneyCents(form.elements.estimated.value||"0"),actual,bought,estimateKnown:true,unitReviewed:true,quantityReviewed:true,group:form.elements.group.value.trim()||"Essenciais"};
+        const entry={title:form.elements.title.value.trim(),plannedMilli:q,actualMilli:q,unit:form.elements.unit.value,estimated:moneyCents(form.elements.estimated.value||"0"),actual,bought,estimateKnown:form.elements.estimated.value.trim()!=="",unitReviewed:true,quantityReviewed:true,group:form.elements.group.value.trim()||"Essenciais",...(seed?{sourceBaseId:seed.sourceBaseId,sourceSkuId:seed.sourceSkuId,category:seed.category,storageRoom:seed.storageRoom,recipient:seed.recipient,subgroup:seed.subgroup,priority:seed.priority}:{})};
         if(!entry.title)throw new Error("Informe o nome do produto.");
         run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),"Produto salvo");
       }catch(e){notify(e.message,true);}
     });
   }
+  let catalogSearchTimer;
+  root.addEventListener("input",event=>{
+    if(event.target.id!=="shop-catalog-search")return;
+    shopPrefs.search=event.target.value;shopPrefs.limit=40;
+    const cursor=event.target.selectionStart??shopPrefs.search.length;
+    clearTimeout(catalogSearchTimer);
+    catalogSearchTimer=setTimeout(()=>{
+      render();
+      const field=root.querySelector("#shop-catalog-search");
+      if(field){field.focus();field.setSelectionRange(cursor,cursor);}
+    },140);
+  });
+  root.addEventListener("change",event=>{
+    if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;render();}
+  });
   root.addEventListener("click",event=>{
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=getState(),act=button.dataset.shopAction,market=s.market;
+    if(act.startsWith("view-")){shopPrefs.mode=act.slice(5);render();return;}
+    if(act==="source-base"||act==="source-store"){shopPrefs.source=act==="source-base"?"base":"store";shopPrefs.category="Todas";shopPrefs.limit=40;render();return;}
+    if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
+    if(act==="choose-catalog"){
+      const p=s.shared.find(p=>p.id===button.dataset.catalogId&&(p.kind==="catalogSku"||p.kind==="catalogItem"));
+      if(!p){notify("Produto não encontrado na base. Atualize a página.",true);return;}
+      const d=catalogDraft(p);
+      const trend=priceTrend(priceHistory(p,s.shared,s.links||[]));
+      if(trend.points.length){
+        const recent=trend.points[trend.points.length-1];
+        d.unit=recent.unit;d.unitReviewed=true;d.estimated=recent.cents;d.estimateKnown=true;
+      }
+      editor(null,false,d);return;
+    }
+    if(act==="quick-qty"&&item){
+      const field=button.dataset.qtyField==="actual"?"actual":"planned";
+      const step=(item.unit==="kg"||item.unit==="L")?500:(item.unit==="g"||item.unit==="mL")?100000:1000;
+      const previous=Number(field==="actual"?(item.actualMilli??item.plannedMilli):item.plannedMilli);
+      const next=previous+Number(button.dataset.delta)*step;
+      if(!Number.isSafeInteger(next)||next<=0||next>100000000){notify("Quantidade fora do limite. Use Editar para informar uma quantidade exata.",true);return;}
+      const update=field==="actual"?{...item,actualMilli:next}:{...item,plannedMilli:next,actualMilli:item.bought?(item.actualMilli??item.plannedMilli):next};
+      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada");return;
+    }
+    if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
+      const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
+      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto devolvido à lista");return;}
+      if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
+      try{
+        const price=moneyCents(priceInput.value);
+        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto colocado no carrinho":"Preço do carrinho atualizado");
+      }catch(e){notify(e.message,true);priceInput.focus();}
+      return;
+    }
     if(act==="import"){uploader.click();return;}
     if(act==="add")editor();
     if(act==="edit"&&item)editor(item);
