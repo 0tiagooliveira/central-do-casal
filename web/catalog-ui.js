@@ -5,14 +5,16 @@ import {priceHistory,priceTrend,sparkline} from "./catalog-history.js";
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(n)||0)/100);
 const humanDate=date=>/^\d{4}-\d{2}-\d{2}$/.test(date||"")?date.slice(8,10)+"/"+date.slice(5,7)+"/"+date.slice(0,4):"Sem data";
-export function catalogView(state,{source="base",search="",category="Todas",limit=40}={}){
+export function catalogView(state,{source="base",search="",category="Todas",limit=40,recoverableOnly=false}={}){
   const catalog=catalogItems(state.shared,state.market,source);
   const categories=catalogCategories(catalog);
   const selected=categories.includes(category)?category:"Todas";
-  const results=queryCatalog(catalog,search,selected);
-  const visible=results.slice(0,limit);
   const entries=state.baskets[state.market]?.entries||[];
   const links=state.links||[];
+  const filtered=queryCatalog(catalog,search,selected);
+  const recoverable=source==="base"?filtered.filter(p=>unmatchedHistoryCandidates(p,state.shared,links).length>0):[];
+  const results=source==="base"&&recoverableOnly?recoverable:filtered;
+  const visible=results.slice(0,limit);
   const categoriesMarkup=categories.map(c=>`<option value="${esc(c)}" ${selected===c?"selected":""}>${esc(c)}</option>`).join("");
   const card=product=>{
     const history=priceHistory(product,state.shared,links);
@@ -48,6 +50,7 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
     <div class="catalog-explainer"><strong>Escolha os produtos na sua base</strong><p>Produtos que já existem no Firebase, com histórico das notas e preços unitários quando documentados. Selecione para colocar na lista sem digitar tudo novamente.</p></div>
     <div class="catalog-subnav"><button class="item-btn ${source==="base"?"active":""}" data-shop-action="source-base" type="button" aria-pressed="${source==="base"}">Minha base (${catalogItems(state.shared,state.market,"base").length})</button><button class="item-btn ${source==="store"?"active":""}" type="button" data-shop-action="source-store" aria-pressed="${source==="store"}">Por loja (${catalogItems(state.shared,state.market,"store").length})</button></div>
     <div class="catalog-filters"><label>Buscar produto<input type="search" placeholder="Nome, marca, categoria ou loja" id="shop-catalog-search" value="${esc(search)}" autocomplete="off"></label><label>Categoria<select id="shop-catalog-category">${categoriesMarkup}</select></label></div>
+    ${source==="base"?`<label class="catalog-recovery-filter"><input type="checkbox" data-catalog-recovery ${recoverableOnly?"checked":""}> Mostrar só produtos com preços encontrados e associação pendente (${recoverable.length})</label>`:""}
     <div class="catalog-result-summary"><strong>${results.length} produto(s) encontrado(s)</strong><span>Exibindo ${visible.length} de ${results.length}</span></div>
     <div class="catalog-grid">${visible.length?visible.map(card).join(""):`<div class="empty">${catalog.length?"Nenhum produto corresponde aos filtros.":"Nenhum produto dessa base disponível no Firebase para este espaço."}</div>`}</div>
     ${visible.length<results.length?`<div class="catalog-more"><button class="item-btn" data-shop-action="show-more" type="button">Mostrar mais ${Math.min(40,results.length-visible.length)} produtos</button></div>`:""}
