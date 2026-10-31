@@ -3,6 +3,7 @@
 // para não comparar preços de embalagens/variedades diferentes como um único item.
 import {normalizeCatalogText} from "./catalog.js";
 import {priceHistory,relatedSkus} from "./catalog-history.js";
+import {presentationSeries} from "./product-presentation.js";
 import {unmatchedHistoryCandidates,canonicalCatalogId} from "./catalog-matches.js";
 
 const asText=v=>typeof v==="string"?v.trim():"";
@@ -58,7 +59,7 @@ export function familyVariants(base,records=[],links=[]) {
     const history=priceHistory(sku,records,links);
     if(!history.length)continue;
     const status=confirmed?"confirmado":proposed?"referência importada":"família pelo nome";
-    results.push({sku,history,status,confirmed,needsReview:!confirmed,
+    results.push({sku,history,series:presentationSeries(history),status,confirmed,needsReview:!confirmed,
       latest:history[history.length-1],evidence:proposed?.evidence||[]});
   }
   const sorted=results.sort((a,b)=>{
@@ -82,12 +83,16 @@ export function primaryFamilySeries(base,records=[],links=[]){
       if(!grouped.has(id))grouped.set(id,[]);
       grouped.get(id).push(point);
     }
-    const series=[...grouped].sort((a,b)=>b[1].length-a[1].length)[0];
-    const sku=variants.find(v=>v.sku.id===series[0])?.sku||
-      records.find(r=>r.id===series[0]);
-    return {history:series[1],label:sku?.title||base.title,confirmed:true,variants};
+    const largest=[...grouped].sort((a,b)=>b[1].length-a[1].length)[0];
+    const sku=variants.find(v=>v.sku.id===largest[0])?.sku||
+      records.find(r=>r.id===largest[0]);
+    const pack=presentationSeries(largest[1])[0];
+    return {history:pack?.points||[],label:sku?.title||base.title,confirmed:true,
+      presentation:pack?.presentation,variants};
   }
   const preview=variants[0];
-  return {history:preview?.history||[],label:preview?.sku.title||base.title,
+  const pack=preview?.series[0];
+  return {history:pack?.points||[],label:preview?.sku.title||base.title,
+    presentation:pack?.presentation,
     confirmed:!preview?.needsReview&&!!preview,variants};
 }
