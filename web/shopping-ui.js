@@ -183,6 +183,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     try{
       if(fallback?.market&&readEmergency(getState(),fallback.market)){
         saveEmergency(getState(),fallback.market,fallback.operation);
+        if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
         dlg.close();render();
         notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
         return;
@@ -192,6 +193,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(fallback?.market&&isQuotaError(e)){
         try{
           saveEmergency(getState(),fallback.market,fallback.operation);
+          if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
           dlg.close();render();
           notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
           return;
@@ -226,7 +228,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     form.elements.title.focus();
     form.elements.bought.addEventListener("change",()=>{form.querySelector(".actual-field").hidden=!form.elements.bought.checked;});
     dlg.querySelector("[data-cancel]").addEventListener("click",()=>dlg.close());
-    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído");});
+    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído",
+      {market,operation:{type:"remove",id:item.id}});});
     form.addEventListener("submit",event=>{
       event.preventDefault();
       try{
@@ -235,7 +238,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         const actual=bought?moneyCents(form.elements.actual.value):null;
         const entry={title:form.elements.title.value.trim(),plannedMilli:q,actualMilli:q,unit:form.elements.unit.value,estimated:moneyCents(form.elements.estimated.value||"0"),actual,bought,estimateKnown:form.elements.estimated.value.trim()!=="",unitReviewed:true,quantityReviewed:true,group:form.elements.group.value.trim()||"Essenciais",...(seed?{sourceBaseId:seed.sourceBaseId,sourceSkuId:seed.sourceSkuId,category:seed.category,storageRoom:seed.storageRoom,recipient:seed.recipient,subgroup:seed.subgroup,priority:seed.priority}:{})};
         if(!entry.title)throw new Error("Informe o nome do produto.");
-        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),"Produto salvo");
+        const offlineEntry=item?{...item,...entry}:{...entry,id:crypto.randomUUID()};
+        const operation=item?{type:"update",id:item.id,entry:offlineEntry}:{type:"add",entry:offlineEntry};
+        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),
+          "Produto salvo",{market,operation});
       }catch(e){notify(e.message,true);}
     });
   }
@@ -402,7 +408,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
         estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
         sourceSkuId:sku.id});
-      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista");
+      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista",
+        {market,operation:{type:"add",entry:{...draft,id:crypto.randomUUID(),bought:false,actual:null}}});
       return;
     }
     if(act==="choose-catalog"){
@@ -417,7 +424,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
       const estimate=suggestedEstimate(d,s.shared,s.links||[],market);
       if(estimate?.safe){d.estimated=estimate.cents;d.estimateKnown=true;}
-      run(()=>actions.addItem(market,d),"Produto adicionado à lista");
+      run(()=>actions.addItem(market,d),"Produto adicionado à lista",
+        {market,operation:{type:"add",entry:{...d,id:crypto.randomUUID(),bought:false,actual:null}}});
       return;
     }
     if(act==="fill-estimates"){
@@ -434,7 +442,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="remove-inline"&&item){
       const wasBought=item.bought?" (já está no carrinho)":"";
       if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
-        run(()=>actions.removeItem(market,item.id),"Produto removido da lista");
+        run(()=>actions.removeItem(market,item.id),"Produto removido da lista",
+          {market,operation:{type:"remove",id:item.id}});
       }
       return;
     }
@@ -467,7 +476,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="import"){uploader.click();return;}
     if(act==="add")editor();
     if(act==="edit"&&item)editor(item);
-    if(act==="toggle"&&item){if(item.bought)run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Compra desmarcada");else editor(item,true);}
+    if(act==="toggle"&&item){if(item.bought){
+      const next={...item,bought:false,actual:null};
+      run(()=>actions.updateItem(market,item.id,next),"Compra desmarcada",
+        {market,operation:{type:"update",id:item.id,entry:next}});
+    }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
