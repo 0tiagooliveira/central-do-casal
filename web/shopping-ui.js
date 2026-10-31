@@ -21,7 +21,9 @@ function entryHTML(e,state) {
     (suggestion?.cents?("Referência sugerida: "+currency(suggestion.cents)):"Sem preço estimado"):
     ("Estimativa: "+currency(e.estimated));
   const priceNote=e.estimateKnown===false&&suggestion?.cents?
-    '<span class="estimate-context">'+clean(suggestion.source)+(suggestion.safe?" · disponível para aplicar":" · exige confirmação")+'</span>':"";
+    '<span class="estimate-context">'+clean(suggestion.source)+(suggestion.safe?" · disponível para aplicar":" · exige confirmação")+'</span>':
+    e.estimateKnown!==false&&e.unitReviewed===false?
+    '<span class="estimate-context">Preço provisório. Confirme unidade e embalagem para calcular o total.</span>':"";
   return `<article class="shopping-item ${e.bought?"purchased":""}">
     <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
       <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}${priceNote}</div></div>
