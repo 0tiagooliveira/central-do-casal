@@ -1,3 +1,4 @@
+import {writeAppRoute} from "./navigation.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
@@ -13,6 +14,15 @@ const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFraction
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
+export function getShoppingRoutePrefs(){
+  return {shopMode:shopPrefs.mode,catalogSource:shopPrefs.source,marketSection:shopPrefs.marketSection};
+}
+export function restoreShoppingRoutePrefs(route){
+  shopPrefs.mode=["catalog","list","market"].includes(route?.shopMode)?route.shopMode:"catalog";
+  shopPrefs.source=route?.catalogSource==="store"?"store":"base";
+  shopPrefs.marketSection=route?.marketSection==="bought"?"bought":"pending";
+}
+
 function entryHTML(e,state) {
   const name=clean(e.title||"Produto sem nome");
   const suggestion=e.estimateKnown===false?suggestedEstimate(e,state.shared,state.links||[],state.market):null;
@@ -89,6 +99,9 @@ export function shoppingView({state}) {
 }
 export function installShoppingUI({root,db,auth,getState,render}) {
   const actions=createShoppingActions(db,auth,getState);
+  function rememberShoppingRoute(){
+    writeAppRoute({tab:"Compras",market:getState().market,...getShoppingRoutePrefs()});
+  }
   const dlg=document.createElement("dialog");
   dlg.className="shop-dialog";
   document.body.append(dlg);
@@ -214,11 +227,24 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(act==="market-section-pending"||act==="market-section-bought"){
       shopPrefs.marketSection=act==="market-section-bought"?"bought":"pending";
+      rememberShoppingRoute();
       render();
       return;
     }
-    if(act.startsWith("view-")){shopPrefs.mode=act.slice(5);render();return;}
-    if(act==="source-base"||act==="source-store"){shopPrefs.source=act==="source-base"?"base":"store";shopPrefs.category="Todas";shopPrefs.limit=40;render();return;}
+    if(act.startsWith("view-")){
+      shopPrefs.mode=act.slice(5);
+      rememberShoppingRoute();
+      render();
+      window.scrollTo({top:0,behavior:"instant"});
+      return;
+    }
+    if(act==="source-base"||act==="source-store"){
+      shopPrefs.source=act==="source-base"?"base":"store";
+      shopPrefs.category="Todas";shopPrefs.limit=40;
+      rememberShoppingRoute();
+      render();
+      return;
+    }
     if(act==="catalog-qty-step"){
       const wrap=button.closest(".catalog-qty-control");
       const field=wrap?.querySelector("[data-shop-qty]");
