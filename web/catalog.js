@@ -68,3 +68,27 @@ export function alreadyAdded(product,entries) {
   const key=product.kind==="catalogItem"?"sourceBaseId":"sourceSkuId";
   return (Array.isArray(entries)?entries:[]).some(e=>e[key]===product.id && !!product.id);
 }
+
+// Adição expressa: cria só um item de planejamento. Unidade, quantidade ou preço
+// ausentes permanecem sinalizados para revisão na lista, sem inventar histórico.
+export function catalogQuickDraft(product) {
+  const draft=catalogDraft(product);
+  if(!allowedUnits.includes(draft.unit)) {
+    draft.unit="un";
+    draft.unitReviewed=false; // unidade sugerida como placeholder
+    draft.estimated=0;
+    draft.estimateKnown=false;
+  }
+  if(!draft.quantityReviewed) {
+    draft.plannedMilli=1000;
+    draft.actualMilli=1000;
+    draft.quantityReviewed=false;
+  }
+  // A referência de item-base é um preço anterior, mas não tem unidade
+  // fiscal garantida; não vira subtotal automaticamente.
+  if(product.kind==="catalogItem"&&!asText(product.unit)) {
+    draft.estimated=0;
+    draft.estimateKnown=false;
+  }
+  return draft;
+}
