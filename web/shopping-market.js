@@ -43,11 +43,12 @@ export function marketView(state,{section="pending",search=""}={}) {
   const budget=state.baskets[state.market]?.budget||0;
   const active=section==="bought"?"bought":"pending";
   const progress=total?Math.round((bought.length/total)*100):0;
-  return `<section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Conferência em tempo real</h2><p>Digite o preço real e toque em <strong>Colocar no carrinho</strong>. O produto sai de Falta comprar e aparece em No carrinho automaticamente.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
-  <div class="market-progress" aria-label="${progress}% dos produtos da lista no carrinho"><div class="market-progress-track"><div style="width:${progress}%"></div></div><span>${bought.length} de ${total} no carrinho</span></div>
-  ${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
+  return `${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
     shown:active==="pending"?visibleRemaining.length:visibleBought.length,
-    label:"Pesquisar no mercado e no carrinho"})}
+    label:"Buscar produtos da compra"})}
+  <section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Resumo da compra</h2><p>Informe o preço real e toque em Colocar no carrinho para mover o produto da lista.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
+  <div class="market-progress" aria-label="${progress}% dos produtos da lista no carrinho"><div class="market-progress-track"><div style="width:${progress}%"></div></div><span>${bought.length} de ${total} no carrinho</span></div>
+
   <nav class="market-status-tabs" aria-label="Acompanhar a compra">
     <button type="button" class="market-status-tab ${active==="pending"?"active":""}" data-shop-action="market-section-pending" aria-pressed="${active==="pending"}"><span>☐ Falta comprar</span><strong>${search.trim()?visibleRemaining.length+"/"+remaining.length:remaining.length}</strong></button>
     <button type="button" class="market-status-tab ${active==="bought"?"active":""}" data-shop-action="market-section-bought" aria-pressed="${active==="bought"}"><span>✓ No carrinho</span><strong>${search.trim()?visibleBought.length+"/"+bought.length:bought.length}</strong></button>
