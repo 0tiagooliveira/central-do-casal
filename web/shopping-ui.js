@@ -1,3 +1,4 @@
+import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
 import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
@@ -10,15 +11,22 @@ const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{}};
-function entryHTML(e) {
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending"};
+function entryHTML(e,state) {
   const name=clean(e.title||"Produto sem nome");
+  const suggestion=e.estimateKnown===false?suggestedEstimate(e,state.shared,state.links||[],state.market):null;
   const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
   const meta=[quantity(e.plannedMilli)+" "+(e.unit||"sem unidade"),e.group||"Essenciais"].join(" · ");
-  const unitEstimate=e.estimateKnown===false?"Sem preço estimado":currency(e.estimated);
+  const unitEstimate=e.estimateKnown===false?
+    (suggestion?.cents?("Referência sugerida: "+currency(suggestion.cents)):"Sem preço estimado"):
+    ("Estimativa: "+currency(e.estimated));
+  const priceNote=e.estimateKnown===false&&suggestion?.cents?
+    '<span class="estimate-context">'+clean(suggestion.source)+(suggestion.safe?" · disponível para aplicar":" · exige confirmação")+'</span>':
+    e.estimateKnown!==false&&e.unitReviewed===false?
+    '<span class="estimate-context">Preço provisório. Confirme unidade e embalagem para calcular o total.</span>':"";
   return `<article class="shopping-item ${e.bought?"purchased":""}">
     <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
-      <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}</div></div>
+      <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}${priceNote}</div></div>
     <div class="shopping-actions">
       ${quantityControls(e)}
       <button type="button" class="item-btn ${e.bought?"subtle":"buy"}" data-shop-action="toggle" data-item-id="${clean(e.id)}" aria-label="${e.bought?"Desmarcar":"Registrar compra de"} ${name}">${e.bought?"Desfazer":"✓ Comprei"}</button>
@@ -34,6 +42,10 @@ export function shoppingView({state}) {
   const list=entries.filter(e=>!e.bought);
   const bought=entries.filter(e=>e.bought);
   const flagged=entries.filter(e=>!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
+  const priceIssues=missingEstimateSummary(entries,state.shared,state.links||[],market);
+  const indicative=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed===false&&
+    Number.isSafeInteger(e.estimated)&&Number.isSafeInteger(e.plannedMilli)&&e.plannedMilli>0)
+    .reduce((n,e)=>n+subtotal(e.estimated,e.plannedMilli),0);
   const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit)).reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
   const actual=bought.reduce((n,e)=>n+subtotal(Number(e.actual)||0,e.actualMilli||e.plannedMilli||1000),0);
   const receipts=state.shared.filter(r=>r.kind==="receipt"&&r.market===market).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
@@ -43,17 +55,21 @@ export function shoppingView({state}) {
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
   const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
-  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state);
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
     <section class="shopping-summary">
-      <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa: <strong>${currency(subtotalExpected)}</strong> · Já comprado: <strong>${currency(actual)}</strong></p></div>
+      <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa conferida: <strong>${currency(subtotalExpected)}</strong> · Referências com unidade a revisar: <strong>${currency(indicative)}</strong> · No carrinho: <strong>${currency(actual)}</strong></p></div>
       <button type="button" data-shop-action="budget" class="item-btn">Alterar orçamento</button>
     </section>
     <div class="stats-bar"><span>${entries.length} produtos</span><span>${list.length} pendentes</span><span>${bought.length} comprados</span>${flagged.length?`<span>${flagged.length} para revisar</span>`:""}</div>
+    ${priceIssues.missing?`<section class="estimate-recovery"><div><strong>${priceIssues.missing} produto(s) sem estimativa salva</strong>
+    <p>${priceIssues.usable} preço(s) recuperável(is) pela base ou pelo histórico da mesma apresentação.
+    ${priceIssues.manual?priceIssues.manual+" requer(em) revisão manual.":""} Preços sugeridos não são preços atuais garantidos.</p></div>
+    ${priceIssues.usable?`<button type="button" class="item-btn buy" data-shop-action="fill-estimates">Aplicar ${priceIssues.usable} referência(s)</button>`:""}</section>`:""}
     ${duplicates.length?`<div class="banner warning" style="margin-top:17px">Produtos com nomes repetidos (${clean(duplicates.join(", "))}). Nenhum foi mesclado. Confira as unidades antes de editar.</div>`:""}
     <section class="shop-input-card"><div><h2>Lista de ${market.toLowerCase()}</h2><p>Adicione e marque produtos conforme compra.</p></div><button type="button" class="primary-btn" data-shop-action="add">+ Adicionar produto</button></section>
-    <div class="row-list">${list.length?list.map(entryHTML).join(""):`<div class="empty">Nenhum produto pendente. Adicione o que precisa comprar.</div>`}</div>
-    ${bought.length?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${bought.length}</span></div><div class="row-list">${bought.map(entryHTML).join("")}</div>`:""}
+    <div class="row-list">${list.length?list.map(e=>entryHTML(e,state)).join(""):`<div class="empty">Nenhum produto pendente. Adicione o que precisa comprar.</div>`}</div>
+    ${bought.length?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${bought.length}</span></div><div class="row-list">${bought.map(e=>entryHTML(e,state)).join("")}</div>`:""}
     <div class="checkout-card"><div><strong>Concluir esta compra</strong><p>Guarde o comprovante no histórico e reabra a lista com os últimos preços.</p></div><button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Finalizar compra</button></div>
     <div class="split-head"><h2 class="section-heading">Histórico de compras</h2><span class="mini-count">${receipts.length}</span></div>
     <p class="info-line">Reutilize os produtos que já compraram. Nada é consolidado automaticamente.</p>
@@ -158,6 +174,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=getState(),act=button.dataset.shopAction,market=s.market;
+    if(act==="market-section-pending"||act==="market-section-bought"){
+      shopPrefs.marketSection=act==="market-section-bought"?"bought":"pending";
+      render();
+      return;
+    }
     if(act.startsWith("view-")){shopPrefs.mode=act.slice(5);render();return;}
     if(act==="source-base"||act==="source-store"){shopPrefs.source=act==="source-base"?"base":"store";shopPrefs.category="Todas";shopPrefs.limit=40;render();return;}
     if(act==="catalog-qty-step"){
@@ -229,7 +250,20 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       catch(err){notify("Quantidade inválida: "+err.message,true);field?.focus();return;}
       const d=catalogQuickDraft(p);
       d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
+      const estimate=suggestedEstimate(d,s.shared,s.links||[],market);
+      if(estimate?.safe){d.estimated=estimate.cents;d.estimateKnown=true;}
       run(()=>actions.addItem(market,d),"Produto adicionado à lista");
+      return;
+    }
+    if(act==="fill-estimates"){
+      const summary=missingEstimateSummary(s.baskets[market]?.entries||[],s.shared,s.links||[],market);
+      if(!summary.usable){notify("Nenhum preço ausente com origem confiável foi encontrado.");return;}
+      const preview=summary.suggestions.slice(0,8).map(x=>x.title+": "+currency(x.cents)+" · "+x.source).join("\\n");
+      const message="Aplicar "+summary.usable+" preço(s) de referência à lista "+market+"?\\n\\n"+
+        preview+(summary.usable>8?"\\n... e mais "+(summary.usable-8)+" produto(s).":"")+
+        "\\n\\nSão referências históricas, não cotações atuais. Preços reais, quantidades e valores já informados serão preservados.";
+      if(confirm(message))
+        run(()=>actions.fillMissingEstimates(market,summary.suggestions),"Referências de preço recuperadas");
       return;
     }
     if(act==="remove-inline"&&item){
@@ -250,11 +284,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
       const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
-      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto devolvido à lista");return;}
+      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto voltou para Falta comprar");return;}
       if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
       try{
         const price=moneyCents(priceInput.value);
-        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto colocado no carrinho":"Preço do carrinho atualizado");
+        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado");
       }catch(e){notify(e.message,true);priceInput.focus();}
       return;
     }

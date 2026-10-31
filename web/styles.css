@@ -190,3 +190,30 @@
 @media(max-width:540px){.catalog-card>.catalog-qty-control{margin-top:0}.catalog-qty-input input{max-width:86px}}
 
 .catalog-card>.catalog-add-button{width:100%;padding:12px 14px;font-size:.83rem;line-height:1.25;min-height:45px}
+
+/* Compra no mercado: estados claros sem rolar por dezenas de itens. */
+.market-progress{display:flex;align-items:center;gap:12px;margin:17px 0 14px}
+.market-progress-track{height:8px;border-radius:100px;background:#e6ecf4;overflow:hidden;flex:1}
+.market-progress-track>div{height:100%;background:#239676;border-radius:100px;transition:width .2s ease}
+.market-progress>span{white-space:nowrap;font-size:.73rem;font-weight:750;color:#61768e}
+.market-status-tabs{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:0 0 18px}
+.market-status-tab{border:1px solid #d9e4f2;border-radius:14px;background:#fff;color:#516a85;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:54px;padding:12px;font-weight:750;text-align:left}
+.market-status-tab span{font-size:.83rem}
+.market-status-tab strong{background:#edf3fb;border-radius:9px;min-width:31px;padding:6px 8px;text-align:center;font-size:.83rem}
+.market-status-tab.active{background:#eaf3ff;color:#1657a3;border-color:#8fb9ea}
+.market-status-tab.active strong{background:#226cc1;color:#fff}
+.market-focus-section{margin:0 0 22px}
+.market-focus-section .market-section-head{margin-bottom:14px}
+.market-focus-section .market-list{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.market-focus-section .empty button{margin-top:11px}
+@media(max-width:540px){.market-status-tabs{gap:7px}.market-status-tab{padding:10px 9px;min-height:52px}.market-status-tab span{font-size:.76rem}.market-status-tab strong{min-width:27px;padding:5px 6px}.market-progress{gap:8px}.market-progress>span{font-size:.69rem}.market-focus-section .market-list{grid-template-columns:1fr}}
+
+/* Referências recuperadas do catálogo para listas antigas */
+.estimate-recovery{display:flex;justify-content:space-between;align-items:center;gap:14px;background:#f2f7ff;border:1px solid #d9e6f9;border-radius:15px;padding:14px 16px;margin:14px 0}
+.estimate-recovery>div{min-width:0;flex:1}
+.estimate-recovery strong{font-size:.83rem;color:#2c5b8e}
+.estimate-recovery p{font-size:.75rem;line-height:1.5;color:#69819c;margin:5px 0 0}
+.estimate-recovery button{flex-shrink:0;font-size:.76rem;max-width:200px;white-space:normal;line-height:1.35}
+.estimate-context{display:block;font-size:.69rem;line-height:1.45;color:#73899f;margin-top:5px}
+.shopping-summary .shop-summary-text p{line-height:1.7}
+@media(max-width:540px){.estimate-recovery{flex-direction:column;align-items:stretch}.estimate-recovery button{width:100%;max-width:none}}

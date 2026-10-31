@@ -1,3 +1,4 @@
+import {applyMissingEstimates} from "./shopping-estimates.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
@@ -62,6 +63,11 @@ export function createShoppingActions(db,auth,getState) {
     if(!(old.entries||[]).some(e=>e.id===id))throw new Error("Item não encontrado.");
     return {...old,entries:old.entries.filter(e=>e.id!==id)};
   });
+  // Aceita apenas sugestões derivadas de registros atuais; o usuário confirma
+  // o lote antes da transação. Preços manuais ou itens comprados não são tocados.
+  const fillMissingEstimates=(market,proposals)=>modify(market,old=>({
+    ...old,entries:applyMissingEstimates(old.entries||[],proposals)
+  }));
   const changeBudget=(market,budget)=>modify(market,old=>({...old,budget}));
   const repurchase=(market,receiptId,itemId)=>modify(market,old=>{
     const source=getState().shared.find(r=>r.kind==="receipt"&&r.id===receiptId&&r.market===market);
@@ -114,5 +120,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,updateItem,removeItem,changeBudget,repurchase,closeBasket,importBackup};
+  return {addItem,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup};
 }
