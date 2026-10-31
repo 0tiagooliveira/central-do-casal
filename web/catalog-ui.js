@@ -48,9 +48,9 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
     const referenceRate=last?normalizedRate(last):null;
     const presentationLabel=(family?.presentation||last?.presentation)?.display||"";
     return `<article class="catalog-card">
-      <div class="catalog-card-top"><div class="catalog-title"><strong>${esc(product.title)}</strong><span>${esc(product.category||"Sem categoria")}${product.store?" · "+esc(product.store):""}</span></div>
-      <button type="button" class="item-btn ${added?"subtle":"buy"}" data-shop-action="choose-catalog" data-catalog-id="${esc(product.id)}" ${added?"disabled":""}>${added?"✓ Na lista":"+ Adicionar"}</button></div>
+      <div class="catalog-card-top"><div class="catalog-title"><strong>${esc(product.title)}</strong><span>${esc(product.category||"Sem categoria")}${product.store?" · "+esc(product.store):""}</span></div></div>
       ${!added?quantitySelector(product.id,product.unit||"un",quantities):""}
+      <button type="button" class="item-btn catalog-add-button ${added?"subtle":"buy"}" data-shop-action="choose-catalog" data-catalog-id="${esc(product.id)}" ${added?"disabled":""}>${added?"✓ Na lista":"+ Adicionar com esta quantidade"}</button>
       <div class="catalog-price-row"><div><span class="eyebrow">${family&&history.length?"PREÇO DA VARIAÇÃO EM DESTAQUE":"ÚLTIMO PREÇO DOCUMENTADO"}</span><strong>${lastPrice}</strong><small>${lastDate}</small></div>
        <div class="trend-pill ${trendKind}">${trend.kind==="up"?"↗":trend.kind==="down"?"↘":"•"} ${esc(trend.label)}</div></div>
       ${history.length?`<div class="family-main-label">${family?esc(family.label)+" · "+(family.confirmed?"vínculo confirmado":"prévia por família")+" · ":""}${esc(presentationLabel)}</div>`:""}
