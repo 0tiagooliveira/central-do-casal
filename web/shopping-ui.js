@@ -169,7 +169,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(act==="quick-qty"&&item){
       const field=button.dataset.qtyField==="actual"?"actual":"planned";
-      const step=(item.unit==="kg"||item.unit==="L")?500:(item.unit==="g"||item.unit==="mL")?100:1000;
+      const step=(item.unit==="kg"||item.unit==="L")?500:(item.unit==="g"||item.unit==="mL")?100000:1000;
       const previous=Number(field==="actual"?(item.actualMilli??item.plannedMilli):item.plannedMilli);
       const next=previous+Number(button.dataset.delta)*step;
       if(!Number.isSafeInteger(next)||next<=0||next>100000000){notify("Quantidade fora do limite. Use Editar para informar uma quantidade exata.",true);return;}
