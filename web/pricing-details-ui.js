@@ -44,7 +44,8 @@ export function packageDetailCards(points){
       prices+descriptionNote+
       '<details class="package-receipts"><summary>Ver compras e descrições ('+g.points.length+')</summary>'+
       '<p class="package-description">Última descrição fiscal: '+esc(last.description||"Não informada")+'</p>'+
-      '<p class="package-footnote">* Quando informado, o valor após rateio é uma estimativa do arquivo importado, não um novo pagamento.</p>'+\n      '<div class="package-table-wrap"><table><thead><tr><th>Data</th><th>Loja</th>'+
+      '<p class="package-footnote">* Quando informado, o valor após rateio é uma estimativa do arquivo importado, não um novo pagamento.</p>'+
+      '<div class="package-table-wrap"><table><thead><tr><th>Data</th><th>Loja</th>'+
       '<th>Preço unitário</th><th>Qtd. na nota</th><th>Valor após rateio*</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       (g.points.length>25?'<p>Exibidas as 25 últimas compras desta apresentação.</p>':"")+'</details>'+
       '</section>';
