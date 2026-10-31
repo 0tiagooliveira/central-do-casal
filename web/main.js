@@ -1,7 +1,7 @@
 import {shoppingView,installShoppingUI,getShoppingRoutePrefs,restoreShoppingRoutePrefs} from "./shopping-ui.js";
 import {parseAppRoute,writeAppRoute} from "./navigation.js";
 import {captureViewPosition,saveViewPosition,loadViewPosition,restoreViewPosition} from "./scroll-position.js";
-import {isQuotaError} from "./emergency-cart.js";
+import {isQuotaError,cacheBasketSnapshot} from "./emergency-cart.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -184,7 +184,12 @@ function connectHousehold(householdId){
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
   // A cesta tem poucos documentos, enquanto o catálogo contém centenas.
   // Assinar a cesta primeiro entrega a lista mais cedo ao modo mercado.
-  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));firstHouseData.baskets=true;},"listas de compras","house");
+  watch(collection(db,"households",householdId,"baskets"),s=>{
+    state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));
+    for(const [market,basket] of Object.entries(state.baskets))
+      cacheBasketSnapshot(state,market,basket);
+    firstHouseData.baskets=true;
+  },"listas de compras","house");
   watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;},"registros compartilhados","house");
   watch(collection(db,"households",householdId,"catalogLinks"),s=>{state.links=s.docs.map(d=>({id:d.id,...d.data()}));},"vínculos do catálogo","house");
 }

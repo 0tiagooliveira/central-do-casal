@@ -1,4 +1,5 @@
 import {marketTotals} from "./market-totals.js";
+import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
 import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
@@ -75,7 +76,7 @@ export function shoppingView({state}) {
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+cartBatchBanner(state)+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
@@ -327,6 +328,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=projectedShoppingState(getState()),act=button.dataset.shopAction,market=s.market;
+    if(act==="import-link-cart"){
+      const batch=readCartBatch();
+      if(!batch||!s.uid||!s.household||market!=="Mercado"){
+        notify("Este link de compras não é válido para esta lista.",true);return;
+      }
+      const plan=planCartBatch(batch,s.baskets.Mercado);
+      if(!plan.needed.length){
+        consumeCartBatchLink();
+        notify("Os itens já comprados foram preservados. Revise os produtos já existentes.");
+        render();return;
+      }
+      try{
+        saveEmergency(getState(),"Mercado",{
+          type:"batchAddToCart",batchId:batch.id,entries:plan.needed.map(e=>({...e,id:crypto.randomUUID()}))
+        });
+        // Sem escrita na rede: a cesta local é atualizada imediatamente.
+        shopPrefs.mode="market";shopPrefs.marketSection="bought";
+        shopPrefs.marketSearch.Mercado="";
+        persistShoppingFilters();
+        rememberShoppingRoute();
+        consumeCartBatchLink();
+        render();
+        notify(plan.needed.length+" produto(s) adicionados ao carrinho deste aparelho ("+
+          currency(plan.sumCents)+"). NÃO sincronizados. Baixe o backup.");
+      }catch(error){
+        notify(error.message||"Falha ao registrar localmente. Nenhum item foi confirmado.",true);
+      }
+      return;
+    }
     if(act==="emergency-export"){
       try{downloadEmergency(getState(),market);notify("Backup da compra baixado neste aparelho.");}
       catch(e){notify(e.message,true);}

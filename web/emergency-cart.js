@@ -5,6 +5,28 @@ const storage=()=>window.localStorage;
 const key=(s,market)=>"cdc:emergency-v1:"+encodeURIComponent(s.uid||"")+":"+
   encodeURIComponent(s.household||"")+":"+encodeURIComponent(market);
 const allowed=["Mercado","Açougue"];
+const cacheKey=(state,market)=>"cdc:last-basket-v1:"+
+  encodeURIComponent(state.uid||"")+":"+encodeURIComponent(state.household||"")+":"+encodeURIComponent(market);
+export function cacheBasketSnapshot(state,market,basket){
+  if(!state?.uid||!state?.household||!allowed.includes(market)||!basket?.generation||
+      !Array.isArray(basket.entries))return;
+  try{
+    storage().setItem(cacheKey(state,market),JSON.stringify({
+      savedAt:new Date().toISOString(),uid:state.uid,household:state.household,market,
+      basket:{market,generation:basket.generation,revision:Number(basket.revision)||0,
+        entries:basket.entries,budget:basket.budget||0}
+    }));
+  }catch{}
+}
+export function readCachedBasket(state,market){
+  if(!state?.uid||!state?.household||!allowed.includes(market))return null;
+  try{
+    const item=JSON.parse(storage().getItem(cacheKey(state,market))||"null");
+    return item?.uid===state.uid&&item.household===state.household&&
+      item.market===market&&item.basket?.generation&&Array.isArray(item.basket.entries)?
+      item.basket:null;
+  }catch{return null;}
+}
 const simple=v=>JSON.parse(JSON.stringify(v));
 const normalize=s=>String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
   .toLocaleLowerCase("pt-BR").trim().replace(/\s+/g," ");
@@ -29,6 +51,23 @@ export function readEmergency(state,market=state.market){
 }
 function applyOperation(basket,operation) {
   const entries=basket.entries||[];
+  if(operation.type==="batchAddToCart"){
+    if(!Array.isArray(operation.entries)||operation.entries.length<1||operation.entries.length>30)
+      throw Error("Lote de compras inválido.");
+    let latest=basket;
+    for(const item of operation.entries){
+      if(!item.title||item.unit!=="un"||!Number.isSafeInteger(item.actual)||
+        !Number.isSafeInteger(item.plannedMilli)||item.plannedMilli<1)
+        throw Error("Lote de compras contém item inválido.");
+      // Nunca somar a compra duas vezes, inclusive se a mesma importação
+      // for reexecutada ou outro dispositivo já tiver marcado o item.
+      const exists=(latest.entries||[]).some(e=>e.bought&&e.unit===item.unit&&
+        normalize(e.title)===normalize(item.title));
+      if(exists)continue;
+      latest=applyOperation(latest,{type:"addToCart",entry:{...item,id:item.id||crypto.randomUUID()}});
+    }
+    return latest;
+  }
   if(operation.type==="budget"){
     if(!Number.isSafeInteger(operation.budget)||operation.budget<0)throw Error("Orçamento inválido.");
     return {...basket,budget:operation.budget};
@@ -73,7 +112,7 @@ export function saveEmergency(state,market,input) {
     throw Error("Não foi possível identificar a conta para o backup local.");
   let draft=readEmergency(state,market);
   if(!draft){
-    const baseline=state.baskets?.[market];
+    const baseline=state.baskets?.[market]?.generation?state.baskets[market]:readCachedBasket(state,market);
     if(!baseline||!Array.isArray(baseline.entries)||!baseline.generation)
       throw Error("Não há cópia da lista disponível para usar offline. Anote o item e o preço.");
     draft={version:1,uid:state.uid,household:state.household,market,
@@ -95,7 +134,12 @@ export function saveEmergency(state,market,input) {
 }
 export function projectedShoppingState(state) {
   const draft=readEmergency(state,state.market);
-  if(!draft)return state;
+  if(!draft){
+    const remote=state.baskets?.[state.market];
+    const cached=!remote?.generation?readCachedBasket(state,state.market):null;
+    return cached?{...state,baskets:{...state.baskets,[state.market]:cached},
+      cachedBasketOnly:true}:state;
+  }
   return {...state,baskets:{...state.baskets,[state.market]:draft.basket},
     emergencyPending:draft.operations.length};
 }
@@ -116,7 +160,11 @@ export function downloadEmergency(state,market){
 }
 export function emergencyBanner(state) {
   const draft=readEmergency(state,state.market);
-  if(!draft)return "";
+  if(!draft){
+    return state.cachedBasketOnly?
+      '<section class="emergency-banner" role="status"><strong>⚠ Lista recuperada do próprio aparelho</strong>'+
+      '<p>O Firebase ainda não confirmou esta lista. Confira os itens antes de continuar e não limpe os dados do navegador.</p></section>':"";
+  }
   const spent=draft.basket.entries.filter(e=>e.bought).reduce((sum,e)=>
     sum+Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000),0);
   const fmt=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n/100);
@@ -137,7 +185,15 @@ export function replayEmergency(remote,draft){
     throw Error("A compra foi finalizada em outro aparelho. Baixe seu backup e revise antes de sincronizar.");
   const oldById=new Map((draft.baseline.entries||[]).map(e=>[e.id,e]));
   const nowById=new Map((remote.entries||[]).map(e=>[e.id,e]));
-  const changedIds=new Set(draft.operations.filter(o=>o.type!=="add").map(o=>o.id).filter(Boolean));
+  const changedIds=new Set(draft.operations
+    .filter(o=>o.type==="update"||o.type==="remove").map(o=>o.id).filter(Boolean));
+  for(const op of draft.operations.filter(o=>o.type==="batchAddToCart")){
+    for(const entry of op.entries||[]){
+      const baselinePending=(draft.baseline.entries||[]).filter(e=>!e.bought&&
+        e.unit===entry.unit&&normalize(e.title)===normalize(entry.title));
+      if(baselinePending.length===1)changedIds.add(baselinePending[0].id);
+    }
+  }
   for(const id of changedIds){
     const baseline=oldById.get(id),latest=nowById.get(id);
     if(JSON.stringify(baseline)!==JSON.stringify(latest))
