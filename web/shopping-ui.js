@@ -279,7 +279,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
     if(event.target.matches("[data-catalog-recovery]")){shopPrefs.recoverableOnly=event.target.checked;shopPrefs.limit=40;render();}
   });
-  root.addEventListener("click",event=>{
+  root.addEventListener("click",async event=>{
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=projectedShoppingState(getState()),act=button.dataset.shopAction,market=s.market;
