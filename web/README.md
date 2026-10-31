@@ -1,4 +1,16 @@
-# Central do Casal Web · Mercado sincronizado
+# Central do Casal Web · Mercado, catálogo e modo de compras
+
+## Preparar a lista usando a base de produtos
+
+Na web, abra **Compras** e escolha uma das três áreas:
+
+- **Catálogo**: veja **Minha base** (`catalogItem`) ou **Por loja** (`catalogSku`) conforme os registros compartilhados no Firestore. Busque nome, marca, categoria ou loja, filtre por categoria, avance em grupos de 40 produtos e toque em **Adicionar** para escolher unidade/quantidade/preço e inserir na lista.
+- **Minha lista**: planeje e ajuste quantidades pelos controles `+` e `−`, ou abra **Editar** para especificar valores exatos.
+- **No mercado**: veja **Falta comprar** e **No carrinho** separadamente. Ajuste quantidade, preencha o preço real do produto e toque em **Colocar no carrinho**. Corrija preços com **Salvar preço** ou devolva itens à lista com **Retirar do carrinho**. Ao terminar, use **Concluir e salvar**.
+
+Os minigráficos de cada card do catálogo são calculados a partir do histórico importado no `catalogSku.history` e dos recibos finalizados no aplicativo, associados à base por IDs e decisões explícitas (`catalogLinks`). Só se comparam preços por mesma unidade; preços inválidos ou sem associação confirmada são omitidos, não estimados. Se houver uma única observação comparável, o card informa que ainda não há tendência suficiente.
+
+Os botões de quantidade variam `1 un/pacote`, `0,5 kg/L` ou `100 g/mL`; o editor permite qualquer quantidade positiva dentro dos limites. Quantidade planejada e efetivamente comprada são preservadas separadamente no Firestore. Cartas antigas que só existem localmente no Android não são recuperadas sem migração.
 
 ## Funcionalidades prontas na branch
 A versão web disponibiliza login Firebase e as telas Hoje, Compras, Rotina, Planos e Nós. **Mercado e Açougue são totalmente editáveis**: criar/editar/excluir produtos, marcar comprado e registrar preço real, orçamento, duas listas, histórico e reposição de produtos antigos. As demais telas ainda estão em expansão e não devem ser tratadas como paridade total com o Android.
