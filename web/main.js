@@ -19,6 +19,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const tabs = [["Hoje","☀️"],["Compras","🛒"],["Rotina","✓"],["Planos","◈"],["Nós","♡"]];
+// O Chrome também tenta restaurar pixels automaticamente. Nossa restauração
+// por card só funciona de forma consistente se uma estratégia controlar a tela.
+if("scrollRestoration" in window.history)window.history.scrollRestoration="manual";
 const initialHash=(()=>{
   if(window.location.hash)return window.location.hash;
   try{return sessionStorage.getItem("cdc:last-route")||"";}catch{return "";}
@@ -33,13 +36,16 @@ let scrollRestored=false,restoreScheduled=false,lastRenderedHash="",pendingScrol
 let firstHouseData={shared:false,baskets:false};
 const routeState=()=>({tab:state.tab,market:state.market,...getShoppingRoutePrefs()});
 function saveScroll(){
-  if(!scrollRestored||state.tab!=="Compras")return;
+  if(!scrollRestored)return;
   saveViewPosition(window.location.hash,captureViewPosition(document.getElementById("content")));
 }
 function rememberRoute(){saveScroll();writeAppRoute(routeState());}
 function restoreScrollAfterRefresh(){
-  if(scrollRestored||restoreScheduled||!state.uid||!state.household||
-     !firstHouseData.shared||!firstHouseData.baskets)return;
+  if(scrollRestored||restoreScheduled||!state.uid||!state.household)return;
+  const shoppingArea=getShoppingRoutePrefs().shopMode;
+  const ready=state.tab==="Compras"&&shoppingArea!=="catalog"?
+    firstHouseData.baskets:firstHouseData.shared&&firstHouseData.baskets;
+  if(!ready)return;
   restoreScheduled=true;
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     if(window.location.hash===startingHash)
@@ -203,7 +209,7 @@ window.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="hidden")saveScroll();
 });
 window.addEventListener("scroll",()=>{
-  if(!scrollRestored||state.tab!=="Compras")return;
+  if(!scrollRestored)return;
   if(pendingScrollSave!==null)clearTimeout(pendingScrollSave);
   pendingScrollSave=setTimeout(()=>{pendingScrollSave=null;saveScroll();},160);
 },{passive:true});
