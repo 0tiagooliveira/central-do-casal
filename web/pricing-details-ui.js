@@ -15,7 +15,12 @@ export function packageDetailCards(points){
     const trusted=["kg","L"].includes(last.unit)||!!(last.presentation?.dimensionAmount||last.presentation?.unitCount);
     const rows=g.points.slice(-25).reverse().map(p=>
       '<tr><td>'+esc(date(p.date))+'</td><td>'+esc(p.store||"Não informada")+'</td>'+
-      '<td>'+itemPrice(p)+'</td><td>'+esc(p.quantityText||"Não informada")+' '+esc(p.unit)+'</td></tr>').join("");
+      '<td>'+itemPrice(p)+'</td><td>'+esc(p.quantityText||"Não informada")+' '+esc(p.unit)+'</td>'+
+      '<td>'+(Number.isInteger(p.netCents)?money4(p.netCents):"Sem rateio")+'</td></tr>').join("");
+    const descriptionVariants=new Set(g.points.map(p=>String(p.description||"").trim().toLocaleLowerCase("pt-BR")).filter(Boolean));
+    const descriptionNote=descriptionVariants.size>1?
+      '<p class="package-unresolved">Há '+descriptionVariants.size+
+      ' descrições fiscais diferentes nesta apresentação. Confira as marcas e variedades na lista de compras abaixo.</p>':"";
     const prices=g.points.length>1?
       '<div class="package-metrics"><span>Menor <strong>'+money4(stats.min)+'</strong></span>'+
       '<span>Média <strong>'+money4(stats.avg)+'</strong></span>'+
@@ -36,11 +41,11 @@ export function packageDetailCards(points){
       (trusted?'<div class="package-spark">'+sparkline(g.points)+'</div>':
         '<div class="package-spark caution">'+sparkline(g.points)+
         '<p>Gráfico apenas dos valores registrados: apresentação incompleta, sem conclusão de alta ou queda.</p></div>')+
-      prices+
+      prices+descriptionNote+
       '<details class="package-receipts"><summary>Ver compras e descrições ('+g.points.length+')</summary>'+
       '<p class="package-description">Última descrição fiscal: '+esc(last.description||"Não informada")+'</p>'+
-      '<div class="package-table-wrap"><table><thead><tr><th>Data</th><th>Loja</th>'+
-      '<th>Preço unitário</th><th>Qtd. na nota</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<p class="package-footnote">* Quando informado, o valor após rateio é uma estimativa do arquivo importado, não um novo pagamento.</p>'+\n      '<div class="package-table-wrap"><table><thead><tr><th>Data</th><th>Loja</th>'+
+      '<th>Preço unitário</th><th>Qtd. na nota</th><th>Valor após rateio*</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       (g.points.length>25?'<p>Exibidas as 25 últimas compras desta apresentação.</p>':"")+'</details>'+
       '</section>';
   }).join("")+'</div>';
