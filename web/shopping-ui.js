@@ -1,4 +1,5 @@
 import {writeAppRoute} from "./navigation.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
 import {labelInvoiceStatus} from "./invoice-reconcile.js";
@@ -67,10 +68,11 @@ function entryHTML(e,state) {
   </article>`;
 }
 export function shoppingView({state}) {
+  state=projectedShoppingState(state);
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
@@ -174,14 +176,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }catch(err){notify(err.message||"Falha ao importar backup.",true);}
   });
   let busy=false;
-  async function run(job,description){
+  async function run(job,description,fallback=null){
     if(busy)return;
     busy=true;
     dlg.querySelectorAll("button").forEach(b=>b.disabled=true);
-    try{await job();dlg.close();notify(description+" · sincronizado no Firebase.");}
-    catch(e){notify((e.message||"Erro na sincronização")+" Verifique a conexão e tente novamente.",true);
-      dlg.querySelectorAll("button").forEach(b=>b.disabled=false);}
-    finally{busy=false;}
+    try{
+      if(fallback?.market&&readEmergency(getState(),fallback.market)){
+        saveEmergency(getState(),fallback.market,fallback.operation);
+        dlg.close();render();
+        notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
+        return;
+      }
+      await job();dlg.close();notify(description+" · sincronizado no Firebase.");
+    }catch(e){
+      if(fallback?.market&&isQuotaError(e)){
+        try{
+          saveEmergency(getState(),fallback.market,fallback.operation);
+          dlg.close();render();
+          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
+          return;
+        }catch(saveError){
+          notify(saveError.message,true);
+        }
+      }else{
+        notify(isQuotaError(e)?
+          "Limite de uso do Firebase atingido. Os dados NÃO foram sincronizados. Anote o preço e use o modo local.":
+          (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
+      }
+      dlg.querySelectorAll("button").forEach(b=>b.disabled=false);
+    }finally{busy=false;}
   }
   function editor(item=null,buy=false,seed=null){
     const market=getState().market;
@@ -259,7 +282,26 @@ export function installShoppingUI({root,db,auth,getState,render}) {
   root.addEventListener("click",event=>{
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
-    const s=getState(),act=button.dataset.shopAction,market=s.market;
+    const s=projectedShoppingState(getState()),act=button.dataset.shopAction,market=s.market;
+    if(act==="emergency-export"){
+      try{downloadEmergency(getState(),market);notify("Backup da compra baixado neste aparelho.");}
+      catch(e){notify(e.message,true);}
+      return;
+    }
+    if(act==="emergency-sync"){
+      const draft=readEmergency(getState(),market);
+      if(!draft){notify("Nenhuma alteração local pendente.");render();return;}
+      if(!confirm("Enviar "+draft.operations.length+" alteração(ões) locais para o Firebase? Se outro aparelho alterou o mesmo produto, a sincronização será interrompida para preservar seus dados."))return;
+      if(busy)return;busy=true;
+      try{
+        await actions.synchronizeEmergency(market,draft);
+        clearEmergency(getState(),market);render();
+        notify("Alterações locais sincronizadas. Confira o carrinho atualizado.");
+      }catch(e){
+        notify(isQuotaError(e)?"O Firebase continua com a cota excedida. Seu backup local foi preservado. Tente sincronizar depois.":(e.message||"Não foi possível sincronizar. Seu backup está preservado."),true);
+      }finally{busy=false;}
+      return;
+    }
     if(act==="clear-shopping-search"){
       const area=button.dataset.searchArea;
       if(area==="list"||area==="market"){
@@ -317,7 +359,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
           shopPrefs.marketSection="bought";
           rememberShoppingRoute();
           render();
-        },"Produto registrado diretamente no carrinho")});
+        },"Produto registrado diretamente no carrinho",
+        {market,operation:{type:"addToCart",entry}})});
       return;
     }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
@@ -402,15 +445,22 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const next=previous+Number(button.dataset.delta)*step;
       if(!Number.isSafeInteger(next)||next<=0||next>100000000){notify("Quantidade fora do limite. Use Editar para informar uma quantidade exata.",true);return;}
       const update=field==="actual"?{...item,actualMilli:next}:{...item,plannedMilli:next,actualMilli:item.bought?(item.actualMilli??item.plannedMilli):next};
-      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada");return;
+      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada",
+        {market,operation:{type:"update",id:item.id,entry:update}});return;
     }
     if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
       const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
-      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto voltou para Falta comprar");return;}
+      if(act==="unbuy-inline"){const next={...item,bought:false,actual:null};
+        run(()=>actions.updateItem(market,item.id,next),"Produto voltou para Falta comprar",
+          {market,operation:{type:"update",id:item.id,entry:next}});
+        return;}
       if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
       try{
         const price=moneyCents(priceInput.value);
-        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado");
+        const next={...item,bought:true,actual:price};
+        run(()=>actions.updateItem(market,item.id,next),
+          act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado",
+          {market,operation:{type:"update",id:item.id,entry:next}});
       }catch(e){notify(e.message,true);priceInput.focus();}
       return;
     }
@@ -423,6 +473,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
+      if(readEmergency(getState(),market)){
+        notify("Há compras ainda não sincronizadas. Baixe o backup e use Tentar sincronizar antes de finalizar a compra.",true);
+        return;
+      }
       const b=s.baskets[market];
       if(!b?.entries?.some(e=>e.bought))return;
       showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>
