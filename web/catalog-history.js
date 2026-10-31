@@ -44,7 +44,7 @@ export function priceHistory(product,records=[],links=[]) {
     if(!validDate(date)||c==null||u==="Escolher"||seen.has(id))return;
     const sku=skus.find(x=>catalogId(x.id)===catalogId(skuId));
     const description=detail.description||sku?.title||"";
-    const presentation=observationPresentation(description,sku?.title||"",u);
+    const presentation=observationPresentation(description,sku?.title||"",unit);
     const point={id,date,unit:u,cents:c,store:store||"",skuId:skuId||"",
       description,presentation,quantityText:String(detail.quantityText??""),
       receiptId:String(detail.receiptId??""),netCents:Number.isInteger(detail.netCents)?detail.netCents:null};
