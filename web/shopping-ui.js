@@ -1,3 +1,4 @@
+import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
 import {catalogDraft} from "./catalog.js";
 import {priceHistory,priceTrend} from "./catalog-history.js";
@@ -8,7 +9,7 @@ const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40};
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false};
 function entryHTML(e) {
   const name=clean(e.title||"Produto sem nome");
   const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
@@ -21,6 +22,7 @@ function entryHTML(e) {
       ${quantityControls(e)}
       <button type="button" class="item-btn ${e.bought?"subtle":"buy"}" data-shop-action="toggle" data-item-id="${clean(e.id)}" aria-label="${e.bought?"Desmarcar":"Registrar compra de"} ${name}">${e.bought?"Desfazer":"✓ Comprei"}</button>
       <button type="button" class="item-btn" data-shop-action="edit" data-item-id="${clean(e.id)}">Editar</button>
+      <button type="button" class="item-btn danger" data-shop-action="remove-inline" data-item-id="${clean(e.id)}" aria-label="Remover ${name} da lista">Remover</button>
     </div>
   </article>`;
 }
@@ -146,6 +148,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
   });
   root.addEventListener("change",event=>{
     if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;render();}
+    if(event.target.matches("[data-catalog-recovery]")){shopPrefs.recoverableOnly=event.target.checked;shopPrefs.limit=40;render();}
   });
   root.addEventListener("click",event=>{
     const button=event.target.closest("[data-shop-action]");
@@ -156,6 +159,20 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
+    if(act==="confirm-association"){
+      const base=s.shared.find(x=>x.id===button.dataset.baseId&&x.kind==="catalogItem");
+      const sku=s.shared.find(x=>x.id===button.dataset.skuId&&x.kind==="catalogSku");
+      if(!base||!sku){notify("Produto não encontrado. Atualize a página.",true);return;}
+      const history=priceHistory(sku,s.shared,s.links||[]);
+      const value=history.at(-1);
+      const message="Confirme somente se for o MESMO produto, considerando embalagem e unidade.\\n\\n"
+        +"Sua base: "+base.title+" ("+(base.category||"sem categoria")+")\\n"
+        +"Nota / loja: "+sku.title+" ("+(sku.store||"loja não informada")+")\\n"
+        +"Registros encontrados: "+history.length+(value?"\\nÚltimo: "+(value.cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})+"/"+value.unit:"")
+        +"\\n\\nEsta confirmação associará os históricos ao produto na sua base, inclusive no Android. Os recibos originais serão preservados. Continuar?";
+      if(confirm(message))run(()=>confirmCatalogAssociation(db,auth,getState,base.id,sku.id),"Histórico vinculado à sua base");
+      return;
+    }
     if(act==="choose-catalog"){
       const p=s.shared.find(p=>p.id===button.dataset.catalogId&&(p.kind==="catalogSku"||p.kind==="catalogItem"));
       if(!p){notify("Produto não encontrado na base. Atualize a página.",true);return;}
@@ -166,6 +183,13 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         d.unit=recent.unit;d.unitReviewed=true;d.estimated=recent.cents;d.estimateKnown=true;
       }
       editor(null,false,d);return;
+    }
+    if(act==="remove-inline"&&item){
+      const wasBought=item.bought?" (já está no carrinho)":"";
+      if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
+        run(()=>actions.removeItem(market,item.id),"Produto removido da lista");
+      }
+      return;
     }
     if(act==="quick-qty"&&item){
       const field=button.dataset.qtyField==="actual"?"actual":"planned";
