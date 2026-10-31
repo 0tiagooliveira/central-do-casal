@@ -1,0 +1,132 @@
+import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
+
+const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(n)||0)/100);
+const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
+const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
+const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function entryHTML(e) {
+  const name=clean(e.title||"Produto sem nome");
+  const warnings=!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false;
+  const meta=[quantity(e.plannedMilli)+" "+(e.unit||"sem unidade"),e.group||"Essenciais"].join(" · ");
+  const unitEstimate=e.estimateKnown===false?"Sem preço estimado":currency(e.estimated);
+  return `<article class="shopping-item ${e.bought?"purchased":""}">
+    <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
+      <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}</div></div>
+    <div class="shopping-actions">
+      <button type="button" class="item-btn ${e.bought?"subtle":"buy"}" data-shop-action="toggle" data-item-id="${clean(e.id)}" aria-label="${e.bought?"Desmarcar":"Registrar compra de"} ${name}">${e.bought?"Desfazer":"✓ Comprei"}</button>
+      <button type="button" class="item-btn" data-shop-action="edit" data-item-id="${clean(e.id)}">Editar</button>
+    </div>
+  </article>`;
+}
+export function shoppingView({state}) {
+  const market=state.market;
+  const b=state.baskets[market]||{market,entries:[],budget:0};
+  const entries=Array.isArray(b.entries)?b.entries:[];
+  const list=entries.filter(e=>!e.bought);
+  const bought=entries.filter(e=>e.bought);
+  const flagged=entries.filter(e=>!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
+  const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit)).reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
+  const actual=bought.reduce((n,e)=>n+subtotal(Number(e.actual)||0,e.actualMilli||e.plannedMilli||1000),0);
+  const receipts=state.shared.filter(r=>r.kind==="receipt"&&r.market===market).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
+  const seen=new Map();for(const e of entries){const k=String(e.title||"").trim().toLowerCase();if(k)seen.set(k,(seen.get(k)||0)+1);}
+  const duplicates=[...seen.entries()].filter(([,n])=>n>1).map(([name])=>name);
+  return `<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
+    <section class="shopping-summary">
+      <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa: <strong>${currency(subtotalExpected)}</strong> · Já comprado: <strong>${currency(actual)}</strong></p></div>
+      <button type="button" data-shop-action="budget" class="item-btn">Alterar orçamento</button>
+    </section>
+    <div class="stats-bar"><span>${entries.length} produtos</span><span>${list.length} pendentes</span><span>${bought.length} comprados</span>${flagged.length?`<span>${flagged.length} para revisar</span>`:""}</div>
+    ${duplicates.length?`<div class="banner warning" style="margin-top:17px">Produtos com nomes repetidos (${clean(duplicates.join(", "))}). Nenhum foi mesclado. Confira as unidades antes de editar.</div>`:""}
+    <section class="shop-input-card"><div><h2>Lista de ${market.toLowerCase()}</h2><p>Adicione e marque produtos conforme compra.</p></div><button type="button" class="primary-btn" data-shop-action="add">+ Adicionar produto</button></section>
+    <div class="row-list">${list.length?list.map(entryHTML).join(""):`<div class="empty">Nenhum produto pendente. Adicione o que precisa comprar.</div>`}</div>
+    ${bought.length?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${bought.length}</span></div><div class="row-list">${bought.map(entryHTML).join("")}</div>`:""}
+    <div class="checkout-card"><div><strong>Concluir esta compra</strong><p>Guarde o comprovante no histórico e reabra a lista com os últimos preços.</p></div><button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Finalizar compra</button></div>
+    <div class="split-head"><h2 class="section-heading">Histórico de compras</h2><span class="mini-count">${receipts.length}</span></div>
+    <p class="info-line">Reutilize os produtos que já compraram. Nada é consolidado automaticamente.</p>
+    <div class="row-list">${receipts.length?receipts.slice(0,30).map(r=>{
+      const purchased=(r.entries||[]).filter(e=>e.bought);
+      return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary><div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
+    }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
+    <p class="info-line" style="margin-top:16px">Itens que estejam apenas no armazenamento local de uma versão antiga do APK precisam ser migrados separadamente. Não desinstale o Android antes disso.</p>`;
+}
+export function installShoppingUI({root,db,auth,getState,render}) {
+  const actions=createShoppingActions(db,auth,getState);
+  const dlg=document.createElement("dialog");
+  dlg.className="shop-dialog";
+  document.body.append(dlg);
+  const toast=document.createElement("div");toast.className="toast";toast.role="status";toast.hidden=true;document.body.append(toast);
+  let toastTimeout;
+  function notify(text,error=false){
+    toast.textContent=text;toast.classList.toggle("bad",error);toast.hidden=false;clearTimeout(toastTimeout);
+    toastTimeout=setTimeout(()=>{toast.hidden=true;},6000);
+  }
+  let busy=false;
+  async function run(job,description){
+    if(busy)return;
+    busy=true;
+    dlg.querySelectorAll("button").forEach(b=>b.disabled=true);
+    try{await job();dlg.close();notify(description+" · sincronizado no Firebase.");}
+    catch(e){notify((e.message||"Erro na sincronização")+" Verifique a conexão e tente novamente.",true);
+      dlg.querySelectorAll("button").forEach(b=>b.disabled=false);}
+    finally{busy=false;}
+  }
+  function editor(item=null,buy=false){
+    const market=getState().market;
+    const e=item||{title:"",unit:"un",plannedMilli:1000,estimated:0,bought:false,group:"Essenciais",estimateKnown:true};
+    const purchased=buy||e.bought;
+    dlg.innerHTML=`<form id="shopping-editor" method="dialog">
+    <div class="dialog-header"><h2>${item?"Editar produto":"Novo produto"}</h2><button type="button" class="item-btn" data-cancel>Fechar</button></div>
+    <label>Nome do produto<input required maxlength="200" name="title" autocomplete="off" value="${clean(e.title)}" placeholder="Ex.: Arroz integral"></label>
+    <div class="dialog-grid"><label>Quantidade<input required name="qty" inputmode="decimal" value="${quantity(e.plannedMilli)}"></label>
+      <label>Unidade<select name="unit">${UNITS.map(u=>`<option value="${u}" ${e.unit===u?"selected":""}>${u}</option>`).join("")}</select></label></div>
+    <div class="dialog-grid"><label>Preço estimado (R$)<input name="estimated" inputmode="decimal" value="${inputMoney(e.estimated)}"></label>
+      <label>Grupo<input name="group" maxlength="60" value="${clean(e.group||"Essenciais")}"></label></div>
+    <label class="check-line"><input type="checkbox" name="bought" ${purchased?"checked":""}> Já comprei este produto</label>
+    <label class="actual-field" ${purchased?"":"hidden"}>Preço real por unidade (R$)<input name="actual" inputmode="decimal" value="${e.actual==null?"":inputMoney(e.actual)}" placeholder="Ex.: 12,90"></label>
+    <div class="dialog-actions">${item?`<button class="item-btn danger" type="button" data-remove>Excluir produto</button>`:""}<button class="primary-btn" type="submit">Salvar produto</button></div>
+    <div class="info-line">A mesma lista é usada no Android. Não alteramos os produtos duplicados sem sua confirmação.</div></form>`;
+    dlg.showModal();
+    const form=dlg.querySelector("form");
+    form.elements.title.focus();
+    form.elements.bought.addEventListener("change",()=>{form.querySelector(".actual-field").hidden=!form.elements.bought.checked;});
+    dlg.querySelector("[data-cancel]").addEventListener("click",()=>dlg.close());
+    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído");});
+    form.addEventListener("submit",event=>{
+      event.preventDefault();
+      try{
+        const q=milliQty(form.elements.qty.value);
+        const bought=form.elements.bought.checked;
+        const actual=bought?moneyCents(form.elements.actual.value):null;
+        const entry={title:form.elements.title.value.trim(),plannedMilli:q,unit:form.elements.unit.value,estimated:moneyCents(form.elements.estimated.value||"0"),actual,bought,estimateKnown:true,unitReviewed:true,quantityReviewed:true,group:form.elements.group.value.trim()||"Essenciais"};
+        if(!entry.title)throw new Error("Informe o nome do produto.");
+        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),"Produto salvo");
+      }catch(e){notify(e.message,true);}
+    });
+  }
+  root.addEventListener("click",event=>{
+    const button=event.target.closest("[data-shop-action]");
+    if(!button||busy)return;
+    const s=getState(),act=button.dataset.shopAction,market=s.market;
+    if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
+    const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
+    if(act==="add")editor();
+    if(act==="edit"&&item)editor(item);
+    if(act==="toggle"&&item){if(item.bought)run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Compra desmarcada");else editor(item,true);}
+    if(act==="budget"){
+      const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
+      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
+    }
+    if(act==="close"){
+      const b=s.baskets[market];
+      if(!b?.entries?.some(e=>e.bought))return;
+      if(confirm("Finalizar compra de "+market+"? Isso salva o histórico e inicia nova lista. Não é possível desfazer automaticamente."))
+        run(()=>actions.closeBasket(market),"Compra registrada no histórico");
+    }
+    if(act==="repurchase"){
+      const entry=(s.shared.find(r=>r.id===button.dataset.receiptId&&r.kind==="receipt")?.entries||[]).find(e=>e.id===button.dataset.itemId);
+      if(entry&&confirm("Adicionar "+entry.title+" de volta à lista de "+market+"?"))
+        run(()=>actions.repurchase(market,button.dataset.receiptId,button.dataset.itemId),"Produto adicionado novamente");
+    }
+  });
+}
