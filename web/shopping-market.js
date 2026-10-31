@@ -41,7 +41,7 @@ export function marketView(state,{section="pending"}={}) {
   return `<section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Conferência em tempo real</h2><p>Digite o preço real e toque em <strong>Colocar no carrinho</strong>. O produto sai de Falta comprar e aparece em No carrinho automaticamente.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
   <div class="market-progress" aria-label="${progress}% dos produtos da lista no carrinho"><div class="market-progress-track"><div style="width:${progress}%"></div></div><span>${bought.length} de ${total} no carrinho</span></div>
   <nav class="market-status-tabs" aria-label="Acompanhar a compra">
-    <button type="button" class="market-status-tab ${active==="pending"?"active":""}" data-shop-action="market-section-pending" aria-pressed="${active==="pending"}"><span><icon name="list-checks"></icon> Falta comprar</span><strong>${remaining.length}</strong></button>
+    <button type="button" class="market-status-tab ${active==="pending"?"active":""}" data-shop-action="market-section-pending" aria-pressed="${active==="pending"}"><span>☐ Falta comprar</span><strong>${remaining.length}</strong></button>
     <button type="button" class="market-status-tab ${active==="bought"?"active":""}" data-shop-action="market-section-bought" aria-pressed="${active==="bought"}"><span>✓ No carrinho</span><strong>${bought.length}</strong></button>
   </nav>
   ${active==="pending"?
