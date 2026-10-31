@@ -243,3 +243,13 @@
 .session-spinner{height:34px;width:34px;border:3px solid #dfebfa;border-top-color:#2765c3;border-radius:50%;animation:session-rotate .8s linear infinite;margin:23px 0 7px}
 @keyframes session-rotate{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.session-spinner{animation:none;border-top-color:#2765c3}}
+
+/* Lista longa: só calcular layout/pintura dos cards que estão no campo de visão.
+   Melhora a entrada no modo mercado, principalmente em celulares Android. */
+@supports (content-visibility:auto) {
+  .market-focus-section .market-row,
+  .shopping-item {
+    content-visibility:auto;
+    contain-intrinsic-size:auto 190px;
+  }
+}
