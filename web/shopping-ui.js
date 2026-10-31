@@ -1,4 +1,5 @@
 import {writeAppRoute} from "./navigation.js";
+import {showMarketAddDialog} from "./market-add-dialog.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
@@ -290,6 +291,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
+    if(act==="market-add-cart"){
+      showMarketAddDialog({dialog:dlg,state:s,notify,
+        onSubmit:entry=>run(async()=>{
+          await actions.addToCart(market,entry);
+          shopPrefs.marketSection="bought";
+          rememberShoppingRoute();
+          render();
+        },"Produto registrado diretamente no carrinho")});
+      return;
+    }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
     if(act==="confirm-association"){
       const base=s.shared.find(x=>x.id===button.dataset.baseId&&x.kind==="catalogItem");
