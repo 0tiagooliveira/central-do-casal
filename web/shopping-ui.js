@@ -1,3 +1,4 @@
+import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
 import {presentationSeries} from "./product-presentation.js";
 import {confirmCatalogAssociation} from "./catalog-reconcile.js";
@@ -11,7 +12,7 @@ const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending"};
+const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
 function entryHTML(e,state) {
   const name=clean(e.title||"Produto sem nome");
   const suggestion=e.estimateKnown===false?suggestedEstimate(e,state.shared,state.links||[],state.market):null;
@@ -41,6 +42,10 @@ export function shoppingView({state}) {
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
   const bought=entries.filter(e=>e.bought);
+  const listQuery=shopPrefs.listSearch[market]||"";
+  const marketQuery=shopPrefs.marketSearch[market]||"";
+  const visibleList=filterShoppingEntries(list,listQuery);
+  const visibleBought=filterShoppingEntries(bought,listQuery);
   const flagged=entries.filter(e=>!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
   const priceIssues=missingEstimateSummary(entries,state.shared,state.links||[],market);
   const indicative=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed===false&&
@@ -55,8 +60,10 @@ export function shoppingView({state}) {
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
   const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
-  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection});
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection,search:marketQuery});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
+    ${shoppingSearchBar({area:"list",query:listQuery,total:entries.length,
+      shown:visibleList.length+visibleBought.length,label:"Pesquisar na lista e no carrinho"})}
     <section class="shopping-summary">
       <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa conferida: <strong>${currency(subtotalExpected)}</strong> · Referências com unidade a revisar: <strong>${currency(indicative)}</strong> · No carrinho: <strong>${currency(actual)}</strong></p></div>
       <button type="button" data-shop-action="budget" class="item-btn">Alterar orçamento</button>
@@ -68,8 +75,9 @@ export function shoppingView({state}) {
     ${priceIssues.usable?`<button type="button" class="item-btn buy" data-shop-action="fill-estimates">Aplicar ${priceIssues.usable} referência(s)</button>`:""}</section>`:""}
     ${duplicates.length?`<div class="banner warning" style="margin-top:17px">Produtos com nomes repetidos (${clean(duplicates.join(", "))}). Nenhum foi mesclado. Confira as unidades antes de editar.</div>`:""}
     <section class="shop-input-card"><div><h2>Lista de ${market.toLowerCase()}</h2><p>Adicione e marque produtos conforme compra.</p></div><button type="button" class="primary-btn" data-shop-action="add">+ Adicionar produto</button></section>
-    <div class="row-list">${list.length?list.map(e=>entryHTML(e,state)).join(""):`<div class="empty">Nenhum produto pendente. Adicione o que precisa comprar.</div>`}</div>
-    ${bought.length?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${bought.length}</span></div><div class="row-list">${bought.map(e=>entryHTML(e,state)).join("")}</div>`:""}
+
+    <div class="row-list">${visibleList.length?visibleList.map(e=>entryHTML(e,state)).join(""):`<div class="empty">${list.length?"Nenhum item pendente corresponde à pesquisa.":"Nenhum produto pendente. Adicione o que precisa comprar."} ${list.length&&listQuery.trim()?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="list">Limpar pesquisa</button>`:""}</div>`}</div>
+    ${bought.length&&(!listQuery.trim()||visibleBought.length)?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${visibleBought.length}${listQuery.trim()?"/"+bought.length:""}</span></div><div class="row-list">${visibleBought.length?visibleBought.map(e=>entryHTML(e,state)).join(""):`<div class="empty">Nenhum produto do carrinho corresponde à pesquisa.</div>`}</div>`:""}
     <div class="checkout-card"><div><strong>Concluir esta compra</strong><p>Guarde o comprovante no histórico e reabra a lista com os últimos preços.</p></div><button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Finalizar compra</button></div>
     <div class="split-head"><h2 class="section-heading">Histórico de compras</h2><span class="mini-count">${receipts.length}</span></div>
     <p class="info-line">Reutilize os produtos que já compraram. Nada é consolidado automaticamente.</p>
@@ -151,8 +159,27 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }catch(e){notify(e.message,true);}
     });
   }
-  let catalogSearchTimer;
+  let catalogSearchTimer,shoppingSearchTimer;
   root.addEventListener("input",event=>{
+    const area=event.target.dataset?.shoppingSearch;
+    if(area==="list"||area==="market"){
+      const state=getState();
+      const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
+      prefs[state.market]=event.target.value;
+      const caret=event.target.selectionStart??event.target.value.length;
+      clearTimeout(shoppingSearchTimer);
+      shoppingSearchTimer=setTimeout(()=>{
+        // O campo pode estar em outra aba ou mercado após uma troca rápida.
+        if(getState().market!==state.market)return;
+        render();
+        const field=root.querySelector('[data-shopping-search="'+area+'"]');
+        if(field&&document.activeElement!==field){
+          field.focus({preventScroll:true});
+          try{field.setSelectionRange(caret,caret);}catch{}
+        }
+      },130);
+      return;
+    }
     if(event.target.matches("[data-shop-qty]")){
       shopPrefs.quantities[event.target.dataset.qtyKey]=event.target.value;return;
     }
@@ -174,6 +201,17 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=getState(),act=button.dataset.shopAction,market=s.market;
+    if(act==="clear-shopping-search"){
+      const area=button.dataset.searchArea;
+      if(area==="list"||area==="market"){
+        const prefs=area==="list"?shopPrefs.listSearch:shopPrefs.marketSearch;
+        prefs[market]="";
+        clearTimeout(shoppingSearchTimer);
+        render();
+        root.querySelector('[data-shopping-search="'+area+'"]')?.focus({preventScroll:true});
+      }
+      return;
+    }
     if(act==="market-section-pending"||act==="market-section-bought"){
       shopPrefs.marketSection=act==="market-section-bought"?"bought":"pending";
       render();

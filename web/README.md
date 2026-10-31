@@ -4,6 +4,12 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Pesquisa em Minha lista e No mercado
+
+Em **Compras > Minha lista**, a barra de busca fica logo abaixo da escolha Mercado/Açougue e filtra simultaneamente pendentes e itens comprados, por nome do produto, grupo, categoria, subgrupo, apresentação, unidade ou cômodo. Em **Compras > No mercado**, outra barra filtra as abas **Falta comprar** e **No carrinho**, com resultados e contadores próprios em cada situação. O catálogo já dispõe de pesquisa por nome, categoria e loja.
+
+A pesquisa ignora maiúsculas/minúsculas e acentos, aceita múltiplas palavras em ordem livre (por exemplo `acucar`, `amaciante 5 l` e `hamburguer caixa`), exibe quantidade de resultados e oferece **Limpar**. A consulta é local no conteúdo já sincronizado: não exige novas leituras nem altera dados do Firestore. Os textos digitados são mantidos por mercado e por aba durante as atualizações do Firebase; ao mover um item para o carrinho, ele desaparece dos pendentes e fica encontrável no carrinho. É possível mudar de aba sem perder o termo pesquisado.
+
 ## No mercado e estimativas recuperadas
 
 Em **Compras > No mercado**, a navegação separa **Falta comprar** de **No carrinho**, com contadores e progresso. Ao informar o preço real e tocar em **Colocar no carrinho**, o item recebe `bought=true` e desaparece da lista de pendentes, mas permanece na lista do carrinho. **Retirar do carrinho** reverte a marcação, sem apagar o item, preservando a quantidade planejada.
