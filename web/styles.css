@@ -174,3 +174,6 @@
   .package-metrics strong{font-size:.72rem}
   .catalog-card{gap:11px}
 }
+
+.package-add{width:100%;font-size:.77rem;line-height:1.4;padding:11px 12px;white-space:normal}
+.package-footnote{font-size:.7rem;line-height:1.4;color:#78899e;margin-top:11px}
