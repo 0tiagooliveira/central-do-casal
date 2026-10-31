@@ -4,6 +4,14 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## No mercado e estimativas recuperadas
+
+Em **Compras > No mercado**, a navegação separa **Falta comprar** de **No carrinho**, com contadores e progresso. Ao informar o preço real e tocar em **Colocar no carrinho**, o item recebe `bought=true` e desaparece da lista de pendentes, mas permanece na lista do carrinho. **Retirar do carrinho** reverte a marcação, sem apagar o item, preservando a quantidade planejada.
+
+As inclusões rápidas da base não descartam mais um preço de referência existente. O preço entra como estimativa, mas uma unidade/embalagem desconhecida continua marcada para revisão antes de compor a estimativa conferida do orçamento.
+
+Para listas existentes, **Minha lista** identifica preços ausentes e mostra referências sugeridas por ID do item-base, ou por SKU e apresentação fiscal identificável. O botão **Aplicar referências** grava somente sugestões com origem segura em uma transação Firebase, sem alterar preço real, itens comprados, preços já cadastrados nem quantidade. Nomes homônimos sem ID só recebem sugestão visual e exigem confirmação manual. Apresentações diferentes do mesmo SKU nunca recebem o último preço de outra apresentação. O subtotal distingue estimativas conferidas de referências com unidade ainda a revisar. Referências históricas não devem ser interpretadas como cotações atuais.
+
 ## Preços por embalagem, volume, peso e quantidade de peças
 
 O catálogo agora interpreta apresentações **somente quando a informação consta na descrição fiscal, no nome do SKU ou na unidade da nota**. Agrupa cada série por **SKU + apresentação + unidade fiscal**, tanto dentro de um mesmo SKU quanto entre as variantes de uma família. Por exemplo: amaciante de 1 L, 1,5 L e 5 L, hambúrguer avulso, caixa com quantidade de peças documentada e multipacks "6x1 L".
