@@ -240,7 +240,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         if(!entry.title)throw new Error("Informe o nome do produto.");
         const offlineEntry=item?{...item,...entry}:{...entry,id:crypto.randomUUID()};
         const operation=item?{type:"update",id:item.id,entry:offlineEntry}:{type:"add",entry:offlineEntry};
-        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),
+        run(()=>item?actions.updateItem(market,item.id,entry,item):actions.addItem(market,entry),
           "Produto salvo",{market,operation});
       }catch(e){notify(e.message,true);}
     });
@@ -454,20 +454,20 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const next=previous+Number(button.dataset.delta)*step;
       if(!Number.isSafeInteger(next)||next<=0||next>100000000){notify("Quantidade fora do limite. Use Editar para informar uma quantidade exata.",true);return;}
       const update=field==="actual"?{...item,actualMilli:next}:{...item,plannedMilli:next,actualMilli:item.bought?(item.actualMilli??item.plannedMilli):next};
-      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada",
+      run(()=>actions.updateItem(market,item.id,update,item),"Quantidade atualizada",
         {market,operation:{type:"update",id:item.id,entry:update}});return;
     }
     if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
       const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
       if(act==="unbuy-inline"){const next={...item,bought:false,actual:null};
-        run(()=>actions.updateItem(market,item.id,next),"Produto voltou para Falta comprar",
+        run(()=>actions.updateItem(market,item.id,next,item),"Produto voltou para Falta comprar",
           {market,operation:{type:"update",id:item.id,entry:next}});
         return;}
       if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
       try{
         const price=moneyCents(priceInput.value);
         const next={...item,bought:true,actual:price};
-        run(()=>actions.updateItem(market,item.id,next),
+        run(()=>actions.updateItem(market,item.id,next,item),
           act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado",
           {market,operation:{type:"update",id:item.id,entry:next}});
       }catch(e){notify(e.message,true);priceInput.focus();}
@@ -478,7 +478,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="edit"&&item)editor(item);
     if(act==="toggle"&&item){if(item.bought){
       const next={...item,bought:false,actual:null};
-      run(()=>actions.updateItem(market,item.id,next),"Compra desmarcada",
+      run(()=>actions.updateItem(market,item.id,next,item),"Compra desmarcada",
         {market,operation:{type:"update",id:item.id,entry:next}});
     }else editor(item,true);}
     if(act==="budget"){
