@@ -4,6 +4,16 @@
 
 Em cada card de produto e de apresentação física (frasco, caixa, unidade), aparece **Quantidade a comprar**, com botões `−`/`+` e campo numérico para digitar valores como `1`, `2` ou `1,5`. O valor escolhido é usado diretamente em `plannedMilli` e `actualMilli` na inclusão transacional no Firebase. O controle oferece passos de 1 unidade/pacote, 0,5 kg/L e 100 g/mL, sem impedir entrada manual exata. As quantidades digitadas são preservadas entre atualizações de tela enquanto a sessão permanece aberta. O valor representa a quantidade da apresentação escolhida: `2` no Amaciante 5 L significa **dois frascos de 5 L**, não 2 L. Para itens com unidade fiscal não identificada, a lista mantém a sinalização de revisão.
 
+## Contingência quando Firestore retornar quota excedida
+
+O Firebase pode recusar gravações com `resource-exhausted` / `Quota exceeded` quando o banco ultrapassa limites de uso. **Não** reiterar automaticamente transações, pois isso pode consumir ainda mais cota.
+
+Na tela **Compras**, a primeira tentativa de adicionar ao carrinho, editar um item, ajustar quantidade ou incluir produto que encontrar erro de quota registra a alteração **apenas no localStorage do navegador**, em um diário isolado por UID, household e Mercado/Açougue. A interface utiliza uma projeção dessa lista, destacada por um aviso âmbar **NÃO sincronizada**; eventos seguintes do mesmo mercado permanecem locais, evitando novas chamadas que falharão. O usuário pode **Baixar backup JSON** durante a compra. Se o navegador não permitir escrita local, o app mostra um erro explícito e não afirma ter salvado.
+
+**Tentar sincronizar** é uma ação manual. No retorno da capacidade de gravação, uma transação lê a cesta atual, verifica que continua na mesma geração de compra e recusa sobrescrever produtos alterados por outro aparelho. Só então reaplica as operações e descarta o diário local, após commit confirmado. Se houver conflito ou quota, o backup permanece intacto. **Finalizar compra** é bloqueado enquanto existir diário local pendente, evitando falsa confirmação fiscal e perda de itens. A conta e o household podem ser restaurados de identificação local já autenticada em caso de falha de leitura por quota após refresh, mas isso não concede acesso remoto sem permissões do Firebase.
+
+**Limitações:** se o navegador apagar armazenamento do site antes de exportar, as ações locais podem desaparecer. O backup pode ser baixado manualmente, e não representa sincronização com outros aparelhos. Não habilitamos cobrança, nem alteramos os limites do Firebase. O responsável deve verificar **Firebase Console → Firestore Database → Usage** para identificar se o limite foi em leituras, gravações, dados armazenados ou outra operação. O diário não arquiva notas fiscais enquanto a nuvem está indisponível.
+
 ## Conferência fiscal no fim da compra
 
 Em **Compras > No mercado > Conferir nota e finalizar** ou **Minha lista > Conferir nota e finalizar**, anexe o comprovante antes de salvar o histórico. O fluxo é opcional: **Salvar sem nota** registra a compra identificando explicitamente que a conferência fiscal não foi realizada.
