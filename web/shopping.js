@@ -1,5 +1,6 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
 import {replayEmergency} from "./emergency-cart.js";
+import {applyConcurrentEntryEdit} from "./shopping-concurrency.js";
 import {compareInvoice} from "./invoice-reconcile.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
@@ -39,11 +40,16 @@ export function createShoppingActions(db,auth,getState) {
   async function modify(market,updater) {
     const state=getState();assertSession(state,auth);
     if(!["Mercado","Açougue"].includes(market))throw new Error("Lista inválida.");
-    const expected=Number(state.baskets[market]?.revision||0);
+    const expectedGeneration=state.baskets[market]?.generation||null;
     await runTransaction(db,async tx=>{
       const ref=basketRef(state,market),snap=await tx.get(ref);
       const old=snap.exists()?snap.data():freshBasket(market);
-      if(Number(old.revision||0)!==expected)throw new Error("A lista mudou em outro aparelho. Confira os dados atualizados e tente novamente.");
+      // Transações Firestore repetem automaticamente sobre a versão atual
+      // quando outra pessoa grava a cesta ao mesmo tempo. Nunca usar uma revisão
+      // de tela obsoleta para bloquear a outra pessoa. Uma nova compra, porém,
+      // precisa impedir que atualizações antigas contaminem a nova geração.
+      if(expectedGeneration&&old.generation!==expectedGeneration)
+        throw new Error("Uma nova compra foi iniciada. Atualize a lista antes de continuar.");
       const next=updater(old);
       if(next.entries.length>200)throw new Error("Limite de 200 itens por lista.");
       tx.set(ref,{...next,revision:Number(old.revision||0)+1});
@@ -90,14 +96,27 @@ export function createShoppingActions(db,auth,getState) {
       sourcePlanId:"",sourceStepId:""};
     return {...old,entries:[...entries,record]};
   });
-  const updateItem=(market,id,entry)=>modify(market,old=>{
-    const entries=old.entries||[];
-    const original=entries.find(e=>e.id===id);
-    if(!original)throw new Error("Produto não encontrado. Atualize a lista.");
-    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?(entry.actualMilli??entry.plannedMilli):(entry.actualMilli??original.actualMilli??entry.plannedMilli),actual:entry.bought?entry.actual:null};
-    checkEntry(next);
-    return {...old,entries:entries.map(e=>e.id===id?next:e)};
-  });
+  const updateItem=(market,id,entry,editBaseline=null)=>{
+    // Captura o estado visto pelo usuário antes de iniciar a transação.
+    // Em caso de retry, o patch é reaplicado sobre o estado mais recente.
+    const viewed=editBaseline||getState().baskets?.[market]?.entries?.find(e=>e.id===id);
+    if(!viewed)throw new Error("Produto não encontrado na lista. Atualize os dados.");
+    return modify(market,old=>{
+      const entries=old.entries||[];
+      const original=entries.find(e=>e.id===id);
+      if(!original)throw new Error("Este produto já foi removido do outro aparelho.");
+      const requested={...viewed,...entry};
+      const proposed={
+        ...requested,title:String(requested.title||"").trim(),
+        actualMilli:requested.bought?(requested.actualMilli??requested.plannedMilli):
+          (requested.actualMilli??viewed.actualMilli??requested.plannedMilli),
+        actual:requested.bought?requested.actual:null
+      };
+      const next=applyConcurrentEntryEdit(original,viewed,proposed);
+      checkEntry(next);
+      return {...old,entries:entries.map(e=>e.id===id?next:e)};
+    });
+  };
   const removeItem=(market,id)=>modify(market,old=>{
     if(!(old.entries||[]).some(e=>e.id===id))throw new Error("Item não encontrado.");
     return {...old,entries:old.entries.filter(e=>e.id!==id)};
