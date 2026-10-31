@@ -18,9 +18,17 @@ const currentDecision=(sku,links)=>(links||[])
   .filter(l=>l.kind==="catalogLink"&&l.private!==true&&same(l.skuId||l.id,sku.id))
   .sort((a,b)=>Number(b.revision||0)-Number(a.revision||0))[0]||null;
 
+// Cache per Firestore snapshot avoids rescanning hundreds of receipt lines per
+// card and per catalog filter. Replaced automatically on the next snapshot.
+let cachedRecords=null,cachedLinks=null;
+const familyCache=new Map();
 /** Renders broader family variants; labels origin and honors existing explicit decisions. */
 export function familyVariants(base,records=[],links=[]) {
   if(!base||base.kind!=="catalogItem"||base.private===true)return [];
+  if(records!==cachedRecords||links!==cachedLinks){
+    cachedRecords=records;cachedLinks=links;familyCache.clear();
+  }
+  if(familyCache.has(base.id))return familyCache.get(base.id);
   const catalog=records.filter(r=>r.kind==="catalogSku"&&r.private!==true&&r.market===base.market);
   const bases=records.filter(r=>r.kind==="catalogItem"&&r.private!==true&&r.market===base.market);
   const official=new Set(relatedSkus(base,records,links).map(s=>s.id));
@@ -53,12 +61,14 @@ export function familyVariants(base,records=[],links=[]) {
     results.push({sku,history,status,confirmed,needsReview:!confirmed,
       latest:history[history.length-1],evidence:proposed?.evidence||[]});
   }
-  return results.sort((a,b)=>{
+  const sorted=results.sort((a,b)=>{
     if(a.confirmed!==b.confirmed)return a.confirmed?-1:1;
     if(a.history.length!==b.history.length)return b.history.length-a.history.length;
     return String(b.latest?.date||"").localeCompare(String(a.latest?.date||""))
       ||asText(a.sku.title).localeCompare(asText(b.sku.title),"pt-BR");
   });
+  familyCache.set(base.id,sorted);
+  return sorted;
 }
 export function primaryFamilySeries(base,records=[],links=[]){
   const own=priceHistory(base,records,links);
