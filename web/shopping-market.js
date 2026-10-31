@@ -43,7 +43,8 @@ export function marketView(state,{section="pending",search=""}={}) {
   const budget=state.baskets[state.market]?.budget||0;
   const active=section==="bought"?"bought":"pending";
   const progress=total?Math.round((bought.length/total)*100):0;
-  return `${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
+  return `<div class="market-quick-action"><button type="button" class="primary-btn" data-shop-action="market-add-cart">+ Produto direto no carrinho</button><span>Esqueceu de incluir algo? Registre aqui sem voltar à lista.</span></div>
+  ${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
     shown:active==="pending"?visibleRemaining.length:visibleBought.length,
     label:"Buscar produtos da compra"})}
   <section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Resumo da compra</h2><p>Informe o preço real e toque em Colocar no carrinho para mover o produto da lista.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
