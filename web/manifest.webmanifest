@@ -1,0 +1,18 @@
+{
+  "name": "Central do Casal · Web",
+  "short_name": "Central",
+  "description": "Central do Casal no navegador",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f8fc",
+  "theme_color": "#2365c7",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
