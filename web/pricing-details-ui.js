@@ -8,7 +8,7 @@ const itemPrice=p=>money4(p.cents)+"/"+esc(p.unit||"un");
 export function quantitySelector(key,unit="un",quantities={}){
   const actual=quantities[key]??"1";
   const label=unit==="un"?"unidade(s)":unit==="pacote"?"pacote(s)":unit;
-  return '<div class="catalog-qty-control"><label>Quantidade a comprar</label>'+
+  return '<div class="catalog-qty-control" data-qty-unit="'+esc(unit)+'"><label>Quantidade a comprar</label>'+
     '<div class="catalog-qty-input"><button type="button" data-shop-action="catalog-qty-step" data-delta="-1" aria-label="Diminuir quantidade">−</button>'+
     '<input type="text" inputmode="decimal" data-shop-qty data-qty-key="'+esc(key)+'" value="'+esc(actual)+'" aria-label="Quantidade a comprar" autocomplete="off">'+
     '<button type="button" data-shop-action="catalog-qty-step" data-delta="1" aria-label="Aumentar quantidade">+</button>'+
