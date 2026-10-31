@@ -62,6 +62,8 @@ export function shoppingView({state}) {
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
   if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection,search:marketQuery});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
+    ${shoppingSearchBar({area:"list",query:listQuery,total:entries.length,
+      shown:visibleList.length+visibleBought.length,label:"Pesquisar na lista e no carrinho"})}
     <section class="shopping-summary">
       <div class="shop-summary-text"><span class="eyebrow">ORÇAMENTO DE ${market.toUpperCase()}</span><h2>${currency(b.budget)}</h2><p>Estimativa conferida: <strong>${currency(subtotalExpected)}</strong> · Referências com unidade a revisar: <strong>${currency(indicative)}</strong> · No carrinho: <strong>${currency(actual)}</strong></p></div>
       <button type="button" data-shop-action="budget" class="item-btn">Alterar orçamento</button>
@@ -73,10 +75,9 @@ export function shoppingView({state}) {
     ${priceIssues.usable?`<button type="button" class="item-btn buy" data-shop-action="fill-estimates">Aplicar ${priceIssues.usable} referência(s)</button>`:""}</section>`:""}
     ${duplicates.length?`<div class="banner warning" style="margin-top:17px">Produtos com nomes repetidos (${clean(duplicates.join(", "))}). Nenhum foi mesclado. Confira as unidades antes de editar.</div>`:""}
     <section class="shop-input-card"><div><h2>Lista de ${market.toLowerCase()}</h2><p>Adicione e marque produtos conforme compra.</p></div><button type="button" class="primary-btn" data-shop-action="add">+ Adicionar produto</button></section>
-    ${shoppingSearchBar({area:"list",query:listQuery,total:entries.length,
-      shown:visibleList.length+visibleBought.length,label:"Pesquisar na lista e no carrinho"})}
+
     <div class="row-list">${visibleList.length?visibleList.map(e=>entryHTML(e,state)).join(""):`<div class="empty">${list.length?"Nenhum item pendente corresponde à pesquisa.":"Nenhum produto pendente. Adicione o que precisa comprar."} ${list.length&&listQuery.trim()?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="list">Limpar pesquisa</button>`:""}</div>`}</div>
-    ${bought.length?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${visibleBought.length}${listQuery.trim()?"/"+bought.length:""}</span></div><div class="row-list">${visibleBought.length?visibleBought.map(e=>entryHTML(e,state)).join(""):`<div class="empty">Nenhum produto do carrinho corresponde à pesquisa.</div>`}</div>`:""}
+    ${bought.length&&(!listQuery.trim()||visibleBought.length)?`<div class="split-head"><h2 class="section-heading">No carrinho</h2><span class="mini-count">${visibleBought.length}${listQuery.trim()?"/"+bought.length:""}</span></div><div class="row-list">${visibleBought.length?visibleBought.map(e=>entryHTML(e,state)).join(""):`<div class="empty">Nenhum produto do carrinho corresponde à pesquisa.</div>`}</div>`:""}
     <div class="checkout-card"><div><strong>Concluir esta compra</strong><p>Guarde o comprovante no histórico e reabra a lista com os últimos preços.</p></div><button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Finalizar compra</button></div>
     <div class="split-head"><h2 class="section-heading">Histórico de compras</h2><span class="mini-count">${receipts.length}</span></div>
     <p class="info-line">Reutilize os produtos que já compraram. Nada é consolidado automaticamente.</p>
