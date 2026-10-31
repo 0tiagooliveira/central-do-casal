@@ -1,3 +1,4 @@
+import {marketTotals} from "./market-totals.js";
 import {writeAppRoute} from "./navigation.js";
 import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
@@ -18,6 +19,8 @@ const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFraction
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
+// Unsaved price text is a preview, not a confirmed purchase or Firebase write.
+const priceDrafts={Mercado:{},Açougue:{}};
 try{
   const remembered=JSON.parse(sessionStorage.getItem("cdc:shopping-filters")||"null");
   if(remembered&&typeof remembered==="object"){
@@ -77,7 +80,7 @@ export function shoppingView({state}) {
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
   if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
-    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||""});
+    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]});
   const b=state.baskets[market]||{market,entries:[],budget:0};
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
@@ -183,6 +186,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     try{
       if(fallback?.market&&readEmergency(getState(),fallback.market)){
         saveEmergency(getState(),fallback.market,fallback.operation);
+        if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
+          delete priceDrafts[fallback.market][fallback.operation.id];
         if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
         dlg.close();render();
         notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
@@ -193,6 +198,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(fallback?.market&&isQuotaError(e)){
         try{
           saveEmergency(getState(),fallback.market,fallback.operation);
+          if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
+            delete priceDrafts[fallback.market][fallback.operation.id];
           if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
           dlg.close();render();
           notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
@@ -245,8 +252,39 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }catch(e){notify(e.message,true);}
     });
   }
+  function updateLiveMarketTotals(market){
+    const state=projectedShoppingState(getState());
+    const basket=state.baskets[market];
+    if(!basket||state.market!==market)return;
+    const drafts={};
+    for(const [id,value] of Object.entries(priceDrafts[market]||{})){
+      const raw=String(value||"").trim();
+      if(/^\d{1,7}(?:[.,]\d{1,2})?$/.test(raw))
+        drafts[id]=Math.round(Number(raw.replace(",","."))*100);
+    }
+    const totals=marketTotals(basket,drafts);
+    const rootTotal=root.querySelector("[data-market-total]");
+    const remaining=root.querySelector("[data-market-remaining]");
+    const panel=root.querySelector("[data-market-preview]");
+    if(rootTotal)rootTotal.textContent=currency(totals.spent);
+    if(remaining)remaining.textContent=totals.budget?"Restante do orçamento: "+currency(totals.remaining):"Orçamento ainda não definido";
+    if(panel){
+      panel.hidden=!(totals.hasUnsavedChanges||totals.previewPendingCount);
+      const cart=root.querySelector("[data-market-draft-summary]");
+      const pending=root.querySelector("[data-market-pending-summary]");
+      if(cart)cart.textContent=totals.hasUnsavedChanges?
+        "Prévia do carrinho (preço ainda não salvo): "+currency(totals.previewSpent):"";
+      if(pending)pending.textContent=totals.previewPendingCount?
+        "Se colocar "+totals.previewPendingCount+" item(ns) digitado(s) no carrinho: "+currency(totals.possibleAfterBuying):"";
+    }
+  }
   let catalogSearchTimer,shoppingSearchTimer;
   root.addEventListener("input",event=>{
+    if(event.target.matches("[data-market-price-id]")){
+      priceDrafts[getState().market][event.target.dataset.marketPriceId]=event.target.value;
+      updateLiveMarketTotals(getState().market);
+      return;
+    }
     const area=event.target.dataset?.shoppingSearch;
     if(area==="list"||area==="market"){
       const state=getState();
@@ -467,8 +505,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       try{
         const price=moneyCents(priceInput.value);
         const next={...item,bought:true,actual:price};
-        run(()=>actions.updateItem(market,item.id,next),
-          act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado",
+        run(async()=>{
+          await actions.updateItem(market,item.id,next);
+          delete priceDrafts[market][item.id];
+        },act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado",
           {market,operation:{type:"update",id:item.id,entry:next}});
       }catch(e){notify(e.message,true);priceInput.focus();}
       return;
@@ -483,7 +523,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
-      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
+      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
       if(readEmergency(getState(),market)){

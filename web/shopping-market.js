@@ -1,3 +1,4 @@
+import {marketTotals} from "./market-totals.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate} from "./shopping-estimates.js";
 import {subtotal} from "./shopping.js";
@@ -13,12 +14,13 @@ export function quantityControls(item,marketMode=false) {
     <button type="button" data-shop-action="quick-qty" data-item-id="${esc(item.id)}" data-qty-field="${field}" data-delta="1" aria-label="Aumentar quantidade de ${esc(item.title)}">+</button>
   </div>`;
 }
-function marketRow(e,state) {
+function marketRow(e,state,priceDrafts={}) {
   const title=esc(e.title||"Produto sem nome");
   const suggested=e.estimateKnown===false?suggestedEstimate(e,state.shared,state.links||[],state.market):null;
   const ready=typeof e.unit==="string"&&e.unit!=="Escolher"&&e.unitReviewed!==false&&e.quantityReviewed!==false;
   const bought=e.bought;
-  const price=!bought||e.actual==null?"":(Number(e.actual)/100).toFixed(2).replace(".",",");
+  const price=Object.prototype.hasOwnProperty.call(priceDrafts,e.id)?priceDrafts[e.id]:
+    (!bought||e.actual==null?"":(Number(e.actual)/100).toFixed(2).replace(".",","));
   const group=esc(e.group||e.category||"Essenciais");
   const realQty=Number(e.actualMilli??e.plannedMilli??1000);
   return `<article class="market-row ${bought?"done":""}" data-shopping-entry-id="${esc(e.id)}">
@@ -33,21 +35,34 @@ function marketRow(e,state) {
     </div>
   </article>`;
 }
-export function marketView(state,{section="pending",search=""}={}) {
+export function marketView(state,{section="pending",search="",priceDrafts={}}={}) {
   const entries=state.baskets[state.market]?.entries||[];
   const remaining=entries.filter(e=>!e.bought),bought=entries.filter(e=>e.bought);
   const visibleRemaining=filterShoppingEntries(remaining,search);
   const visibleBought=filterShoppingEntries(bought,search);
   const total=entries.length;
-  const spent=bought.reduce((s,e)=>s+subtotal(e.actual||0,e.actualMilli??e.plannedMilli??1000),0);
-  const budget=state.baskets[state.market]?.budget||0;
+  const parsedDrafts={};
+  for(const e of entries)if(Object.prototype.hasOwnProperty.call(priceDrafts,e.id)){
+    const value=String(priceDrafts[e.id]).trim().replace(/^R\$\s*/,"");
+    const pattern=/^\d{1,7}(?:[.,]\d{1,2})?$/;
+    if(pattern.test(value)){
+      const decimals=value.replace(",",".");
+      parsedDrafts[e.id]=Math.round(Number(decimals)*100);
+    }
+  }
+  const totals=marketTotals(state.baskets[state.market]||{},parsedDrafts);
+  const {spent,budget}=totals;
   const active=section==="bought"?"bought":"pending";
   const progress=total?Math.round((bought.length/total)*100):0;
   return `<div class="market-quick-action"><button type="button" class="primary-btn" data-shop-action="market-add-cart">+ Produto direto no carrinho</button><span>Esqueceu de incluir algo? Registre aqui sem voltar à lista.</span></div>
   ${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
     shown:active==="pending"?visibleRemaining.length:visibleBought.length,
     label:"Buscar produtos da compra"})}
-  <section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Resumo da compra</h2><p>Informe o preço real e toque em Colocar no carrinho para mover o produto da lista.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
+  <section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Resumo da compra</h2><p>Informe o preço real e toque em Colocar no carrinho para mover o produto da lista.</p></div><div class="market-spent"><span>Total no carrinho</span><strong data-market-total>${money(spent)}</strong><small data-market-remaining>${budget?"Restante do orçamento: "+money(totals.remaining):"Orçamento ainda não definido"}</small></div></section>
+  <div class="market-live-preview" data-market-preview ${totals.hasUnsavedChanges||totals.previewPendingCount?"":"hidden"}>
+    <span data-market-draft-summary>${totals.hasUnsavedChanges?"Prévia do carrinho (preço ainda não salvo): "+money(totals.previewSpent):""}</span>
+    <span data-market-pending-summary>${totals.previewPendingCount?"Se colocar "+totals.previewPendingCount+" item(ns) digitado(s) no carrinho: "+money(totals.possibleAfterBuying):""}</span>
+  </div>
   <div class="market-progress" aria-label="${progress}% dos produtos da lista no carrinho"><div class="market-progress-track"><div style="width:${progress}%"></div></div><span>${bought.length} de ${total} no carrinho</span></div>
 
   <nav class="market-status-tabs" aria-label="Acompanhar a compra">
@@ -56,9 +71,9 @@ export function marketView(state,{section="pending",search=""}={}) {
   </nav>
   ${active==="pending"?
   `<section class="market-focus-section"><div class="market-section-head"><h3>Falta comprar</h3><span>${remaining.length} item(ns)</span></div>
-  <div class="market-list">${visibleRemaining.length?visibleRemaining.map(e=>marketRow(e,state)).join(""):`<div class="empty">${remaining.length?"Nenhum produto encontrado em Falta comprar para esta pesquisa.":"Tudo o que estava na lista foi para o carrinho."} ${remaining.length?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="market">Limpar pesquisa</button>`:`<button type="button" class="item-btn" data-shop-action="market-section-bought">Ver meu carrinho</button>`}</div>`}</div></section>`:
+  <div class="market-list">${visibleRemaining.length?visibleRemaining.map(e=>marketRow(e,state,priceDrafts)).join(""):`<div class="empty">${remaining.length?"Nenhum produto encontrado em Falta comprar para esta pesquisa.":"Tudo o que estava na lista foi para o carrinho."} ${remaining.length?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="market">Limpar pesquisa</button>`:`<button type="button" class="item-btn" data-shop-action="market-section-bought">Ver meu carrinho</button>`}</div>`}</div></section>`:
   `<section class="market-focus-section"><div class="market-section-head"><h3>✓ No carrinho</h3><span>${bought.length} item(ns)</span></div>
-  <div class="market-list">${visibleBought.length?visibleBought.map(e=>marketRow(e,state)).join(""):`<div class="empty">${bought.length?"Nenhum produto encontrado no carrinho para esta pesquisa.":"Você ainda não colocou produtos no carrinho."} ${bought.length?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="market">Limpar pesquisa</button>`:`<button type="button" class="item-btn" data-shop-action="market-section-pending">Ver o que falta</button>`}</div>`}</div></section>`}
+  <div class="market-list">${visibleBought.length?visibleBought.map(e=>marketRow(e,state,priceDrafts)).join(""):`<div class="empty">${bought.length?"Nenhum produto encontrado no carrinho para esta pesquisa.":"Você ainda não colocou produtos no carrinho."} ${bought.length?`<button type="button" class="item-btn" data-shop-action="clear-shopping-search" data-search-area="market">Limpar pesquisa</button>`:`<button type="button" class="item-btn" data-shop-action="market-section-pending">Ver o que falta</button>`}</div>`}</div></section>`}
   <div class="checkout-card"><div><strong>Conferir nota fiscal e finalizar</strong><p>Anexe XML, foto ou PDF, confronte os preços com o carrinho e salve o comprovante junto à compra.</p></div>
   <button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Conferir nota e finalizar</button></div>`;
 }

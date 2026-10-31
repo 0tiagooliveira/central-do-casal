@@ -327,3 +327,13 @@
 .emergency-buttons{display:flex;gap:9px;flex-wrap:wrap}
 .emergency-buttons button{flex:1;min-width:132px;min-height:43px;padding:10px 12px;font-weight:750;font-size:.78rem}
 @media(max-width:540px){.emergency-buttons{flex-direction:column}.emergency-buttons button{width:100%}}
+
+/* Contadores offline: números reais salvos e prévia separada do que está digitado. */
+.market-live-preview{margin:9px 0 10px;padding:11px 13px;border:1px solid #d5e5f8;border-radius:11px;background:#f3f8ff;display:grid;gap:5px}
+.market-live-preview[hidden]{display:none}
+.market-live-preview span{font-size:.77rem;font-weight:700;color:#255a8b;line-height:1.5}
+.market-live-preview span:empty{display:none}
+.emergency-live-totals{display:flex;flex-wrap:wrap;gap:9px 15px;border-radius:11px;background:#fff;padding:10px 12px;color:#704e26}
+.emergency-live-totals span{font-size:.77rem;line-height:1.5}
+.emergency-live-totals strong{font-size:.92rem;color:#7d4a13}
+@media(max-width:540px){.emergency-live-totals{display:grid;gap:5px}}
