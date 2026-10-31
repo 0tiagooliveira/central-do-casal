@@ -1,3 +1,4 @@
+import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
 import {catalogDraft} from "./catalog.js";
 import {priceHistory,priceTrend} from "./catalog-history.js";
@@ -156,6 +157,20 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="show-more"){shopPrefs.limit+=40;render();return;}
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
+    if(act==="confirm-association"){
+      const base=s.shared.find(x=>x.id===button.dataset.baseId&&x.kind==="catalogItem");
+      const sku=s.shared.find(x=>x.id===button.dataset.skuId&&x.kind==="catalogSku");
+      if(!base||!sku){notify("Produto não encontrado. Atualize a página.",true);return;}
+      const history=priceHistory(sku,s.shared,s.links||[]);
+      const value=history.at(-1);
+      const message="Confirme somente se for o MESMO produto, considerando embalagem e unidade.\\n\\n"
+        +"Sua base: "+base.title+" ("+(base.category||"sem categoria")+")\\n"
+        +"Nota / loja: "+sku.title+" ("+(sku.store||"loja não informada")+")\\n"
+        +"Registros encontrados: "+history.length+(value?"\\nÚltimo: "+(value.cents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})+"/"+value.unit:"")
+        +"\\n\\nEsta confirmação associará os históricos ao produto na sua base, inclusive no Android. Os recibos originais serão preservados. Continuar?";
+      if(confirm(message))run(()=>confirmCatalogAssociation(db,auth,getState,base.id,sku.id),"Histórico vinculado à sua base");
+      return;
+    }
     if(act==="choose-catalog"){
       const p=s.shared.find(p=>p.id===button.dataset.catalogId&&(p.kind==="catalogSku"||p.kind==="catalogItem"));
       if(!p){notify("Produto não encontrado na base. Atualize a página.",true);return;}
