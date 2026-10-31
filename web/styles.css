@@ -101,3 +101,10 @@
 .price-candidate small{font-size:.7rem;color:#8192a6;line-height:1.35}
 .price-candidate .item-btn{font-size:.71rem;white-space:normal;max-width:145px;line-height:1.35}
 @media(max-width:520px){.price-candidate{flex-direction:column}.price-candidate .item-btn{max-width:none;width:100%}}
+
+.catalog-recovery-filter{display:flex;gap:10px;align-items:center;color:#33608b;font-size:.78rem;font-weight:700;padding:12px;background:#edf6ff;border-radius:12px;margin:14px 0}
+.catalog-recovery-filter input{width:18px;height:18px;accent-color:#2765c3;flex-shrink:0}
+.market-card-menu{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.shopping-actions .item-btn.danger{border-color:#f7d8dd;color:#a93a4a;background:#fffafb}
+.market-card-menu .item-btn.danger{border-color:#f7d8dd;color:#a93a4a;background:#fffafb}
+@media(max-width:550px){.market-card-menu .item-btn{font-size:.73rem;padding:8px 10px}.shopping-actions{flex-wrap:wrap}}
