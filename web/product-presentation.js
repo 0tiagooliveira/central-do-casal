@@ -6,10 +6,10 @@ const fmt=n=>Number(n).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const valid=n=>Number.isFinite(n)&&n>0&&n<=100000;
 export function parsePresentation(title,unit="un") {
   const s=clean(title),u=clean(unit);
-  const box=/\b(?:cx\.?|caixa|box)\b/.test(s);
-  const pack=/\b(?:pct\.?|pacote|pack|fardo)\b/.test(s);
+  const box=/\b(?:cx\.?|caixa|box)\b/.test(s)||["cx","caixa"].includes(u);
+  const pack=/\b(?:pct\.?|pacote|pack|fardo)\b/.test(s)||["pct","pacote"].includes(u);
   const multipack=s.match(/\b(\d{1,3})\s*[x×]\s*(\d{1,4}(?:[.,]\d{1,3})?)\s*(ml|l|lt|lts|kg|g)\b/);
-  const count=s.match(/\b(?:c\/|com\s+|caixa\s+(?:com\s+)?|cx\.?\s+(?:c\/\s*)?|pacote\s+(?:com\s+)?|pct\.?\s+(?:c\/\s*)?|pack\s+(?:com\s+)?)\s*(\d{1,3})\s*(?:un(?:idades?)?|und|unid|pcs?|pecas?)\b/);
+  const count=s.match(/\b(?:c\/|com\s+|caixa\s+(?:com\s+)?|cx\.?\s+(?:c\/\s*)?|pacote\s+(?:com\s+)?|pct\.?\s+(?:c\/\s*)?|pack\s+(?:com\s+)?)\s*(\d{1,3})\s*(?:un(?:idades?)?|und|unid|pcs?|pecas?|hamburgueres?|hamburguer|hamburgueres?)\b/);
   const sized=s.match(/\b(\d{1,4}(?:[.,]\d{1,3})?)\s*(ml|lts?|litros?|kg|quilos?|gramas?|gr|g)\b/);
   function dimension(value,measure) {
     if(!valid(value))return null;
@@ -32,10 +32,15 @@ export function parsePresentation(title,unit="un") {
   // Embalagem de n unidades tem preço por item apenas se n está explícito.
   // Peso/volume total somente quando a descrição indica o total inequivocamente.
   const units=valid(countValue)?countValue:null;
-  const amount=dimensionValue&&valid(dimensionValue.amount)?dimensionValue.amount:null;
+  // "Caixa 12 un 90 g" usually means 90 g *per piece*; only "12 x 90 g"
+  // supports deriving total package weight.
+  const eachPiece=!!(units&&sized&&!multipack);
+  const amount=!eachPiece&&dimensionValue&&valid(dimensionValue.amount)?dimensionValue.amount:null;
   const dim=amount?dimensionValue.kind:null;
-  const label=units&&form?(form+" "+fmt(units)+" un"):(form||"");
-  const measureLabel=amount?(fmt(amount)+(dim==="volume"?" L":" kg")):"";
+  const label=units?(form||"Conjunto")+" "+fmt(units)+" un":(form||"");
+  const eachMeasure=eachPiece&&dimensionValue?
+    "cada peça "+fmt(dimensionValue.amount)+(dimensionValue.kind==="volume"?" L":" kg"):"";
+  const measureLabel=amount?(fmt(amount)+(dim==="volume"?" L":" kg")):eachMeasure;
   const display=[label,measureLabel].filter(Boolean).join(" · ")||
     (u==="un"||u==="und"?"Unidade sem tamanho informado":u==="pacote"?"Pacote sem tamanho informado":"Quantidade/embalagem não identificada");
   let key;
