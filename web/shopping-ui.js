@@ -48,7 +48,7 @@ export function shoppingView({state}) {
       const purchased=(r.entries||[]).filter(e=>e.bought);
       return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary><div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
     }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
-    <p class="info-line" style="margin-top:16px">Itens que estejam apenas no armazenamento local de uma versão antiga do APK precisam ser migrados separadamente. Não desinstale o Android antes disso.</p>`;
+    <div class="backup-panel"><div><strong>Compras antigas no Android?</strong><p>Você pode importar as listas de um JSON exportado pelo aplicativo. Itens existentes são preservados e títulos repetidos não são mesclados automaticamente.</p></div><button type="button" class="item-btn" data-shop-action="import">Importar lista antiga</button></div>`;
 }
 export function installShoppingUI({root,db,auth,getState,render}) {
   const actions=createShoppingActions(db,auth,getState);
@@ -61,6 +61,24 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     toast.textContent=text;toast.classList.toggle("bad",error);toast.hidden=false;clearTimeout(toastTimeout);
     toastTimeout=setTimeout(()=>{toast.hidden=true;},6000);
   }
+  const uploader=document.createElement("input");
+  uploader.type="file";uploader.accept="application/json,.json";uploader.hidden=true;document.body.append(uploader);
+  uploader.addEventListener("change",async()=>{
+    const file=uploader.files?.[0];uploader.value="";
+    if(!file)return;
+    try {
+      if(file.size>10_000_000)throw new Error("Arquivo muito grande. Envie um backup JSON menor que 10 MB.");
+      const data=JSON.parse(await file.text());
+      if(!data?.baskets||typeof data.baskets!=="object"||Array.isArray(data.baskets))throw new Error("Arquivo não é um backup da Central do Casal com listas.");
+      const markets=["Mercado","Açougue"].filter(m=>Array.isArray(data.baskets[m]?.entries)&&data.baskets[m].entries.length);
+      if(!markets.length)throw new Error("O backup não contém produtos nas listas de Mercado ou Açougue.");
+      const counts=markets.map(m=>m+": "+data.baskets[m].entries.length).join(", ");
+      const ok=confirm("IMPORTAR LISTAS DO ANDROID?\n\n"+counts+"\n\nProdutos existentes no Firebase não serão substituídos. Itens com IDs diferentes podem ficar duplicados para você revisar. Continuar?");
+      if(!ok)return;
+      for(const market of markets) await actions.importBackup(market,data.baskets[market]);
+      notify("Listas do backup enviadas ao Firebase. Confira as unidades e possíveis duplicações.");
+    }catch(err){notify(err.message||"Falha ao importar backup.",true);}
+  });
   let busy=false;
   async function run(job,description){
     if(busy)return;
@@ -110,6 +128,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const s=getState(),act=button.dataset.shopAction,market=s.market;
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
+    if(act==="import"){uploader.click();return;}
     if(act==="add")editor();
     if(act==="edit"&&item)editor(item);
     if(act==="toggle"&&item){if(item.bought)run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Compra desmarcada");else editor(item,true);}
