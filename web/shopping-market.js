@@ -30,16 +30,25 @@ function marketRow(e) {
     </div>
   </article>`;
 }
-export function marketView(state) {
+export function marketView(state,{section="pending"}={}) {
   const entries=state.baskets[state.market]?.entries||[];
   const remaining=entries.filter(e=>!e.bought),bought=entries.filter(e=>e.bought);
+  const total=entries.length;
   const spent=bought.reduce((s,e)=>s+subtotal(e.actual||0,e.actualMilli??e.plannedMilli??1000),0);
   const budget=state.baskets[state.market]?.budget||0;
-  return `<section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Conferência em tempo real</h2><p>Informe o preço da etiqueta e ajuste a quantidade antes de colocar o produto no carrinho. Tudo é sincronizado com o Android.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
-  <div class="market-sections"><section><div class="market-section-head"><h3>Falta comprar</h3><span>${remaining.length} item(ns)</span></div>
-    <div class="market-list">${remaining.length?remaining.map(marketRow).join(""):`<div class="empty">Tudo que estava na lista foi colocado no carrinho.</div>`}</div></section>
-    <section><div class="market-section-head"><h3>✓ No carrinho</h3><span>${bought.length} item(ns)</span></div>
-    <div class="market-list">${bought.length?bought.map(marketRow).join(""):`<div class="empty">Conforme colocar produtos no carrinho, eles aparecerão aqui.</div>`}</div></section></div>
-  <div class="checkout-card"><div><strong>Finalizar compra</strong><p>Confira quantidades e preços antes de salvar a compra no histórico.</p></div>
+  const active=section==="bought"?"bought":"pending";
+  const progress=total?Math.round((bought.length/total)*100):0;
+  return `<section class="market-mode-head"><div><span class="eyebrow">MODO NO MERCADO</span><h2>Conferência em tempo real</h2><p>Digite o preço real e toque em <strong>Colocar no carrinho</strong>. O produto sai de Falta comprar e aparece em No carrinho automaticamente.</p></div><div class="market-spent"><span>Total no carrinho</span><strong>${money(spent)}</strong><small>${budget?"Restante do orçamento: "+money(budget-spent):"Orçamento ainda não definido"}</small></div></section>
+  <div class="market-progress" aria-label="${progress}% dos produtos da lista no carrinho"><div class="market-progress-track"><div style="width:${progress}%"></div></div><span>${bought.length} de ${total} no carrinho</span></div>
+  <nav class="market-status-tabs" aria-label="Acompanhar a compra">
+    <button type="button" class="market-status-tab ${active==="pending"?"active":""}" data-shop-action="market-section-pending" aria-pressed="${active==="pending"}"><span><icon name="list-checks"></icon> Falta comprar</span><strong>${remaining.length}</strong></button>
+    <button type="button" class="market-status-tab ${active==="bought"?"active":""}" data-shop-action="market-section-bought" aria-pressed="${active==="bought"}"><span>✓ No carrinho</span><strong>${bought.length}</strong></button>
+  </nav>
+  ${active==="pending"?
+  `<section class="market-focus-section"><div class="market-section-head"><h3>Falta comprar</h3><span>${remaining.length} item(ns)</span></div>
+  <div class="market-list">${remaining.length?remaining.map(marketRow).join(""):`<div class="empty">Tudo o que estava na lista foi para o carrinho. <button type="button" class="item-btn" data-shop-action="market-section-bought">Ver meu carrinho</button></div>`}</div></section>`:
+  `<section class="market-focus-section"><div class="market-section-head"><h3>✓ No carrinho</h3><span>${bought.length} item(ns)</span></div>
+  <div class="market-list">${bought.length?bought.map(marketRow).join(""):`<div class="empty">Você ainda não colocou produtos no carrinho. <button type="button" class="item-btn" data-shop-action="market-section-pending">Ver o que falta</button></div>`}</div></section>`}
+  <div class="checkout-card"><div><strong>Finalizar compra</strong><p>Confira quantidades e preços antes de salvar a compra no histórico. Você pode devolver itens do carrinho para a lista a qualquer momento.</p></div>
   <button type="button" class="primary-btn" data-shop-action="close" ${bought.length?"":"disabled"}>Concluir e salvar</button></div>`;
 }
