@@ -48,12 +48,19 @@ function entryHTML(e,state) {
 }
 export function shoppingView({state}) {
   const market=state.market;
+  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
+  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
+  // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
+  // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
+  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
+  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
+    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||""});
   const b=state.baskets[market]||{market,entries:[],budget:0};
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
   const bought=entries.filter(e=>e.bought);
   const listQuery=shopPrefs.listSearch[market]||"";
-  const marketQuery=shopPrefs.marketSearch[market]||"";
   const visibleList=filterShoppingEntries(list,listQuery);
   const visibleBought=filterShoppingEntries(bought,listQuery);
   const flagged=entries.filter(e=>!String(e.title||"").trim()||!UNITS.includes(e.unit)||e.unitReviewed===false||e.quantityReviewed===false);
@@ -61,16 +68,16 @@ export function shoppingView({state}) {
   const indicative=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed===false&&
     Number.isSafeInteger(e.estimated)&&Number.isSafeInteger(e.plannedMilli)&&e.plannedMilli>0)
     .reduce((n,e)=>n+subtotal(e.estimated,e.plannedMilli),0);
-  const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit)).reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
+  const subtotalExpected=entries.filter(e=>e.estimateKnown!==false&&e.unitReviewed!==false&&e.quantityReviewed!==false&&UNITS.includes(e.unit))
+    .reduce((n,e)=>n+subtotal(e.estimated||0,e.plannedMilli||1000),0);
   const actual=bought.reduce((n,e)=>n+subtotal(Number(e.actual)||0,e.actualMilli||e.plannedMilli||1000),0);
   const receipts=state.shared.filter(r=>r.kind==="receipt"&&r.market===market).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-  const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
-  const seen=new Map();for(const e of entries){const k=String(e.title||"").trim().toLowerCase();if(k)seen.set(k,(seen.get(k)||0)+1);}
+  const seen=new Map();
+  for(const e of entries){
+    const k=String(e.title||"").trim().toLowerCase();
+    if(k)seen.set(k,(seen.get(k)||0)+1);
+  }
   const duplicates=[...seen.entries()].filter(([,n])=>n>1).map(([name])=>name);
-  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
-  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
-  if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+marketView(state,{section:shopPrefs.marketSection,search:marketQuery});
   return viewHeader+`<div class="split-head"><div><p class="info-line">Alterações sincronizadas com o Android no mesmo espaço do casal.</p></div><div class="switcher">${options}</div></div>
     ${shoppingSearchBar({area:"list",query:listQuery,total:entries.length,
       shown:visibleList.length+visibleBought.length,label:"Pesquisar na lista e no carrinho"})}
