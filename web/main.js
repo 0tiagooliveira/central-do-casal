@@ -169,9 +169,11 @@ function connectHousehold(householdId){
   firstHouseData={shared:false,baskets:false};
   state.household=householdId;
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
+  // A cesta tem poucos documentos, enquanto o catálogo contém centenas.
+  // Assinar a cesta primeiro entrega a lista mais cedo ao modo mercado.
+  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));firstHouseData.baskets=true;},"listas de compras","house");
   watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;},"registros compartilhados","house");
   watch(collection(db,"households",householdId,"catalogLinks"),s=>{state.links=s.docs.map(d=>({id:d.id,...d.data()}));},"vínculos do catálogo","house");
-  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));firstHouseData.baskets=true;},"listas de compras","house");
 }
 installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
 
