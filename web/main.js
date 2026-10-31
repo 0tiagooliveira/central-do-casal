@@ -32,7 +32,7 @@ function rememberRoute(){saveScroll();writeAppRoute(routeState());}
 function restoreScrollAfterRefresh(){
   if(scrollRestored||!state.uid||!state.household||!firstHouseData.shared||!firstHouseData.baskets)return;
   scrollRestored=true;
-  if(initialScroll>0)requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo({top:initialScroll,behavior:"instant"})));
+  if(initialScroll>0)requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo({top:initialScroll,behavior:"auto"})));
 }
 let listeners = [];
 let houseListeners = [];
