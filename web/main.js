@@ -17,8 +17,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const tabs = [["Hoje","☀️"],["Compras","🛒"],["Rotina","✓"],["Planos","◈"],["Nós","♡"]];
-const state = { tab:"Hoje", market:"Mercado", profile:null, uid:"", household:"", shared:[], personal:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
+const state = { tab:"Hoje", market:"Mercado", profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
 let listeners = [];
+let houseListeners = [];
 const $ = (id) => document.getElementById(id);
 const fmt = (value) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(value)||0)/100);
 const esc = (s) => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -85,26 +86,28 @@ function render(){
   document.querySelectorAll("[data-market]").forEach(b=>b.addEventListener("click",()=>{state.market=b.dataset.market;render()}));
 }
 function clearListeners(){
-  for(const stop of listeners) stop();
-  listeners=[];
-  state.shared=[];state.personal=[];state.baskets={};state.profile=null;state.household="";state.error="";
+  for(const stop of [...listeners,...houseListeners]) stop();
+  listeners=[];houseListeners=[];
+  state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
 }
-function watch(reference, callback, source){
+function watch(reference, callback, source, group="global"){
   const stop=onSnapshot(reference,{includeMetadataChanges:true},snapshot=>{
     if(state.uid!==auth.currentUser?.uid) return;
     callback(snapshot);
     state.sync=snapshot.metadata.fromCache?"Exibindo cache · conferindo conexão":"Dados recebidos do Firebase";
     render();
   },error=>{state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";state.sync="Conexão precisa de atenção";render();});
-  listeners.push(stop);
+  if(group==="house")houseListeners.push(stop);else listeners.push(stop);
 }
 function connectHousehold(householdId){
-  while(listeners.length>2){listeners.pop()();}
-  state.shared=[];state.baskets={};
+  for(const stop of houseListeners)stop();
+  houseListeners=[];
+  state.shared=[];state.links=[];state.baskets={};
   state.household=householdId;
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
-  watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));},"registros compartilhados");
-  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));},"listas de compras");
+  watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));},"registros compartilhados","house");
+  watch(collection(db,"households",householdId,"catalogLinks"),s=>{state.links=s.docs.map(d=>({id:d.id,...d.data()}));},"vínculos do catálogo","house");
+  watch(collection(db,"households",householdId,"baskets"),s=>{state.baskets=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));},"listas de compras","house");
 }
 installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
 onAuthStateChanged(auth,user=>{
