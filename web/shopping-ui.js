@@ -22,6 +22,7 @@ function entryHTML(e) {
       ${quantityControls(e)}
       <button type="button" class="item-btn ${e.bought?"subtle":"buy"}" data-shop-action="toggle" data-item-id="${clean(e.id)}" aria-label="${e.bought?"Desmarcar":"Registrar compra de"} ${name}">${e.bought?"Desfazer":"✓ Comprei"}</button>
       <button type="button" class="item-btn" data-shop-action="edit" data-item-id="${clean(e.id)}">Editar</button>
+      <button type="button" class="item-btn danger" data-shop-action="remove-inline" data-item-id="${clean(e.id)}" aria-label="Remover ${name} da lista">Remover</button>
     </div>
   </article>`;
 }
@@ -181,6 +182,13 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         d.unit=recent.unit;d.unitReviewed=true;d.estimated=recent.cents;d.estimateKnown=true;
       }
       editor(null,false,d);return;
+    }
+    if(act==="remove-inline"&&item){
+      const wasBought=item.bought?" (já está no carrinho)":"";
+      if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
+        run(()=>actions.removeItem(market,item.id),"Produto removido da lista");
+      }
+      return;
     }
     if(act==="quick-qty"&&item){
       const field=button.dataset.qtyField==="actual"?"actual":"planned";
