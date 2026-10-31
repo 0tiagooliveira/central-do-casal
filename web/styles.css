@@ -188,3 +188,5 @@
 .package-card .catalog-qty-control{margin:1px 0 0}
 .package-card .catalog-qty-input{height:44px}
 @media(max-width:540px){.catalog-card>.catalog-qty-control{margin-top:0}.catalog-qty-input input{max-width:86px}}
+
+.catalog-card>.catalog-add-button{width:100%;padding:12px 14px;font-size:.83rem;line-height:1.25;min-height:45px}
