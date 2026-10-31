@@ -5,7 +5,7 @@ import {compareInvoice,suggestInvoiceMappings,labelInvoiceStatus} from "./invoic
 import {moneyCents} from "./shopping.js";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const brl=c=>Number.isFinite(c)?new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(c/100):"Não informado";
-const fileLimit=180000; // DataURL chars. Keeps the whole Firestore receipt under 1 MiB.
+const fileLimit=350000; // DataURL chars. Keeps the whole Firestore receipt under 1 MiB.
 async function imageAsDataUrl(file){
   if(file.size>10_000_000)throw Error("Imagem muito grande (máximo 10 MB).");
   const bitmap=await createImageBitmap(file);
@@ -26,7 +26,7 @@ async function imageAsDataUrl(file){
   }finally{bitmap.close();}
 }
 async function fileAsDataUrl(file){
-  if(file.size>130000)throw Error("PDF acima do limite de 130 KB para o histórico gratuito. Use o XML ou uma foto.");
+  if(file.size>250000)throw Error("PDF acima do limite de 250 KB para o histórico gratuito. Use o XML ou uma foto menor.");
   return await new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=()=>resolve(String(reader.result||""));
@@ -91,14 +91,21 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
     const status=getReport().lines.find(r=>r.lineId===line.id);
     const statusText=status?.status==="matched"?"✓ Confere":
       status?.status==="different"?"⚠ Divergente":"Pendente";
+    const observed=bought.find(x=>x.id===selected);
+    const observedText=observed?
+      " · Marcado no mercado: "+brl(observed.actual)+"/"+esc(observed.unit)+
+      " · Subtotal no carrinho: "+brl(status?.cartTotalCents):
+      "";
+    const fiscalText=line.quantityMilli>0?
+      " · Unitário fiscal aproximado: "+brl(line.unitCents)+"/"+esc(line.unit):"";
     return '<div class="invoice-compare-line"><div><strong>'+esc(line.name)+'</strong><small>'+
       (line.quantityMilli/1000).toLocaleString("pt-BR")+' '+esc(line.unit)+
-      ' · Nota: '+brl(line.netCents)+'</small></div>'+
+      ' · Nota: '+brl(line.netCents)+fiscalText+'</small></div>'+
       '<label>Corresponde a<select data-invoice-match="'+esc(line.id)+'">'+
       '<option value="">Selecione o item do carrinho</option>'+options+
       '<option value="__skip" '+(selected==="__skip"?"selected":"")+
       '>Item não registrado no carrinho</option></select></label>'+
-      '<span class="invoice-compare-status">'+statusText+
+      '<span class="invoice-compare-status">'+statusText+observedText+
       (status?.status==="different"?' · diferença '+brl(status.differenceCents):"")+
       '</span></div>';
   }).join("");
