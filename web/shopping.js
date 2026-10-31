@@ -133,7 +133,7 @@ export function createShoppingActions(db,auth,getState) {
       if(!["xml","image","pdf"].includes(invoice.source))throw new Error("Formato de nota não reconhecido.");
       if(!Array.isArray(invoice.lines)||invoice.lines.length>250)throw new Error("Nota com itens demais.");
       if(invoice.fileData&&(!/^data:(image\/jpeg|application\/pdf);base64,/.test(invoice.fileData)||
-        invoice.fileData.length>180000))throw new Error("Comprovante acima do limite de tamanho.");
+        invoice.fileData.length>350000))throw new Error("Comprovante acima do limite de tamanho.");
       if(invoice.xmlContent&&typeof invoice.xmlContent==="string"&&invoice.xmlContent.length>150000)
         throw new Error("XML acima do limite.");
     }
