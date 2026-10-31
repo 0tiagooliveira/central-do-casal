@@ -5,7 +5,7 @@ const asText = value => typeof value === "string" ? value.trim() : "";
 const allowedUnits = ["un","kg","g","L","mL","pacote"];
 export const normalizeCatalogUnit = value => {
   const key = asText(value).toUpperCase();
-  return ({UN:"un",UND:"un",UNIDADE:"un",UNID:"un",KG:"kg",G:"g",L:"L",ML:"mL",PACOTE:"pacote",PCT:"pacote"})[key] || "Escolher";
+  return ({UN:"un",UND:"un",UNIDADE:"un",UNID:"un",KG:"kg",G:"g",L:"L",ML:"mL",PACOTE:"pacote",PCT:"pacote",CX:"pacote",CAIXA:"pacote",PC:"un",PECA:"un",PEÇAS:"un"})[key] || "Escolher";
 };
 export function catalogItems(records,market,source="base") {
   const kind=source==="store"?"catalogSku":"catalogItem";
