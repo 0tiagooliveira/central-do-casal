@@ -337,3 +337,12 @@
 .emergency-live-totals span{font-size:.77rem;line-height:1.5}
 .emergency-live-totals strong{font-size:.92rem;color:#7d4a13}
 @media(max-width:540px){.emergency-live-totals{display:grid;gap:5px}}
+
+/* Importação pontual de compra enviada por link para a cesta local. */
+.cart-batch-banner{margin:12px 0 16px;padding:14px;border:1.5px solid #87b7e7;
+  border-radius:15px;background:#eaf4ff;display:grid;gap:9px}
+.cart-batch-banner>strong{font-size:.9rem;color:#1c5a97;line-height:1.4}
+.cart-batch-banner p{font-size:.76rem;color:#476d95;line-height:1.5;margin:0}
+.cart-batch-banner>small{font-size:.72rem;color:#6c839f;line-height:1.4}
+.cart-batch-banner .primary-btn{padding:12px 15px;min-height:47px;font-weight:800;white-space:normal}
+@media(max-width:540px){.cart-batch-banner .primary-btn{width:100%}}
