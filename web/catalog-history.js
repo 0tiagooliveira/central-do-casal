@@ -47,7 +47,20 @@ export function priceHistory(product,records=[],links=[]) {
     const hist=Array.isArray(sku.history)?sku.history:[];
     for(let i=0;i<hist.length;i++){
       const row=hist[i];if(!row||typeof row!=="object")continue;
-      push("sku:"+sku.id+":"+(row.id||i),row.date,row.unidade,row.preco_unitario_reais,sku.store,sku.id);
+      push("fiscal:"+sku.id+":"+(row.id||row.nota_id+":"+(row.posicao_na_nota||i)),row.date,row.unidade,row.preco_unitario_reais,sku.store,sku.id);
+    }
+  }
+  // Recupera observações diretamente das linhas das notas importadas quando
+  // o campo catalogSku.history estiver ausente ou incompleto.
+  for(const receipt of records){
+    if(receipt.kind!=="importedReceipt"||receipt.private===true||!Array.isArray(receipt.lines))continue;
+    for(let i=0;i<receipt.lines.length;i++){
+      const line=receipt.lines[i];
+      if(!line||typeof line!=="object")continue;
+      const sku=skus.find(s=>catalogId(s.id)===catalogId(line.produto_id));
+      if(!sku)continue;
+      const lineId=line.id||String(line.nota_id||receipt.id)+":"+(line.posicao_na_nota||i);
+      push("fiscal:"+sku.id+":"+lineId,receipt.date,line.unidade,line.preco_unitario_reais,sku.store||receipt.title,sku.id);
     }
   }
   for(const receipt of records){
