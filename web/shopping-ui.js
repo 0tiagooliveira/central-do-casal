@@ -341,7 +341,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }
       try{
         saveEmergency(getState(),"Mercado",{
-          type:"batchAddToCart",batchId:batch.id,entries:plan.needed
+          type:"batchAddToCart",batchId:batch.id,entries:plan.needed.map(e=>({...e,id:crypto.randomUUID()}))
         });
         // Sem escrita na rede: a cesta local é atualizada imediatamente.
         shopPrefs.mode="market";shopPrefs.marketSection="bought";
