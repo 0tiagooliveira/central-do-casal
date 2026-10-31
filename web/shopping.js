@@ -1,4 +1,5 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
+import {compareInvoice} from "./invoice-reconcile.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
@@ -127,7 +128,15 @@ export function createShoppingActions(db,auth,getState) {
     const budget=old.budget===0&&Number.isSafeInteger(backup.budget)&&backup.budget>=0?backup.budget:old.budget;
     return {...old,budget,entries:[...(old.entries||[]),...additions]};
   });
-  async function closeBasket(market) {
+  async function closeBasket(market,invoice=null,mapping={}) {
+    if(invoice){
+      if(!["xml","image","pdf"].includes(invoice.source))throw new Error("Formato de nota não reconhecido.");
+      if(!Array.isArray(invoice.lines)||invoice.lines.length>250)throw new Error("Nota com itens demais.");
+      if(invoice.fileData&&(!/^data:(image\/jpeg|application\/pdf);base64,/.test(invoice.fileData)||
+        invoice.fileData.length>180000))throw new Error("Comprovante acima do limite de tamanho.");
+      if(invoice.xmlContent&&typeof invoice.xmlContent==="string"&&invoice.xmlContent.length>150000)
+        throw new Error("XML acima do limite.");
+    }
     const state=getState();assertSession(state,auth);
     const visible=state.baskets[market];
     if(!visible||!visible.generation)throw new Error("Lista não encontrada.");
@@ -151,7 +160,15 @@ export function createShoppingActions(db,auth,getState) {
       const total=bought.reduce((n,e)=>n+subtotal(e.actual,e.actualMilli),0);
       const dateParts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
       const date=dateParts.year+"-"+dateParts.month+"-"+dateParts.day;
-      const receipt={...b,kind:"receipt",private:false,total,date,updatedBy:state.uid,updatedAt:serverTimestamp()};
+      const report=compareInvoice(entries,invoice,mapping);
+      const receipt={...b,kind:"receipt",private:false,total,date,updatedBy:state.uid,
+        updatedAt:serverTimestamp(),
+        invoice:invoice?{...invoice,comparison:report,mappings:mapping,
+          attachedAt:new Date().toISOString(),comparisonStatus:report.status}:null};
+      // Firestore documents must remain under 1 MiB, including cart + attachment.
+      // Lower cap leaves margin for indexes, field-name and Firestore overhead.
+      if(JSON.stringify({...receipt,updatedAt:null}).length>790000)
+        throw new Error("A compra e o comprovante juntos ultrapassam o limite de armazenamento. Use o XML ou outra imagem menor.");
       tx.set(receiptRef,receipt);
       const nextEntries=entries.map(e=>e.bought?{...e,estimated:e.actual,actual:null,bought:false,estimateKnown:true,unitReviewed:true,quantityReviewed:true}:e);
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
