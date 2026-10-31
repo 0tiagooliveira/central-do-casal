@@ -5,6 +5,15 @@ export const money4=c=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:
   minimumFractionDigits:2,maximumFractionDigits:Number.isInteger(Number(c))?2:4}).format((Number(c)||0)/100);
 const date=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||"")?d.slice(8,10)+"/"+d.slice(5,7)+"/"+d.slice(0,4):"Data desconhecida";
 const itemPrice=p=>money4(p.cents)+"/"+esc(p.unit||"un");
+export function quantitySelector(key,unit="un",quantities={}){
+  const actual=quantities[key]??"1";
+  const label=unit==="un"?"unidade(s)":unit==="pacote"?"pacote(s)":unit;
+  return '<div class="catalog-qty-control"><label>Quantidade a comprar</label>'+
+    '<div class="catalog-qty-input"><button type="button" data-shop-action="catalog-qty-step" data-delta="-1" aria-label="Diminuir quantidade">−</button>'+
+    '<input type="text" inputmode="decimal" data-shop-qty data-qty-key="'+esc(key)+'" value="'+esc(actual)+'" aria-label="Quantidade a comprar" autocomplete="off">'+
+    '<button type="button" data-shop-action="catalog-qty-step" data-delta="1" aria-label="Aumentar quantidade">+</button>'+
+    '<span>'+esc(label)+'</span></div></div>';
+}
 export function packageDetailCards(points,{skuId='',baseId=''}={}){
   const groups=presentationSeries(points);
   if(!groups.length)return '<div class="catalog-no-history">Não há compra com preço e data para esta apresentação.</div>';
@@ -42,7 +51,8 @@ export function packageDetailCards(points,{skuId='',baseId=''}={}){
         '<div class="package-spark caution">'+sparkline(g.points)+
         '<p>Gráfico apenas dos valores registrados: apresentação incompleta, sem conclusão de alta ou queda.</p></div>')+
       prices+descriptionNote+
-      (skuId?'<button type="button" class="item-btn buy package-add" data-shop-action="add-package" data-sku-id="'+esc(skuId)+
+      (skuId?quantitySelector(skuId+"|"+g.key,last.unit,quantities)+
+       '<button type="button" class="item-btn buy package-add" data-shop-action="add-package" data-sku-id="'+esc(skuId)+
        '" data-base-id="'+esc(baseId)+'" data-package-key="'+esc(g.key)+'">+ Adicionar esta apresentação à lista</button>':"")+
       '<details class="package-receipts"><summary>Ver compras e descrições ('+g.points.length+')</summary>'+
       '<p class="package-description">Última descrição fiscal: '+esc(last.description||"Não informada")+'</p>'+
