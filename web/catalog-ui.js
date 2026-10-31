@@ -37,14 +37,14 @@ export function catalogView(state,{source="base",search="",category="Todas",limi
         ${variants.map(v=>`<article class="family-variant">
           <div class="variant-top"><strong>${esc(v.sku.title)}</strong>
             <small>${esc(v.sku.store||"Loja não informada")} · ${esc(v.status)}</small></div>
-          ${packageDetailCards(v.history)}
+          ${packageDetailCards(v.history,{skuId:v.sku.id,baseId:product.id})}
           ${v.needsReview?`<button type="button" class="item-btn" data-shop-action="confirm-association" data-base-id="${esc(product.id)}" data-sku-id="${esc(v.sku.id)}">Confirmar associação à base</button>`:""}
         </article>`).join("")}
       </div>
       <p class="info-line">Os preços ficam separados por apresentação. Associação por nome é apenas uma prévia, não um vínculo gravado.</p>
     </details>`:"";
     const storeDetails=source==="store"&&history.length?`<details class="family-details">
-      <summary>Ver embalagens, histórico e estatísticas</summary>${packageDetailCards(history)}</details>`:"";
+      <summary>Ver embalagens, histórico e estatísticas</summary>${packageDetailCards(history,{skuId:product.id})}</details>`:"";
     const referenceRate=last?normalizedRate(last):null;
     const presentationLabel=(family?.presentation||last?.presentation)?.display||"";
     return `<article class="catalog-card">
