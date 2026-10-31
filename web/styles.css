@@ -312,3 +312,9 @@
 .receipt-invoice span,.receipt-invoice small{font-size:.73rem;color:#516e8b;line-height:1.4}
 .receipt-invoice .item-btn{justify-self:start}
 @media(max-width:540px){#invoice-close-form{max-height:85dvh}.invoice-checkout-actions{flex-direction:column}.receipt-invoice .item-btn{width:100%}}
+
+.receipt-invoice-lines{border-top:1px solid #dce8f5;padding-top:9px;margin-top:5px}
+.receipt-invoice-lines summary{cursor:pointer;color:#245d99;font-size:.76rem;font-weight:750}
+.receipt-invoice-line{display:grid;gap:4px;padding:10px 3px;border-bottom:1px solid #dfeaf6}
+.receipt-invoice-line strong{font-size:.77rem;color:#324c68}
+.receipt-invoice-line span,.receipt-invoice-line small{font-size:.7rem;color:#5e7590}
