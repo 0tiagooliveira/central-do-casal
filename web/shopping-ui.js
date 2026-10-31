@@ -35,7 +35,7 @@ function entryHTML(e,state) {
     '<span class="estimate-context">'+clean(suggestion.source)+(suggestion.safe?" · disponível para aplicar":" · exige confirmação")+'</span>':
     e.estimateKnown!==false&&e.unitReviewed===false?
     '<span class="estimate-context">Preço provisório. Confirme unidade e embalagem para calcular o total.</span>':"";
-  return `<article class="shopping-item ${e.bought?"purchased":""}">
+  return `<article class="shopping-item ${e.bought?"purchased":""}" data-shopping-entry-id="${clean(e.id)}">
     <div class="shopping-info"><div class="shopping-title">${name} ${warnings?'<span class="pill warn">Revisar</span>':""}</div>
       <div class="record-meta">${clean(meta)}</div><div class="shopping-price">${clean(unitEstimate)} ${e.bought?`<span class="pill success">Comprado · ${currency(e.actual)}</span>`:""}${priceNote}</div></div>
     <div class="shopping-actions">
