@@ -1,6 +1,7 @@
 import {shoppingView,installShoppingUI,getShoppingRoutePrefs,restoreShoppingRoutePrefs} from "./shopping-ui.js";
 import {parseAppRoute,writeAppRoute} from "./navigation.js";
 import {captureViewPosition,saveViewPosition,loadViewPosition,restoreViewPosition} from "./scroll-position.js";
+import {isQuotaError} from "./emergency-cart.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -30,6 +31,16 @@ if(!window.location.hash&&initialHash)window.history.replaceState(null,"",initia
 const initialRoute=parseAppRoute(initialHash);
 restoreShoppingRoutePrefs(initialRoute);
 const state = { tab:initialRoute.tab, market:initialRoute.market, profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
+function saveHouseholdHint(uid,hid){
+  if(!uid||!hid)return;
+  try{localStorage.setItem("cdc:household-hint:"+uid,hid);}catch{}
+}
+function readHouseholdHint(uid){
+  try{
+    const value=localStorage.getItem("cdc:household-hint:"+uid)||"";
+    return /^[^/]{1,140}$/.test(value)?value:"";
+  }catch{return "";}
+}
 const initialPosition=loadViewPosition(window.location.hash);
 const startingHash=window.location.hash;
 let scrollRestored=false,restoreScheduled=false,lastRenderedHash="",pendingScrollSave=null;
@@ -148,7 +159,7 @@ function clearListeners(){
   listeners=[];houseListeners=[];
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
 }
-function watch(reference, callback, source, group="global"){
+function watch(reference, callback, source, group="global", onError=null){
   // Sem includeMetadataChanges: mudanças só de metadados não precisam
   // reconstruir todos os cards. Agrupa os snapshots em um único frame.
   const stop=onSnapshot(reference,snapshot=>{
@@ -158,7 +169,9 @@ function watch(reference, callback, source, group="global"){
     scheduleRender();
   },error=>{
     state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";
-    state.sync="Conexão precisa de atenção";scheduleRender();
+    state.sync="Conexão precisa de atenção";
+    if(typeof onError==="function")onError(error);
+    scheduleRender();
   });
   if(group==="house")houseListeners.push(stop);else listeners.push(stop);
 }
@@ -195,8 +208,19 @@ onAuthStateChanged(auth,user=>{
     const newId=next?.householdId||"";
     const previous=state.household;
     state.profile=next;
+    if(newId)saveHouseholdHint(user.uid,newId);
     if(previous!==newId) connectHousehold(newId);
-  },"perfil");
+  },"perfil","global",error=>{
+    // Recuperação LOCAL apenas após login autenticado. Não ignora regras
+    // de acesso ao Firebase; oferece apenas dados já salvos neste aparelho.
+    if(!isQuotaError(error)||state.household)return;
+    const cached=readHouseholdHint(user.uid);
+    if(cached){
+      state.profile={displayName:"Meu espaço local",householdId:cached};
+      connectHousehold(cached);
+      state.sync="Modo local disponível · Firestore com limite atingido";
+    }
+  });
   watch(collection(db,"users",user.uid,"records"),s=>{state.personal=s.docs.map(d=>({id:d.id,...d.data()}));},"registros pessoais");
   render();
 },error=>{

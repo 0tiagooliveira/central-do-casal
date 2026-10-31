@@ -1,4 +1,5 @@
 import {writeAppRoute} from "./navigation.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
 import {labelInvoiceStatus} from "./invoice-reconcile.js";
@@ -67,10 +68,11 @@ function entryHTML(e,state) {
   </article>`;
 }
 export function shoppingView({state}) {
+  state=projectedShoppingState(state);
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`;
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
@@ -174,14 +176,37 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }catch(err){notify(err.message||"Falha ao importar backup.",true);}
   });
   let busy=false;
-  async function run(job,description){
+  async function run(job,description,fallback=null){
     if(busy)return;
     busy=true;
     dlg.querySelectorAll("button").forEach(b=>b.disabled=true);
-    try{await job();dlg.close();notify(description+" · sincronizado no Firebase.");}
-    catch(e){notify((e.message||"Erro na sincronização")+" Verifique a conexão e tente novamente.",true);
-      dlg.querySelectorAll("button").forEach(b=>b.disabled=false);}
-    finally{busy=false;}
+    try{
+      if(fallback?.market&&readEmergency(getState(),fallback.market)){
+        saveEmergency(getState(),fallback.market,fallback.operation);
+        if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
+        dlg.close();render();
+        notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
+        return;
+      }
+      await job();dlg.close();notify(description+" · sincronizado no Firebase.");
+    }catch(e){
+      if(fallback?.market&&isQuotaError(e)){
+        try{
+          saveEmergency(getState(),fallback.market,fallback.operation);
+          if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
+          dlg.close();render();
+          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
+          return;
+        }catch(saveError){
+          notify(saveError.message,true);
+        }
+      }else{
+        notify(isQuotaError(e)?
+          "Limite de uso do Firebase atingido. Os dados NÃO foram sincronizados. Anote o preço e use o modo local.":
+          (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
+      }
+      dlg.querySelectorAll("button").forEach(b=>b.disabled=false);
+    }finally{busy=false;}
   }
   function editor(item=null,buy=false,seed=null){
     const market=getState().market;
@@ -203,7 +228,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     form.elements.title.focus();
     form.elements.bought.addEventListener("change",()=>{form.querySelector(".actual-field").hidden=!form.elements.bought.checked;});
     dlg.querySelector("[data-cancel]").addEventListener("click",()=>dlg.close());
-    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído");});
+    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído",
+      {market,operation:{type:"remove",id:item.id}});});
     form.addEventListener("submit",event=>{
       event.preventDefault();
       try{
@@ -212,7 +238,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         const actual=bought?moneyCents(form.elements.actual.value):null;
         const entry={title:form.elements.title.value.trim(),plannedMilli:q,actualMilli:q,unit:form.elements.unit.value,estimated:moneyCents(form.elements.estimated.value||"0"),actual,bought,estimateKnown:form.elements.estimated.value.trim()!=="",unitReviewed:true,quantityReviewed:true,group:form.elements.group.value.trim()||"Essenciais",...(seed?{sourceBaseId:seed.sourceBaseId,sourceSkuId:seed.sourceSkuId,category:seed.category,storageRoom:seed.storageRoom,recipient:seed.recipient,subgroup:seed.subgroup,priority:seed.priority}:{})};
         if(!entry.title)throw new Error("Informe o nome do produto.");
-        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),"Produto salvo");
+        const offlineEntry=item?{...item,...entry}:{...entry,id:crypto.randomUUID()};
+        const operation=item?{type:"update",id:item.id,entry:offlineEntry}:{type:"add",entry:offlineEntry};
+        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),
+          "Produto salvo",{market,operation});
       }catch(e){notify(e.message,true);}
     });
   }
@@ -256,10 +285,29 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
     if(event.target.matches("[data-catalog-recovery]")){shopPrefs.recoverableOnly=event.target.checked;shopPrefs.limit=40;render();}
   });
-  root.addEventListener("click",event=>{
+  root.addEventListener("click",async event=>{
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
-    const s=getState(),act=button.dataset.shopAction,market=s.market;
+    const s=projectedShoppingState(getState()),act=button.dataset.shopAction,market=s.market;
+    if(act==="emergency-export"){
+      try{downloadEmergency(getState(),market);notify("Backup da compra baixado neste aparelho.");}
+      catch(e){notify(e.message,true);}
+      return;
+    }
+    if(act==="emergency-sync"){
+      const draft=readEmergency(getState(),market);
+      if(!draft){notify("Nenhuma alteração local pendente.");render();return;}
+      if(!confirm("Enviar "+draft.operations.length+" alteração(ões) locais para o Firebase? Se outro aparelho alterou o mesmo produto, a sincronização será interrompida para preservar seus dados."))return;
+      if(busy)return;busy=true;
+      try{
+        await actions.synchronizeEmergency(market,draft);
+        clearEmergency(getState(),market);render();
+        notify("Alterações locais sincronizadas. Confira o carrinho atualizado.");
+      }catch(e){
+        notify(isQuotaError(e)?"O Firebase continua com a cota excedida. Seu backup local foi preservado. Tente sincronizar depois.":(e.message||"Não foi possível sincronizar. Seu backup está preservado."),true);
+      }finally{busy=false;}
+      return;
+    }
     if(act==="clear-shopping-search"){
       const area=button.dataset.searchArea;
       if(area==="list"||area==="market"){
@@ -317,7 +365,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
           shopPrefs.marketSection="bought";
           rememberShoppingRoute();
           render();
-        },"Produto registrado diretamente no carrinho")});
+        },"Produto registrado diretamente no carrinho",
+        {market,operation:{type:"addToCart",entry}})});
       return;
     }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
@@ -359,7 +408,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
         estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
         sourceSkuId:sku.id});
-      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista");
+      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista",
+        {market,operation:{type:"add",entry:{...draft,id:crypto.randomUUID(),bought:false,actual:null}}});
       return;
     }
     if(act==="choose-catalog"){
@@ -374,7 +424,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
       const estimate=suggestedEstimate(d,s.shared,s.links||[],market);
       if(estimate?.safe){d.estimated=estimate.cents;d.estimateKnown=true;}
-      run(()=>actions.addItem(market,d),"Produto adicionado à lista");
+      run(()=>actions.addItem(market,d),"Produto adicionado à lista",
+        {market,operation:{type:"add",entry:{...d,id:crypto.randomUUID(),bought:false,actual:null}}});
       return;
     }
     if(act==="fill-estimates"){
@@ -391,7 +442,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="remove-inline"&&item){
       const wasBought=item.bought?" (já está no carrinho)":"";
       if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
-        run(()=>actions.removeItem(market,item.id),"Produto removido da lista");
+        run(()=>actions.removeItem(market,item.id),"Produto removido da lista",
+          {market,operation:{type:"remove",id:item.id}});
       }
       return;
     }
@@ -402,27 +454,42 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const next=previous+Number(button.dataset.delta)*step;
       if(!Number.isSafeInteger(next)||next<=0||next>100000000){notify("Quantidade fora do limite. Use Editar para informar uma quantidade exata.",true);return;}
       const update=field==="actual"?{...item,actualMilli:next}:{...item,plannedMilli:next,actualMilli:item.bought?(item.actualMilli??item.plannedMilli):next};
-      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada");return;
+      run(()=>actions.updateItem(market,item.id,update),"Quantidade atualizada",
+        {market,operation:{type:"update",id:item.id,entry:update}});return;
     }
     if(["buy-inline","price-save","unbuy-inline"].includes(act)&&item){
       const priceInput=[...root.querySelectorAll("[data-market-price-id]")].find(input=>input.dataset.marketPriceId===item.id);
-      if(act==="unbuy-inline"){run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Produto voltou para Falta comprar");return;}
+      if(act==="unbuy-inline"){const next={...item,bought:false,actual:null};
+        run(()=>actions.updateItem(market,item.id,next),"Produto voltou para Falta comprar",
+          {market,operation:{type:"update",id:item.id,entry:next}});
+        return;}
       if(!priceInput||!priceInput.value.trim()){notify("Informe o preço real antes de colocar o produto no carrinho.",true);priceInput?.focus();return;}
       try{
         const price=moneyCents(priceInput.value);
-        run(()=>actions.updateItem(market,item.id,{...item,bought:true,actual:price}),act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado");
+        const next={...item,bought:true,actual:price};
+        run(()=>actions.updateItem(market,item.id,next),
+          act==="buy-inline"?"Produto movido de Falta comprar para No carrinho":"Preço do carrinho atualizado",
+          {market,operation:{type:"update",id:item.id,entry:next}});
       }catch(e){notify(e.message,true);priceInput.focus();}
       return;
     }
     if(act==="import"){uploader.click();return;}
     if(act==="add")editor();
     if(act==="edit"&&item)editor(item);
-    if(act==="toggle"&&item){if(item.bought)run(()=>actions.updateItem(market,item.id,{...item,bought:false,actual:null}),"Compra desmarcada");else editor(item,true);}
+    if(act==="toggle"&&item){if(item.bought){
+      const next={...item,bought:false,actual:null};
+      run(()=>actions.updateItem(market,item.id,next),"Compra desmarcada",
+        {market,operation:{type:"update",id:item.id,entry:next}});
+    }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado");}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
+      if(readEmergency(getState(),market)){
+        notify("Há compras ainda não sincronizadas. Baixe o backup e use Tentar sincronizar antes de finalizar a compra.",true);
+        return;
+      }
       const b=s.baskets[market];
       if(!b?.entries?.some(e=>e.bought))return;
       showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>
