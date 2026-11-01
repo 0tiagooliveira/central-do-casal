@@ -1,3 +1,13 @@
+## Recuperar o carrinho local desatualizado a partir do backup JSON
+
+Em **Compras → No mercado** há o botão **Recuperar compra do backup (.json)**. Use o último arquivo `central-compra-backup-mercado-....json` exportado pelo modo de emergência. O navegador lê o JSON, verifica se pertence ao mesmo household da conta autenticada, mostra uma **prévia** com quantos produtos foram comprados, quantos faltam, total de compras e orçamento, e pede confirmação **antes** de armazenar.
+
+A recuperação grava **somente no localStorage do próprio dispositivo**, sem Firebase. O modo mercado passa imediatamente a calcular os cartões e totais a partir do snapshot do arquivo, mesmo quando a nuvem está sem cota. **Não equivale a sincronizar** com o celular da outra pessoa. O banner de modo local mostra os novos valores, o contador de alterações pendentes e permite **Baixar backup**.
+
+Se já houver uma compra offline no navegador, o sistema protege uma cópia anterior e disponibiliza o botão **Baixar cópia anterior**. O importador também recusa um arquivo com menos operações do que a lista atual e recusa geração de compra distinta, IDs duplicados, quantidades ou preços inválidos e household diferente.
+
+A sincronização só é permitida se uma cesta original **da mesma revisão e geração** foi recuperada do Firebase/cache, ou se o próprio backup exportado possui uma baseline válida. Caso essa referência não exista, o backup ainda é exibido e atualizado localmente, mas **Tentar sincronizar** fica bloqueado para evitar substituir alterações da outra pessoa. Próximos downloads incluem também o snapshot baseline para poder reconciliar remotamente com segurança, se houver. Nunca apague o arquivo original até confirmar a sincronização com ambos os aparelhos.
+
 ## Conferência: associados saem das pendências
 
 A tela **Compras → Conferência** mostra quatro filtros: **Pendentes**, **Diferenças**, **Associados** e **Todos**. **Pendentes** é o padrão e exibe somente linhas da nota sem vínculo ou com associação sugerida ainda não confirmada. Assim que o usuário escolhe um produto do carrinho ou confirma a sugestão, a linha desaparece de **Pendentes**, sem apagar dados da nota nem do carrinho. Se valores, quantidades ou unidades divergirem, o item associado permanece consultável em **Diferenças** e em **Associados**. Os contadores de cada seção se atualizam imediatamente.
