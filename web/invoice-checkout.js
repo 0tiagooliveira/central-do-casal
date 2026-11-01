@@ -137,9 +137,9 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
       invoice=await readInvoiceFile(file);
       mapping=suggestInvoiceMappings(invoice.lines,bought);
       totalInput.value=invoice.totalCents==null?"":(invoice.totalCents/100).toFixed(2).replace(".",",");
-      totalInput.readOnly=invoice.source==="xml";
+      totalInput.readOnly=invoice.source==="xml"||invoice.source==="pdf-transcription";
       linesInput.value="";
-      linesInput.disabled=invoice.source==="xml";
+      linesInput.disabled=invoice.source==="xml"||invoice.source==="pdf-transcription";
       notify(invoice.source==="xml"?"Valores da nota extraídos. Confira as associações.":"Comprovante preparado para o histórico; leitura dos itens não disponível.");
       draw();
     }catch(err){invoice=null;mapping={};upload.value="";notify(err.message,true);draw();}
@@ -152,7 +152,7 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
   });
   form.querySelector("#invoice-manual-apply").addEventListener("click",()=>{
     if(!invoice){notify("Anexe primeiro uma nota ou comprovante.",true);return;}
-    if(invoice.source==="xml"){notify("Os itens já foram extraídos do XML; revise as associações.");return;}
+    if(invoice.source==="xml"||invoice.source==="pdf-transcription"){notify("Os itens já estão documentados no XML; revise as associações.");return;}
     try{
       invoice.lines=parseManualInvoiceLines(linesInput.value);
       invoice.parseStatus="manually-entered";
@@ -174,7 +174,7 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
     event.preventDefault();
     if(loading)return;
     if(!invoice){notify("Anexe a nota ou use 'Salvar sem nota'.",true);return;}
-    if(invoice.source!=="xml"&&totalInput.value.trim()){
+    if(!["xml","pdf-transcription"].includes(invoice.source)&&totalInput.value.trim()){
       try{invoice.totalCents=moneyCents(totalInput.value);}catch(err){notify(err.message,true);return;}
     }
     const report=getReport();
