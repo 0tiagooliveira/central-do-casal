@@ -406,3 +406,10 @@
 .review-filter-help{margin:1px 0 8px;color:#657c95;font-size:.77rem;line-height:1.5}
 .review-empty{padding:24px 16px;background:#f2f8ff;border:1px dashed #bbd5f0;border-radius:14px;text-align:center;color:#55799f;font-size:.84rem}
 @media(max-width:540px){.review-section-tabs{margin-right:-8px;padding-right:10px}.review-section-tab{font-size:.75rem;padding:10px 11px}}
+
+/* Recuperação da lista mais recente do arquivo JSON, sem alterar o Firebase. */
+.emergency-restore-control{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0;padding:12px 13px;background:#edf5ff;border:1px solid #d2e4f8;border-radius:13px}
+.emergency-restore-control .item-btn{flex:0 0 auto;padding:10px 14px;min-height:43px;background:#fff;border:1px solid #aacce9;color:#1c609c;font-weight:800}
+.emergency-restore-control>span{flex:1;font-size:.75rem;line-height:1.5;color:#567594;min-width:190px}
+.emergency-sync-warning{border:1px solid #d89d63;background:#fff4e7;padding:9px 11px;border-radius:9px;color:#805020;font-weight:700;font-size:.76rem;line-height:1.5}
+@media(max-width:540px){.emergency-restore-control{flex-direction:column;align-items:stretch;gap:6px}.emergency-restore-control .item-btn{width:100%;white-space:normal}.emergency-restore-control>span{min-width:0;text-align:center}}
