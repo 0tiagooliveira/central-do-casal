@@ -3,6 +3,7 @@ import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "
 import {writeAppRoute} from "./navigation.js";
 import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
+import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
 import {receiptWorkspaceView,installReceiptWorkspace} from "./receipt-workspace.js";
 import {labelInvoiceStatus} from "./invoice-reconcile.js";
@@ -77,7 +78,7 @@ export function shoppingView({state}) {
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+cartBatchBanner(state)+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
@@ -411,14 +412,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       catch(e){notify(e.message,true);}
       return;
     }
+    if(act==="offline-closed-export"){
+      try{downloadOfflineClosure(getState(),market);notify("Compra finalizada e nota guardadas em um arquivo JSON offline.");}
+      catch(e){notify(e.message,true);}
+      return;
+    }
     if(act==="emergency-export"){
       try{downloadEmergency(getState(),market);notify("Backup da compra baixado neste aparelho.");}
       catch(e){notify(e.message,true);}
       return;
     }
     if(act==="emergency-sync"){
-      const draft=readEmergency(getState(),market);
+      const draft=readEmergency(getState(),market),closed=readOfflineClosure(getState(),market);
       if(!draft){notify("Nenhuma alteração local pendente.");render();return;}
+      if(closed?.status==="pending"){
+        if(!confirm("Enviar compra FINALIZADA e nota fiscal ao Firebase? Só será concluído se a lista não tiver divergências com o outro aparelho."))return;
+        if(busy)return;busy=true;
+        try{
+          await actions.publishOfflinePurchase(market,draft,closed);
+          markOfflineClosureSynced(getState(),market);
+          clearEmergency(getState(),market);
+          render();
+          notify("Compra finalizada e nota sincronizadas no histórico do casal.");
+        }catch(e){
+          notify(isQuotaError(e)?
+            "O Firebase continua sem cota. Sua compra finalizada e a nota permanecem salvas neste aparelho. Baixe o histórico offline.":
+            (e.message||"Não foi possível sincronizar. A compra finalizada permanece salva localmente."),true);
+        }finally{busy=false;}
+        return;
+      }
       if(!confirm("Enviar "+draft.operations.length+" alteração(ões) locais para o Firebase? Se outro aparelho alterou o mesmo produto, a sincronização será interrompida para preservar seus dados."))return;
       if(busy)return;busy=true;
       try{
@@ -610,15 +632,29 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
-      if(readEmergency(getState(),market)){
-        notify("Há compras ainda não sincronizadas. Baixe o backup e use Tentar sincronizar antes de finalizar a compra.",true);
+      const previous=readOfflineClosure(getState(),market);
+      if(previous?.status==="pending"){
+        notify("Esta compra já foi FINALIZADA offline. Use Baixar compra finalizada ou Enviar compra e nota ao Firebase.",true);
         return;
       }
       const b=s.baskets[market];
-      if(!b?.entries?.some(e=>e.bought))return;
-      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>
-        run(()=>actions.closeBasket(market,invoice,mapping),"Compra e conferência salvas no histórico")
-      });
+      if(!b?.entries?.some(e=>e.bought)){
+        notify("Marque ao menos um produto comprado antes de finalizar.",true);return;
+      }
+      const localDraft=readEmergency(getState(),market);
+      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>{
+        if(localDraft){
+          try{
+            const archived=archiveOfflinePurchase(getState(),market,invoice,mapping);
+            dlg.close();render();
+            notify("Compra FINALIZADA neste aparelho ("+
+              currency(archived.receipt.total)+"). Nota e histórico offline salvos; baixe a compra finalizada.");
+          }catch(e){notify(e.message||"Erro ao finalizar offline.",true);}
+        }else{
+          run(()=>actions.closeBasket(market,invoice,mapping),
+            "Compra e conferência salvas no histórico");
+        }
+      }});
       return;
     }
     if(act==="invoice-download"){
