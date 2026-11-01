@@ -99,9 +99,9 @@ export function receiptWorkspaceView(shop){
  // Associar uma linha a tira IMEDIATAMENTE da fila de "Pendentes".
  // Diferenças de preço/quantidade permanecem na aba dedicada, sem apagar nada.
  const pendingRows=r.rows.filter(({line,group})=>!group||!!state.pending[String(line.id)]);
- const differentRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]&&group.warning);
+ const differentRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]&&
+   (group.qtyWrong||group.unitWrong||Math.abs(group.difference)>1));
  const associatedRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]);
- const completeRows=associatedRows.filter(({group})=>!group.warning);
  const sections={pending:pendingRows,different:differentRows,associated:associatedRows,all:r.rows};
  const visibleRows=sections[state.reviewSection]||pendingRows;
  const items=note?visibleRows.map(({line,group})=>{
@@ -115,7 +115,7 @@ export function receiptWorkspaceView(shop){
      '<label>Produto correspondente no carrinho<select data-review-link="'+esc(line.id)+'">'+
      '<option value="">Selecione ou mantenha sem associação</option>'+options+'</select></label>'+
      (state.pending[String(line.id)]?'<button type="button" class="item-btn" data-review-action="approve" data-review-id="'+esc(line.id)+'">Confirmar associação sugerida</button>':"")+
-     '<div class="review-line-status '+(group?.warning||!group?"review-alert":"")+'">'+status+
+     '<div class="review-line-status '+(!group||state.pending[String(line.id)]||group.qtyWrong||group.unitWrong||Math.abs(group.difference)>1?"review-alert":"")+'">'+status+
      (group?'<small>Carrinho '+money(group.cartTotal)+' · Nota associada '+money(group.noteTotal)+
        ' · Diferença '+money(group.difference)+'</small>':"")+'</div></article>';
  }).join(""):"";
@@ -190,11 +190,11 @@ export function installReceiptWorkspace({root,getState,render,notify}){
          const entries=obj.baskets?.Mercado?.entries||obj.baskets?.["Açougue"]?.entries||
            obj.basket?.entries;
          if(!Array.isArray(entries))throw Error("Este arquivo não contém a cesta de compras.");
-         state.backup=entries;state.backupName=file.name;
+         state.backup=entries;state.backupName=file.name;state.reviewSection="pending";
          if(state.invoice)loadAssociations(getState());
          state.message="Backup carregado. Nenhum valor foi alterado.";state.error=false;
        }else{
-         state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;
+         state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;state.reviewSection="pending";
          loadAssociations(getState());
          state.message=state.invoice.parseStatus==="transcribed-from-pdf"?
            "Os produtos do PDF foram carregados. Confirme as associações.":
@@ -225,7 +225,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
          throw Error("Informe os itens e o valor pago na nota.");
        state.invoice={source:"manual",parseStatus:"manually-entered",
          totalCents:Math.round(value*100),generalDiscountCents:0,lines};
-       state.invoiceName="Itens colados";loadAssociations(getState());
+       state.invoiceName="Itens colados";state.reviewSection="pending";loadAssociations(getState());
        state.message="Itens digitados carregados.";state.error=false;
      }catch(e){state.message=e.message;state.error=true;}
      render();return;
