@@ -12,17 +12,30 @@ permissions:
   id-token: write
 concurrency:
   group: central-web-hosting
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   hosting:
     name: Deploy Web
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+      # Validação explícita: sem essas duas configurações IAM a publicação
+      # nunca ocorreu. Não faça fallback para Netlify nem GitHub Pages.
+      - name: Verificar autorização do Firebase Hosting
+        env:
+          PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [[ -z "$PROVIDER" || -z "$ACCOUNT" ]]; then
+            echo "::error::Firebase Hosting sem autenticação: configure os secrets GCP_WORKLOAD_IDENTITY_PROVIDER e GCP_SERVICE_ACCOUNT nas configurações do repositório GitHub (Settings > Secrets and variables > Actions)."
+            echo "::error::O provider deve existir em Google Cloud IAM Workload Identity Federation, autorizar este repositório, e a service account deve ter as permissões necessárias de Firebase Hosting. Nenhuma publicação alternativa será tentada."
+            exit 1
+          fi
       - name: Autenticar sem chave JSON (Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
