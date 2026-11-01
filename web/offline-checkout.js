@@ -22,7 +22,7 @@ export function archiveOfflinePurchase(state,market,invoice=null,mapping={}){
   const existing=readOfflineClosure(state,market);
   if(existing&&existing.status==="pending")
     throw Error("Esta compra já foi finalizada offline. Baixe o comprovante ou tente sincronizá-la.");
-  if(existing&&existing.status==="synced")
+  if(existing&&existing.status==="synced"&&existing.receipt.generation===draft.basket.generation)
     throw Error("Esta compra já foi sincronizada. Consulte o histórico antes de abrir outra.");
   const basket=draft.basket,entries=clone(basket.entries||[]),bought=entries.filter(e=>e.bought);
   if(!bought.length)throw Error("Não há produtos comprados neste carrinho.");
