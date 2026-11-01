@@ -7,20 +7,24 @@ const money=n=>Number.isFinite(n)?new Intl.NumberFormat("pt-BR",{style:"currency
 const qty=n=>(Number(n||0)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const totalEntry=e=>Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000);
-const state={backup:null,invoice:null,map:{},backupName:"",invoiceName:"",message:"",error:false,issuesOnly:false};
+const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,issuesOnly:false};
 
 function bought(shop){
  const entries=state.backup||projectedShoppingState(shop).baskets?.[shop.market]?.entries||[];
  return entries.filter(e=>e.bought&&Number.isFinite(Number(e.actual)));
 }
 function suggest(entries,invoice){
- const suggestions={};
+ const suggestions={},pending={};
  for(const line of invoice.lines||[]){
    const candidates=entries.filter(e=>norm(e.title)===norm(line.name)&&
      (["UN","UND","UNID"].includes(line.unit?.toUpperCase())?e.unit==="un":true));
    if(candidates.length===1)suggestions[String(line.id)]=candidates[0].id;
+   else if(line.suggestedCartTitle){
+     const hint=entries.filter(e=>norm(e.title)===norm(line.suggestedCartTitle));
+     if(hint.length===1){suggestions[String(line.id)]=hint[0].id;pending[String(line.id)]=true;}
+   }
  }
- return suggestions;
+ return {suggestions,pending};
 }
 function analyze(shop){
  const entries=bought(shop),note=state.invoice;
@@ -42,7 +46,8 @@ function analyze(shop){
    group.unitWrong=group.lines.length>0&&group.lines.some(l=>
      ["UN","UND","UNID"].includes(l.unit.toUpperCase())?group.entry.unit!=="un":
        l.unit.toLowerCase()!==String(group.entry.unit).toLowerCase());
-   group.warning=group.lines.length===0||Math.abs(group.difference)>1||group.qtyWrong||group.unitWrong;
+   group.hasSuggestion=group.lines.some(l=>state.pending[String(l.id)]);
+   group.warning=group.lines.length===0||Math.abs(group.difference)>1||group.qtyWrong||group.unitWrong||group.hasSuggestion;
  }
  const unmappedCart=groups.filter(g=>!g.lines.length);
  return {entries,cartTotal,rows,groups,noteTotal:note.totalCents,
@@ -58,12 +63,13 @@ export function receiptWorkspaceView(shop){
    const current=state.map[String(line.id)]||"";
    const options=r.entries.map(e=>'<option value="'+esc(e.id)+'"'+(current===e.id?" selected":"")+'>'+
      esc(e.title)+' · '+qty(e.actualMilli??e.plannedMilli)+' '+esc(e.unit)+'</option>').join("");
-   const status=!group?"⚠ Sem associação":group.qtyWrong||group.unitWrong?"⚠ Quantidade/unidade diferente":
+   const status=!group?"⚠ Sem associação":state.pending[String(line.id)]?"⚠ Associação sugerida: confirme":group.qtyWrong||group.unitWrong?"⚠ Quantidade/unidade diferente":
      Math.abs(group.difference)>1?"⚠ Preço diferente":"✓ Valores conferem";
    return '<article class="review-line"><div><strong>'+esc(line.name)+'</strong>'+
      '<small>'+qty(line.quantityMilli)+' '+esc(line.unit)+' × '+money(line.unitCents)+' = '+money(line.netCents)+'</small></div>'+
      '<label>Produto correspondente no carrinho<select data-review-link="'+esc(line.id)+'">'+
      '<option value="">Selecione ou mantenha sem associação</option>'+options+'</select></label>'+
+     (state.pending[String(line.id)]?'<button type="button" class="item-btn" data-review-action="approve" data-review-id="'+esc(line.id)+'">Confirmar associação sugerida</button>':"")+
      '<div class="review-line-status '+(group?.warning||!group?"review-alert":"")+'">'+status+
      (group?'<small>Carrinho '+money(group.cartTotal)+' · Nota associada '+money(group.noteTotal)+
        ' · Diferença '+money(group.difference)+'</small>':"")+'</div></article>';
@@ -112,7 +118,7 @@ function exportReport(shop){
    comparison:r.groups.map(g=>({name:g.entry.title,cartCents:g.cartTotal,
      fiscalLines:g.lines.map(l=>({name:l.name,totalCents:l.netCents,quantityMilli:l.quantityMilli})),
      fiscalCents:g.lines.length?g.noteTotal:null,differenceCents:g.lines.length?g.difference:null,
-     status:!g.lines.length?"not-matched":g.warning?"different":"matched"})),
+     status:!g.lines.length?"not-matched":g.hasSuggestion?"suggested-pending":g.warning?"different":"matched"})),
    unlinkedNote:r.rows.filter(x=>!x.group).map(x=>({name:x.line.name,
      totalCents:x.line.netCents,quantityMilli:x.line.quantityMilli}))};
 }
@@ -129,11 +135,11 @@ export function installReceiptWorkspace({root,getState,render,notify}){
            obj.basket?.entries;
          if(!Array.isArray(entries))throw Error("Este arquivo não contém a cesta de compras.");
          state.backup=entries;state.backupName=file.name;
-         if(state.invoice)state.map=suggest(bought(getState()),state.invoice);
+         if(state.invoice){const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
          state.message="Backup carregado. Nenhum valor foi alterado.";state.error=false;
        }else{
          state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;
-         state.map=suggest(bought(getState()),state.invoice);
+         {const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
          state.message=state.invoice.parseStatus==="transcribed-from-pdf"?
            "Os produtos do PDF foram carregados. Confirme as associações.":
            "Itens da nota carregados para conferência.";
@@ -142,7 +148,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
      }catch(e){state.message=e.message||"Falha ao ler arquivo.";state.error=true;}
      render();return;
    }
-   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;render();return;}
+   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];render();return;}
    if(el.dataset.reviewIssues!==undefined){state.issuesOnly=el.checked;render();}
  });
  root.addEventListener("click",event=>{
@@ -164,6 +170,11 @@ export function installReceiptWorkspace({root,getState,render,notify}){
      render();return;
    }
    if(!state.invoice)return;
+   if(type==="approve"){
+     const id=btn.dataset.reviewId;
+     if(state.map[id]){delete state.pending[id];state.message="Associação confirmada.";state.error=false;render();}
+     return;
+   }
    if(type==="save"){
      try{
        localStorage.setItem("cdc:last-invoice-review",JSON.stringify(exportReport(getState())));
