@@ -1,3 +1,14 @@
+## Conferência de compra por arquivos, inclusive offline
+
+Em **Compras → Conferência** (`#/compras/mercado/conferencia`), o usuário tem uma área própria para revisar os valores sem precisar colar dezenas de linhas no modal pequeno.
+
+1. **Backup do carrinho (.json):** selecione o JSON de emergência baixado no próprio celular. Se não enviar, a tela tenta usar o carrinho já visível no navegador, inclusive sua projeção local. O arquivo não altera nem substitui a cesta original.
+2. **Itens da nota (.xml):** selecione o XML fiscal NFC-e/NF-e **ou** o XML de conferência transcrito a partir do PDF, rotulado como não fiscal. Os dados são processados localmente. Para uma foto/PDF que não tenha XML, há um campo expansível para colar `Descrição; quantidade; UN; preço unitário` e informar o total pago.
+3. **Revisão:** a tela mostra valor anotado, subtotal bruto, desconto geral separado, valor efetivamente pago, diferença e cada linha da nota. A associação inicial é feita só por nome e unidade exatamente normalizados; nomes abreviados ficam pendentes e o usuário escolhe seu produto manualmente. O agrupamento permite múltiplas linhas da nota para um produto do carrinho e aponta quantidade, unidade e valor divergentes.
+4. **Exportar/guardar:** `Baixar relatório` gera um JSON de conferência com as diferenças e associações, sem modificar o Firebase. `Salvar conferência neste aparelho` guarda somente o relatório no armazenamento local do Chrome. A nota original e as compras permanecem como estavam.
+
+O XML de transcrição pode ser anexado também pelo fluxo **Conferir nota e finalizar** como `pdf-transcription`, mantendo o status de leitura não fiscal e sem tratar os dados transcritos como XML SEFAZ. **Não finalizar** enquanto houver alterações de compras offline não sincronizadas: o bloqueio anterior permanece em vigor.
+
 ## Lote por link para compras urgentes (offline)
 
 O endereço da Central pode incluir `?compra=<base64url JSON>` com `{v:1,id,items:[[nome,quantidadeEmMilésimos,preçoUnitárioEmCentavos],...]}` para compartilhar um lote de até 30 produtos sem credenciais. Na área **Compras** do usuário autenticado, a importação mostra quantidade, total e possíveis duplicações, além do botão **Adicionar ao carrinho offline**. A importação só ocorre depois do toque; nenhuma compra é adicionada em segundo plano ao abrir uma URL.

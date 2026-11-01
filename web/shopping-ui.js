@@ -4,6 +4,7 @@ import {writeAppRoute} from "./navigation.js";
 import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
+import {receiptWorkspaceView,installReceiptWorkspace} from "./receipt-workspace.js";
 import {labelInvoiceStatus} from "./invoice-reconcile.js";
 import {filterShoppingEntries,shoppingSearchBar} from "./shopping-search.js";
 import {suggestedEstimate,missingEstimateSummary} from "./shopping-estimates.js";
@@ -43,7 +44,7 @@ export function getShoppingRoutePrefs(){
   return {shopMode:shopPrefs.mode,catalogSource:shopPrefs.source,marketSection:shopPrefs.marketSection};
 }
 export function restoreShoppingRoutePrefs(route){
-  shopPrefs.mode=["catalog","list","market"].includes(route?.shopMode)?route.shopMode:"catalog";
+  shopPrefs.mode=["catalog","list","market","review"].includes(route?.shopMode)?route.shopMode:"catalog";
   shopPrefs.source=route?.catalogSource==="store"?"store":"base";
   shopPrefs.marketSection=route?.marketSection==="bought"?"bought":"pending";
 }
@@ -75,10 +76,11 @@ export function shoppingView({state}) {
   state=projectedShoppingState(state);
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
-  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
+  const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
   const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+cartBatchBanner(state)+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
+  if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
   if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
   if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
     marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]});
@@ -161,6 +163,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     toast.textContent=text;toast.classList.toggle("bad",error);toast.hidden=false;clearTimeout(toastTimeout);
     toastTimeout=setTimeout(()=>{toast.hidden=true;},6000);
   }
+  installReceiptWorkspace({root,getState,render,notify});
   const uploader=document.createElement("input");
   uploader.type="file";uploader.accept="application/json,.json";uploader.hidden=true;document.body.append(uploader);
   uploader.addEventListener("change",async()=>{
