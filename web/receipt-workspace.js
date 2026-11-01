@@ -7,7 +7,7 @@ const money=n=>Number.isFinite(n)?new Intl.NumberFormat("pt-BR",{style:"currency
 const qty=n=>(Number(n||0)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const totalEntry=e=>Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000);
-const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,issuesOnly:false};
+const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,reviewSection:"pending"};
 
 function bought(shop){
  const entries=state.backup||projectedShoppingState(shop).baskets?.[shop.market]?.entries||[];
@@ -59,7 +59,15 @@ export function receiptWorkspaceView(shop){
  const r=analyze(shop),note=state.invoice;
  const metric=(title,value,sub)=>'<div class="review-metric"><span>'+esc(title)+
    '</span><strong>'+money(value)+'</strong><small>'+esc(sub)+'</small></div>';
- const items=note?r.rows.filter(x=>!state.issuesOnly||!x.group||x.group.warning).map(({line,group})=>{
+ // Associar uma linha a tira IMEDIATAMENTE da fila de "Pendentes".
+ // Diferenças de preço/quantidade permanecem na aba dedicada, sem apagar nada.
+ const pendingRows=r.rows.filter(({line,group})=>!group||!!state.pending[String(line.id)]);
+ const differentRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]&&group.warning);
+ const associatedRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]);
+ const completeRows=associatedRows.filter(({group})=>!group.warning);
+ const sections={pending:pendingRows,different:differentRows,associated:associatedRows,all:r.rows};
+ const visibleRows=sections[state.reviewSection]||pendingRows;
+ const items=note?visibleRows.map(({line,group})=>{
    const current=state.map[String(line.id)]||"";
    const options=r.entries.map(e=>'<option value="'+esc(e.id)+'"'+(current===e.id?" selected":"")+'>'+
      esc(e.title)+' · '+qty(e.actualMilli??e.plannedMilli)+' '+esc(e.unit)+'</option>').join("");
@@ -97,9 +105,20 @@ export function receiptWorkspaceView(shop){
    metric("Diferença (nota - carrinho)",r.difference,note?r.issues+" pendências":"Aguardando nota")+'</div>'+
    (note?.parseStatus==="transcribed-from-pdf"?
      '<p class="review-notice">XML transcrito do PDF: <strong>não é a nota fiscal eletrônica original</strong>. Confirme os vínculos de produtos abreviados.</p>':"")+
-   (note?'<div class="review-controls"><h3>Conferir item a item ('+r.rows.length+')</h3>'+
-     '<label><input type="checkbox" data-review-issues'+(state.issuesOnly?" checked":"")+'> Só divergências e não associados</label></div>'+
-     '<div class="review-lines">'+items+'</div>'+
+   (note?'<div class="review-controls"><h3>Conferir os produtos</h3></div>'+
+     '<nav class="review-section-tabs" aria-label="Situação da conferência">'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="pending"?" active":"")+'" data-review-section="pending">Pendentes ('+pendingRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="different"?" active":"")+'" data-review-section="different">Diferenças ('+differentRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="associated"?" active":"")+'" data-review-section="associated">Associados ('+associatedRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="all"?" active":"")+'" data-review-section="all">Todos ('+r.rows.length+')</button>'+
+     '</nav><p class="info-line review-filter-help">'+
+     (state.reviewSection==="pending"?"Ao associar um item, ele sai desta lista. Se houver diferença de preço, aparecerá em Diferenças.":
+       state.reviewSection==="different"?"Produtos associados que ainda têm diferenças de preço, quantidade ou unidade.":
+       state.reviewSection==="associated"?"Produtos já associados, incluindo os que ainda têm diferenças para conferir.":
+       "Todas as linhas da nota, inclusive as já associadas.")+
+     '</p>'+
+
+     '<div class="review-lines">'+(items||'<p class="review-empty">Nenhum produto nesta seção.</p>')+'</div>'+
      (r.unmappedCart.length?'<section class="review-missing"><h3>Produtos do carrinho sem vínculo na nota</h3>'+
        r.unmappedCart.map(g=>'<p>'+esc(g.entry.title)+' · '+money(g.cartTotal)+'</p>').join("")+'</section>':"")+
      '<div class="review-actions"><button type="button" class="primary-btn" data-review-action="download">Baixar relatório</button>'+
@@ -149,7 +168,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
      render();return;
    }
    if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];render();return;}
-   if(el.dataset.reviewIssues!==undefined){state.issuesOnly=el.checked;render();}
+   if(el.dataset.reviewSection!==undefined){state.reviewSection=el.dataset.reviewSection;render();}
  });
  root.addEventListener("click",event=>{
    const btn=event.target.closest("[data-review-action]");
