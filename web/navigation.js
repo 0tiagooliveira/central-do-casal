@@ -2,7 +2,7 @@
 // Nunca armazena credenciais ou dados do Firebase.
 const tabToSlug={"Hoje":"hoje","Compras":"compras","Rotina":"rotina","Planos":"planos","Nós":"nos"};
 const slugToTab=Object.fromEntries(Object.entries(tabToSlug).map(([tab,slug])=>[slug,tab]));
-const modeToSlug={catalog:"catalogo",list:"minha-lista",market:"no-mercado"};
+const modeToSlug={catalog:"catalogo",list:"minha-lista",market:"no-mercado",review:"conferencia"};
 const slugToMode=Object.fromEntries(Object.entries(modeToSlug).map(([mode,slug])=>[slug,mode]));
 
 export function parseAppRoute(hash="") {
