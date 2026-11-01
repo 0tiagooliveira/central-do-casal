@@ -397,3 +397,12 @@
   .review-actions{flex-direction:column}
   .review-actions button{width:100%}
 }
+
+/* Conferência: associados saem de Pendentes, sem serem excluídos da compra. */
+.review-section-tabs{display:flex;gap:8px;overflow-x:auto;padding:3px 0 8px;scrollbar-width:thin;scroll-snap-type:x proximity}
+.review-section-tab{flex:0 0 auto;white-space:nowrap;min-height:42px;border:1px solid #cbddee;border-radius:12px;padding:10px 13px;background:#fff;color:#4a698c;font-size:.8rem;font-weight:750;scroll-snap-align:start}
+.review-section-tab.active{background:#2265ad;border-color:#2265ad;color:#fff}
+.review-section-tab:focus-visible{outline:2px solid #367cc4;outline-offset:2px}
+.review-filter-help{margin:1px 0 8px;color:#657c95;font-size:.77rem;line-height:1.5}
+.review-empty{padding:24px 16px;background:#f2f8ff;border:1px dashed #bbd5f0;border-radius:14px;text-align:center;color:#55799f;font-size:.84rem}
+@media(max-width:540px){.review-section-tabs{margin-right:-8px;padding-right:10px}.review-section-tab{font-size:.75rem;padding:10px 11px}}
