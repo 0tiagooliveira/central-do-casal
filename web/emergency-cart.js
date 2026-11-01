@@ -72,8 +72,13 @@ export function inspectEmergencyBackup(file,state) {
   // Só uma cesta realmente conhecida da MESMA revisão pode ser considerada
   // a base original. Se não houver, mostramos o backup local mas nunca
   // forçamos uma sincronização que poderia apagar dados da outra pessoa.
-  const baseline=remote?.generation===basket.generation&&Number(remote.revision)===baseRevision?
-    simple(remote):null;
+  const storedBase=file.baseline;
+  const validStoredBase=storedBase?.generation===basket.generation&&
+    Number(storedBase?.revision)===baseRevision&&Array.isArray(storedBase?.entries)&&
+    storedBase.entries.length<=200&&storedBase.entries.every(validEntry);
+  const baseline=validStoredBase?simple(storedBase):
+    remote?.generation===basket.generation&&Number(remote.revision)===baseRevision?
+      simple(remote):null;
   return {market,basket,operations,baseline,baseRevision,total,
     purchasedCount:purchased.length,pendingCount:basket.entries.length-purchased.length,
     syncSafe:!!baseline,sourceUid:file.uid||"",exportedAt:file.exportedAt||""};
@@ -83,6 +88,10 @@ export function restoreEmergencyBackup(state,file,{replace=false}={}) {
   const existing=readEmergency(state,info.market);
   if(existing&&!replace)throw Error("Já existe uma compra local neste navegador. Baixe o backup atual antes de substituir.");
   if(existing&&replace){
+    if(existing.baseGeneration!==info.basket.generation)
+      throw Error("O backup existente pertence a outra compra. Ele não será substituído.");
+    if(existing.operations.length>info.operations.length)
+      throw Error("Este navegador tem mais alterações locais do que o arquivo escolhido. Baixe um novo backup daqui antes de tentar restaurar o arquivo antigo.");
     // Preservação adicional para recuperar o diário anterior se necessário.
     try{storage().setItem(key(state,info.market)+":anterior",JSON.stringify(existing));}
     catch{throw Error("Não foi possível proteger o backup anterior. Nenhuma alteração foi aplicada.");}
@@ -228,7 +237,7 @@ export function downloadEmergency(state,market){
   if(!draft)throw Error("Nenhum backup local pendente.");
   const file={type:"central-do-casal-emergency-backup",exportedAt:new Date().toISOString(),
     market,uid:state.uid,household:state.household,baseRevision:draft.baseRevision,
-    operations:draft.operations,baskets:{[market]:draft.basket}};
+    baseline:draft.baseline,operations:draft.operations,baskets:{[market]:draft.basket}};
   const blob=new Blob([JSON.stringify(file,null,2)],{type:"application/json"});
   const link=document.createElement("a"),url=URL.createObjectURL(blob);
   link.href=url;link.download="central-compra-backup-"+market.toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".json";
@@ -239,6 +248,22 @@ export function restoreBackupControl(state){
   if(!state.uid||!state.household)return "";
   return '<div class="emergency-restore-control"><button type="button" class="item-btn" data-shop-action="emergency-restore">'+
     '↥ Recuperar compra do backup (.json)</button><span>Se o carrinho ficou desatualizado, carregue seu último backup para voltar a ver os preços neste celular.</span></div>';
+}
+export function hasPreviousEmergency(state,market){
+  try{return !!storage().getItem(key(state,market)+":anterior");}catch{return false;}
+}
+export function downloadPreviousEmergency(state,market) {
+  const raw=storage().getItem(key(state,market)+":anterior");
+  if(!raw)throw Error("Nenhuma cópia anterior está disponível.");
+  const previous=JSON.parse(raw);
+  const data={type:"central-do-casal-emergency-backup",exportedAt:new Date().toISOString(),
+    market,uid:state.uid,household:state.household,baseRevision:previous.baseRevision,
+    baseline:previous.baseline,operations:previous.operations,baskets:{[market]:previous.basket}};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const link=document.createElement("a"),url=URL.createObjectURL(blob);
+  link.href=url;link.download="central-backup-anterior-"+market.toLowerCase()+".json";
+  document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1200);
 }
 export function emergencyBanner(state) {
   const draft=readEmergency(state,state.market);
@@ -260,6 +285,7 @@ export function emergencyBanner(state) {
     '<p>Os valores acima são desta compra local, independentemente da conexão. Não limpe os dados do navegador e baixe um backup antes de sair.</p>'+
     (draft.syncBlockedReason?'<p class="emergency-sync-warning">⚠ '+escapeHTML(draft.syncBlockedReason)+'</p>':"")+
     '<div class="emergency-buttons"><button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>'+
+    (hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
     '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
       (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button></div>'+
     '<small>A compra só ficará disponível em outros aparelhos depois da sincronização.</small></section>';
