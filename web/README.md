@@ -1,3 +1,9 @@
+## Conferência: associados saem das pendências
+
+A tela **Compras → Conferência** mostra quatro filtros: **Pendentes**, **Diferenças**, **Associados** e **Todos**. **Pendentes** é o padrão e exibe somente linhas da nota sem vínculo ou com associação sugerida ainda não confirmada. Assim que o usuário escolhe um produto do carrinho ou confirma a sugestão, a linha desaparece de **Pendentes**, sem apagar dados da nota nem do carrinho. Se valores, quantidades ou unidades divergirem, o item associado permanece consultável em **Diferenças** e em **Associados**. Os contadores de cada seção se atualizam imediatamente.
+
+As associações manuais e suas confirmações são guardadas no armazenamento local do navegador, com chave associada à conta, casa e identificação da nota. Quando o usuário seleciona o mesmo arquivo novamente, os vínculos válidos podem ser restaurados, sem substituir o backup ou modificar o Firebase. A tela continua permitindo exportar o relatório de revisão.
+
 ## Conferência de compra por arquivos, inclusive offline
 
 Em **Compras → Conferência** (`#/compras/mercado/conferencia`), o usuário tem uma área própria para revisar os valores sem precisar colar dezenas de linhas no modal pequeno.

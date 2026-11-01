@@ -7,7 +7,44 @@ const money=n=>Number.isFinite(n)?new Intl.NumberFormat("pt-BR",{style:"currency
 const qty=n=>(Number(n||0)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const totalEntry=e=>Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000);
-const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,issuesOnly:false};
+const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,reviewSection:"pending"};
+function associationStorageKey(shop){
+  if(!state.invoice||!shop?.uid||!shop?.household)return null;
+  const n=state.invoice;
+  return "cdc:review-links:v1:"+encodeURIComponent(shop.uid)+":"+
+    encodeURIComponent(shop.household)+":"+encodeURIComponent(n.number||"sem-numero")+":"+
+    encodeURIComponent(n.date||"sem-data")+":"+String(n.totalCents)+":"+
+    String(n.lines?.length||0)+":"+encodeURIComponent(state.invoiceName);
+}
+function saveAssociations(shop){
+  const key=associationStorageKey(shop);
+  if(!key)return;
+  try{
+    localStorage.setItem(key,JSON.stringify({map:state.map,pending:state.pending,
+      updatedAt:new Date().toISOString()}));
+  }catch{}
+}
+function loadAssociations(shop){
+  const suggested=suggest(bought(shop),state.invoice);
+  state.map=suggested.suggestions;state.pending=suggested.pending;
+  const key=associationStorageKey(shop);
+  if(!key)return;
+  try{
+    const stored=JSON.parse(localStorage.getItem(key)||"null");
+    const available=new Set(bought(shop).map(e=>e.id));
+    const validLines=new Set(state.invoice.lines.map(l=>String(l.id)));
+    for(const [lineId,entryId] of Object.entries(stored?.map||{})){
+      if(validLines.has(lineId)&&available.has(entryId)){
+        state.map[lineId]=entryId;
+        if(stored?.pending?.[lineId])state.pending[lineId]=true;
+        else delete state.pending[lineId];
+      }else if(validLines.has(lineId)&&entryId===""){
+        delete state.map[lineId];
+        delete state.pending[lineId];
+      }
+    }
+  }catch{}
+}
 
 function bought(shop){
  const entries=state.backup||projectedShoppingState(shop).baskets?.[shop.market]?.entries||[];
@@ -59,7 +96,15 @@ export function receiptWorkspaceView(shop){
  const r=analyze(shop),note=state.invoice;
  const metric=(title,value,sub)=>'<div class="review-metric"><span>'+esc(title)+
    '</span><strong>'+money(value)+'</strong><small>'+esc(sub)+'</small></div>';
- const items=note?r.rows.filter(x=>!state.issuesOnly||!x.group||x.group.warning).map(({line,group})=>{
+ // Associar uma linha a tira IMEDIATAMENTE da fila de "Pendentes".
+ // Diferenças de preço/quantidade permanecem na aba dedicada, sem apagar nada.
+ const pendingRows=r.rows.filter(({line,group})=>!group||!!state.pending[String(line.id)]);
+ const differentRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]&&
+   (group.qtyWrong||group.unitWrong||Math.abs(group.difference)>1));
+ const associatedRows=r.rows.filter(({line,group})=>group&&!state.pending[String(line.id)]);
+ const sections={pending:pendingRows,different:differentRows,associated:associatedRows,all:r.rows};
+ const visibleRows=sections[state.reviewSection]||pendingRows;
+ const items=note?visibleRows.map(({line,group})=>{
    const current=state.map[String(line.id)]||"";
    const options=r.entries.map(e=>'<option value="'+esc(e.id)+'"'+(current===e.id?" selected":"")+'>'+
      esc(e.title)+' · '+qty(e.actualMilli??e.plannedMilli)+' '+esc(e.unit)+'</option>').join("");
@@ -70,7 +115,7 @@ export function receiptWorkspaceView(shop){
      '<label>Produto correspondente no carrinho<select data-review-link="'+esc(line.id)+'">'+
      '<option value="">Selecione ou mantenha sem associação</option>'+options+'</select></label>'+
      (state.pending[String(line.id)]?'<button type="button" class="item-btn" data-review-action="approve" data-review-id="'+esc(line.id)+'">Confirmar associação sugerida</button>':"")+
-     '<div class="review-line-status '+(group?.warning||!group?"review-alert":"")+'">'+status+
+     '<div class="review-line-status '+(!group||state.pending[String(line.id)]||group.qtyWrong||group.unitWrong||Math.abs(group.difference)>1?"review-alert":"")+'">'+status+
      (group?'<small>Carrinho '+money(group.cartTotal)+' · Nota associada '+money(group.noteTotal)+
        ' · Diferença '+money(group.difference)+'</small>':"")+'</div></article>';
  }).join(""):"";
@@ -97,9 +142,20 @@ export function receiptWorkspaceView(shop){
    metric("Diferença (nota - carrinho)",r.difference,note?r.issues+" pendências":"Aguardando nota")+'</div>'+
    (note?.parseStatus==="transcribed-from-pdf"?
      '<p class="review-notice">XML transcrito do PDF: <strong>não é a nota fiscal eletrônica original</strong>. Confirme os vínculos de produtos abreviados.</p>':"")+
-   (note?'<div class="review-controls"><h3>Conferir item a item ('+r.rows.length+')</h3>'+
-     '<label><input type="checkbox" data-review-issues'+(state.issuesOnly?" checked":"")+'> Só divergências e não associados</label></div>'+
-     '<div class="review-lines">'+items+'</div>'+
+   (note?'<div class="review-controls"><h3>Conferir os produtos</h3></div>'+
+     '<nav class="review-section-tabs" aria-label="Situação da conferência">'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="pending"?" active":"")+'" data-review-section="pending">Pendentes ('+pendingRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="different"?" active":"")+'" data-review-section="different">Diferenças ('+differentRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="associated"?" active":"")+'" data-review-section="associated">Associados ('+associatedRows.length+')</button>'+
+     '<button type="button" class="review-section-tab'+(state.reviewSection==="all"?" active":"")+'" data-review-section="all">Todos ('+r.rows.length+')</button>'+
+     '</nav><p class="info-line review-filter-help">'+
+     (state.reviewSection==="pending"?"Ao associar um item, ele sai desta lista. Se houver diferença de preço, aparecerá em Diferenças.":
+       state.reviewSection==="different"?"Produtos associados que ainda têm diferenças de preço, quantidade ou unidade.":
+       state.reviewSection==="associated"?"Produtos já associados, incluindo os que ainda têm diferenças para conferir.":
+       "Todas as linhas da nota, inclusive as já associadas.")+
+     '</p>'+
+
+     '<div class="review-lines">'+(items||'<p class="review-empty">Nenhum produto nesta seção.</p>')+'</div>'+
      (r.unmappedCart.length?'<section class="review-missing"><h3>Produtos do carrinho sem vínculo na nota</h3>'+
        r.unmappedCart.map(g=>'<p>'+esc(g.entry.title)+' · '+money(g.cartTotal)+'</p>').join("")+'</section>':"")+
      '<div class="review-actions"><button type="button" class="primary-btn" data-review-action="download">Baixar relatório</button>'+
@@ -134,12 +190,12 @@ export function installReceiptWorkspace({root,getState,render,notify}){
          const entries=obj.baskets?.Mercado?.entries||obj.baskets?.["Açougue"]?.entries||
            obj.basket?.entries;
          if(!Array.isArray(entries))throw Error("Este arquivo não contém a cesta de compras.");
-         state.backup=entries;state.backupName=file.name;
-         if(state.invoice){const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
+         state.backup=entries;state.backupName=file.name;state.reviewSection="pending";
+         if(state.invoice)loadAssociations(getState());
          state.message="Backup carregado. Nenhum valor foi alterado.";state.error=false;
        }else{
-         state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;
-         {const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
+         state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;state.reviewSection="pending";
+         loadAssociations(getState());
          state.message=state.invoice.parseStatus==="transcribed-from-pdf"?
            "Os produtos do PDF foram carregados. Confirme as associações.":
            "Itens da nota carregados para conferência.";
@@ -148,10 +204,15 @@ export function installReceiptWorkspace({root,getState,render,notify}){
      }catch(e){state.message=e.message||"Falha ao ler arquivo.";state.error=true;}
      render();return;
    }
-   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];render();return;}
-   if(el.dataset.reviewIssues!==undefined){state.issuesOnly=el.checked;render();}
+   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];saveAssociations(getState());render();return;}
+
  });
  root.addEventListener("click",event=>{
+   const tab=event.target.closest("[data-review-section]");
+   if(tab){
+     state.reviewSection=tab.dataset.reviewSection;
+     render();return;
+   }
    const btn=event.target.closest("[data-review-action]");
    if(!btn)return;
    const type=btn.dataset.reviewAction;
@@ -164,7 +225,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
          throw Error("Informe os itens e o valor pago na nota.");
        state.invoice={source:"manual",parseStatus:"manually-entered",
          totalCents:Math.round(value*100),generalDiscountCents:0,lines};
-       state.invoiceName="Itens colados";state.map=suggest(bought(getState()),state.invoice);
+       state.invoiceName="Itens colados";state.reviewSection="pending";loadAssociations(getState());
        state.message="Itens digitados carregados.";state.error=false;
      }catch(e){state.message=e.message;state.error=true;}
      render();return;
@@ -172,7 +233,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
    if(!state.invoice)return;
    if(type==="approve"){
      const id=btn.dataset.reviewId;
-     if(state.map[id]){delete state.pending[id];state.message="Associação confirmada.";state.error=false;render();}
+     if(state.map[id]){delete state.pending[id];saveAssociations(getState());state.message="Associação confirmada. O item saiu dos pendentes.";state.error=false;render();}
      return;
    }
    if(type==="save"){
