@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup} from "./emergency-cart.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
 import {receiptWorkspaceView,installReceiptWorkspace} from "./receipt-workspace.js";
@@ -404,6 +404,11 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }
     if(act==="emergency-restore"){
       emergencyRestoreInput.click();
+      return;
+    }
+    if(act==="emergency-export-previous"){
+      try{downloadPreviousEmergency(getState(),market);notify("Cópia do backup anterior baixada.");}
+      catch(e){notify(e.message,true);}
       return;
     }
     if(act==="emergency-export"){
