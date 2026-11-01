@@ -4,6 +4,9 @@
 const storage=()=>window.localStorage;
 const key=(s,market)=>"cdc:emergency-v1:"+encodeURIComponent(s.uid||"")+":"+
   encodeURIComponent(s.household||"")+":"+encodeURIComponent(market);
+export const closedKey=(s,market)=>"cdc:offline-closed-v1:"+
+  encodeURIComponent(s.uid||"")+":"+encodeURIComponent(s.household||"")+":"+
+  encodeURIComponent(market);
 const allowed=["Mercado","Açougue"];
 const cacheKey=(state,market)=>"cdc:last-basket-v1:"+
   encodeURIComponent(state.uid||"")+":"+encodeURIComponent(state.household||"")+":"+encodeURIComponent(market);
@@ -85,6 +88,8 @@ export function inspectEmergencyBackup(file,state) {
 }
 export function restoreEmergencyBackup(state,file,{replace=false}={}) {
   const info=inspectEmergencyBackup(file,state);
+  if(hasOfflineClosurePending(state,info.market))
+    throw Error("Esta compra está finalizada offline. Baixe o comprovante e resolva a sincronização antes de substituir a lista.");
   const existing=readEmergency(state,info.market);
   if(existing&&!replace)throw Error("Já existe uma compra local neste navegador. Baixe o backup atual antes de substituir.");
   if(existing&&replace){
@@ -123,6 +128,13 @@ export function isQuotaError(error) {
   const message=String(error?.message||error||"").toLowerCase();
   return code.includes("resource-exhausted")||code.includes("quota")||
     /quota exceeded|exceeded.*quota|quota.*exceeded|limit.*exceeded|limite de cota/.test(message);
+}
+export function hasOfflineClosurePending(state,market=state.market){
+  if(!state?.uid||!state?.household||!allowed.includes(market))return false;
+  try{
+    const record=JSON.parse(storage().getItem(closedKey(state,market))||"null");
+    return !!record&&record.status==="pending"&&record.uid===state.uid&&record.household===state.household;
+  }catch{return false;}
 }
 export function readEmergency(state,market=state.market){
   if(!state?.uid||!state?.household||!allowed.includes(market))return null;
@@ -194,6 +206,8 @@ function applyOperation(basket,operation) {
   throw Error("Ação não pode ser guardada offline.");
 }
 export function saveEmergency(state,market,input) {
+  if(hasOfflineClosurePending(state,market))
+    throw Error("Esta compra já foi finalizada offline. Baixe o comprovante e sincronize antes de editar outra vez.");
   if(!state?.uid||!state?.household||!allowed.includes(market))
     throw Error("Não foi possível identificar a conta para o backup local.");
   let draft=readEmergency(state,market);
@@ -286,8 +300,10 @@ export function emergencyBanner(state) {
     (draft.syncBlockedReason?'<p class="emergency-sync-warning">⚠ '+escapeHTML(draft.syncBlockedReason)+'</p>':"")+
     '<div class="emergency-buttons"><button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>'+
     (hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
-    '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
-      (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button></div>'+
+    (!hasOfflineClosurePending(state,state.market)?
+      '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
+        (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button>':"")+
+      '</div>'+
     '<small>A compra só ficará disponível em outros aparelhos depois da sincronização.</small></section>';
 }
 // Opções para reconciliar manualmente o diário local com a lista remota.
