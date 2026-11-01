@@ -8,6 +8,43 @@ const qty=n=>(Number(n||0)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const totalEntry=e=>Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000);
 const state={backup:null,invoice:null,map:{},pending:{},backupName:"",invoiceName:"",message:"",error:false,reviewSection:"pending"};
+function associationStorageKey(shop){
+  if(!state.invoice||!shop?.uid||!shop?.household)return null;
+  const n=state.invoice;
+  return "cdc:review-links:v1:"+encodeURIComponent(shop.uid)+":"+
+    encodeURIComponent(shop.household)+":"+encodeURIComponent(n.number||"sem-numero")+":"+
+    encodeURIComponent(n.date||"sem-data")+":"+String(n.totalCents)+":"+
+    String(n.lines?.length||0)+":"+encodeURIComponent(state.invoiceName);
+}
+function saveAssociations(shop){
+  const key=associationStorageKey(shop);
+  if(!key)return;
+  try{
+    localStorage.setItem(key,JSON.stringify({map:state.map,pending:state.pending,
+      updatedAt:new Date().toISOString()}));
+  }catch{}
+}
+function loadAssociations(shop){
+  const suggested=suggest(bought(shop),state.invoice);
+  state.map=suggested.suggestions;state.pending=suggested.pending;
+  const key=associationStorageKey(shop);
+  if(!key)return;
+  try{
+    const stored=JSON.parse(localStorage.getItem(key)||"null");
+    const available=new Set(bought(shop).map(e=>e.id));
+    const validLines=new Set(state.invoice.lines.map(l=>String(l.id)));
+    for(const [lineId,entryId] of Object.entries(stored?.map||{})){
+      if(validLines.has(lineId)&&available.has(entryId)){
+        state.map[lineId]=entryId;
+        if(stored?.pending?.[lineId])state.pending[lineId]=true;
+        else delete state.pending[lineId];
+      }else if(validLines.has(lineId)&&entryId===""){
+        delete state.map[lineId];
+        delete state.pending[lineId];
+      }
+    }
+  }catch{}
+}
 
 function bought(shop){
  const entries=state.backup||projectedShoppingState(shop).baskets?.[shop.market]?.entries||[];
@@ -154,11 +191,11 @@ export function installReceiptWorkspace({root,getState,render,notify}){
            obj.basket?.entries;
          if(!Array.isArray(entries))throw Error("Este arquivo não contém a cesta de compras.");
          state.backup=entries;state.backupName=file.name;
-         if(state.invoice){const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
+         if(state.invoice)loadAssociations(getState());
          state.message="Backup carregado. Nenhum valor foi alterado.";state.error=false;
        }else{
          state.invoice=parseFiscalXml(await file.text());state.invoiceName=file.name;
-         {const p=suggest(bought(getState()),state.invoice);state.map=p.suggestions;state.pending=p.pending;}
+         loadAssociations(getState());
          state.message=state.invoice.parseStatus==="transcribed-from-pdf"?
            "Os produtos do PDF foram carregados. Confirme as associações.":
            "Itens da nota carregados para conferência.";
@@ -167,10 +204,15 @@ export function installReceiptWorkspace({root,getState,render,notify}){
      }catch(e){state.message=e.message||"Falha ao ler arquivo.";state.error=true;}
      render();return;
    }
-   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];render();return;}
-   if(el.dataset.reviewSection!==undefined){state.reviewSection=el.dataset.reviewSection;render();}
+   if(el.dataset.reviewLink!==undefined){state.map[String(el.dataset.reviewLink)]=el.value;delete state.pending[String(el.dataset.reviewLink)];saveAssociations(getState());render();return;}
+
  });
  root.addEventListener("click",event=>{
+   const tab=event.target.closest("[data-review-section]");
+   if(tab){
+     state.reviewSection=tab.dataset.reviewSection;
+     render();return;
+   }
    const btn=event.target.closest("[data-review-action]");
    if(!btn)return;
    const type=btn.dataset.reviewAction;
@@ -183,7 +225,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
          throw Error("Informe os itens e o valor pago na nota.");
        state.invoice={source:"manual",parseStatus:"manually-entered",
          totalCents:Math.round(value*100),generalDiscountCents:0,lines};
-       state.invoiceName="Itens colados";state.map=suggest(bought(getState()),state.invoice);
+       state.invoiceName="Itens colados";loadAssociations(getState());
        state.message="Itens digitados carregados.";state.error=false;
      }catch(e){state.message=e.message;state.error=true;}
      render();return;
@@ -191,7 +233,7 @@ export function installReceiptWorkspace({root,getState,render,notify}){
    if(!state.invoice)return;
    if(type==="approve"){
      const id=btn.dataset.reviewId;
-     if(state.map[id]){delete state.pending[id];state.message="Associação confirmada.";state.error=false;render();}
+     if(state.map[id]){delete state.pending[id];saveAssociations(getState());state.message="Associação confirmada. O item saiu dos pendentes.";state.error=false;render();}
      return;
    }
    if(type==="save"){
