@@ -123,6 +123,57 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,generation:remote.generation,budget:next.budget,entries:next.entries,revision:Number(remote.revision||0)+1});
     });
   }
+  async function publishOfflinePurchase(market,draft,closed) {
+    const state=getState();assertSession(state,auth);
+    if(!draft||!closed||closed.status!=="pending"||
+      draft.uid!==state.uid||closed.uid!==state.uid||
+      draft.household!==state.household||closed.household!==state.household||
+      draft.market!==market||closed.market!==market||
+      draft.basket?.generation!==closed.receipt?.generation||
+      !["Mercado","Açougue"].includes(market))
+      throw Error("Compra offline incompatível com a sessão. O histórico local foi preservado.");
+    if(!draft.baseline?.entries||!Array.isArray(draft.operations))
+      throw Error("Este backup não tem a revisão original para sincronização segura. O histórico offline foi preservado.");
+    const ref=basketRef(state,market);
+    const receiptRef=doc(db,"households",state.household,"records",closed.receipt.generation);
+    const sorted=entries=>JSON.stringify((entries||[]).map(e=>[
+      e.id,e.title,e.bought,e.unit,e.plannedMilli,e.actualMilli,e.actual,
+      e.estimated,e.estimateKnown,e.unitReviewed,e.quantityReviewed
+    ]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+    return runTransaction(db,async tx=>{
+      const previous=await tx.get(receiptRef);
+      if(previous.exists()){
+        const data=previous.data();
+        if(data.updatedBy===state.uid&&data.generation===closed.receipt.generation&&
+           data.total===closed.receipt.total&&
+           sorted(data.entries)===sorted(closed.receipt.entries))
+          return {alreadySaved:true};
+        throw Error("Já existe outra compra nesta geração no Firebase. A compra offline foi preservada para revisão.");
+      }
+      const snap=await tx.get(ref);
+      if(!snap.exists())throw Error("Lista não encontrada no Firebase; histórico offline preservado.");
+      const old=snap.data();
+      if(old.generation!==closed.receipt.generation)
+        throw Error("A lista foi encerrada em outro aparelho. O histórico offline permanece salvo e precisa de revisão.");
+      const replayed=replayEmergency(old,draft);
+      if(sorted(replayed.entries)!==sorted(closed.receipt.entries)||
+         replayed.budget!==closed.receipt.budget)
+        throw Error("Há diferenças entre a lista de outro aparelho e a compra finalizada offline. Não substituí nenhum dado. Baixe o histórico e revise antes de sincronizar.");
+      const receipt={market,generation:old.generation,budget:old.budget,revision:old.revision,
+        entries:replayed.entries,kind:"receipt",private:false,total:closed.receipt.total,
+        date:closed.receipt.date,updatedBy:state.uid,updatedAt:serverTimestamp(),
+        invoice:closed.receipt.invoice||null};
+      if(JSON.stringify({...receipt,updatedAt:null}).length>790000)
+        throw Error("O comprovante é grande demais para o Firebase. O histórico offline continua salvo.");
+      tx.set(receiptRef,receipt);
+      const nextEntries=replayed.entries.map(e=>e.bought?
+        {...e,estimated:e.actual,actual:null,bought:false,
+          estimateKnown:true,unitReviewed:true,quantityReviewed:true}:e);
+      tx.set(ref,{market,budget:old.budget,revision:Number(old.revision)+1,
+        generation:crypto.randomUUID(),entries:nextEntries});
+      return {saved:true};
+    });
+  }
   const changeBudget=(market,budget)=>modify(market,old=>({...old,budget}));
   const repurchase=(market,receiptId,itemId)=>modify(market,old=>{
     const source=getState().shared.find(r=>r.kind==="receipt"&&r.id===receiptId&&r.market===market);
@@ -191,5 +242,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency};
+  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency,publishOfflinePurchase};
 }

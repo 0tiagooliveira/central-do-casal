@@ -1,3 +1,13 @@
+## Finalizar compra mesmo com o Firebase sem cota
+
+Se há operações no diário local, **Compras → No mercado → Conferir nota e finalizar** agora abre a mesma conferência de XML/PDF/foto usada no fluxo conectado. O usuário pode anexar nota, comparar preços e **encerrar a compra no próprio aparelho**, sem aguardar sincronização. O sistema cria um recibo com 100% dos itens e preços da cesta local, orçamento, data, status da nota, relatório de diferenças e comprovante original (dentro dos limites suportados), em localStorage isolado por usuário, household e mercado.
+
+Um alerta inequívoco **Compra finalizada neste aparelho · ainda NÃO sincronizada** informa o total e oferece **Baixar compra finalizada**, que gera um JSON completo para preservar o histórico. O backup original de operações continua intacto. Após finalizar localmente, novas edições e a substituição do diário local ficam bloqueadas até reconciliar com a nuvem, evitando reabrir indevidamente a mesma compra e apagá-la.
+
+**Enviar compra e nota ao Firebase** roda uma única transação que verifica a geração, reproduz as operações offline sobre a cesta atual, recusa conflitos ou alterações externas e grava recibo + próxima geração da lista atomicamente. Se a cota seguir estourada ou a base original do backup não existir, o arquivo e a compra local permanecem guardados, e o usuário pode continuar consultando/baixando. Há verificação idempotente do recibo já existente para tratar retentativas após falha de comunicação. Só após confirmação remota a compra é marcada como sincronizada e o diário é limpo. A nota/compra não são declaradas recebidas pelo outro aparelho antes disso.
+
+Nota: essa versão não resolve automaticamente conflitos entre duas pessoas que tenham editado a mesma lista offline. A saída segura é baixar os dois históricos e conciliá-los manualmente. O modo offline não autentica o PDF na SEFAZ.
+
 ## Recuperar o carrinho local desatualizado a partir do backup JSON
 
 Em **Compras → No mercado** há o botão **Recuperar compra do backup (.json)**. Use o último arquivo `central-compra-backup-mercado-....json` exportado pelo modo de emergência. O navegador lê o JSON, verifica se pertence ao mesmo household da conta autenticada, mostra uma **prévia** com quantos produtos foram comprados, quantos faltam, total de compras e orçamento, e pede confirmação **antes** de armazenar.
