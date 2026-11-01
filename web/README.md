@@ -1,3 +1,26 @@
+## Hospedagem única: Firebase Hosting
+
+**Hospedagem oficial do projeto:** Firebase Hosting do projeto `central-do-casal`. O código está em `web/`, conforme `firebase.json` e `.firebaserc`.
+
+- **Netlify:** apenas site legado, até a troca definitiva do endereço. O `netlify.toml` usa `ignore = "exit 0"` para impedir novos deploys automáticos originados por commits. Para **parar completamente os builds** e evitar mais gastos, o proprietário precisa acessar a Netlify, abrir **Project configuration → Developer settings → Continuous deployment → Build settings → Configure → Stopped builds**. O comando `ignore` não impede builds iniciados manualmente por build hook.
+- **GitHub Pages:** removido o workflow de deploy `web-pages.yml`. Não é mais um destino de publicação.
+- **Firebase Hosting:** um único workflow de publicação, `.github/workflows/deploy-web-firebase.yml`, executa `firebase-tools deploy --only hosting --project central-do-casal` quando `web/` muda, sem publicar regras Firestore. O workflow cancela versões antigas ainda em fila.
+
+### Falta concluir uma configuração de autorização, uma única vez
+
+O histórico da execução anterior identificou a falha: `google-github-actions/auth failed: ... must specify exactly one of workload_identity_provider or credentials_json`. O valor de `workload_identity_provider` **não foi injetado no processo**; o GitHub não tem/expõe o secret correspondente nessa execução. Não é problema de cota nem de versão do Firebase CLI.
+
+Na conta que administra o projeto `central-do-casal`, configure a relação segura entre Google Cloud e GitHub:
+
+1. Abra o Google Cloud Console com o projeto `central-do-casal`. Em **IAM e administrador → Workload Identity Federation**, crie ou encontre um pool e um provider OIDC com emissor `https://token.actions.githubusercontent.com`. Restrinja o acesso ao repositório `0tiagooliveira/central-do-casal` (recomendado também restringir à branch `main`).
+2. Crie ou escolha uma **service account** com permissões para publicar no Firebase Hosting, ao menos `roles/firebasehosting.admin`; conceda ao principal do provider a permissão de **Workload Identity User** (`roles/iam.workloadIdentityUser`) sobre ela. Consulte as orientações oficiais de Workload Identity para os detalhes.
+3. Em **GitHub → repositório → Settings → Secrets and variables → Actions**, crie dois **Repository secrets**: `GCP_WORKLOAD_IDENTITY_PROVIDER`, com o nome completo do provider no formato `projects/NUMERO/locations/global/workloadIdentityPools/POOL/providers/PROVIDER`, e `GCP_SERVICE_ACCOUNT`, com o e-mail da service account.
+4. Após salvar as configurações, em **GitHub → Actions → Publicar Central do Casal Web no Firebase Hosting**, execute **Run workflow** na branch `main`. Confirme que as etapas de autenticação e publicação terminaram com sucesso. Só então acesse `https://central-do-casal.web.app` para usar a nova versão. Ajuste os domínios autorizados do Firebase Authentication, se necessário.
+
+Não envie credenciais, tokens, chaves JSON ou os valores dos secrets neste chat; preencha-os diretamente nas configurações do Google Cloud e GitHub. Não faça upgrades de hospedagem para corrigir esse erro de autenticação.
+
+**Importante:** Firebase Hosting e Cloud Firestore têm cotas separadas. A migração elimina os créditos da Netlify como dependência do site, mas não corrige automaticamente erros de `quota exceeded` do Firestore nem sincroniza itens já guardados offline; para estes, preserve os backups até a sincronização e conciliação das listas.
+
 ## Finalizar compra mesmo com o Firebase sem cota
 
 Se há operações no diário local, **Compras → No mercado → Conferir nota e finalizar** agora abre a mesma conferência de XML/PDF/foto usada no fluxo conectado. O usuário pode anexar nota, comparar preços e **encerrar a compra no próprio aparelho**, sem aguardar sincronização. O sistema cria um recibo com 100% dos itens e preços da cesta local, orçamento, data, status da nota, relatório de diferenças e comprovante original (dentro dos limites suportados), em localStorage isolado por usuário, household e mercado.

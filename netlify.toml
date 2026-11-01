@@ -1,8 +1,14 @@
-# Hospedagem alternativa sem credenciais Google Cloud no GitHub.
-# Em Netlify > Add new project > Import existing project, escolha este repositório.
+# Central do Casal passou a usar SOMENTE Firebase Hosting.
+# Mantenha o site Netlify existente acessivel ate a migracao de URL.
+# Porem, NAO crie novos deploys de producao cobrando creditos.
+# Este comando faz com que commits disparados pelo Git sejam IGNORADOS.
+# Em Netlify, pare os builds em:
+# Project configuration > Developer settings > Continuous deployment > Build settings > Stopped builds.
+# Build hooks manuais ignoram o comando ignore e tambem devem ser desativados.
 [build]
   publish = "web"
   command = ""
+  ignore = "exit 0"
 
 [[headers]]
   for = "/*"
