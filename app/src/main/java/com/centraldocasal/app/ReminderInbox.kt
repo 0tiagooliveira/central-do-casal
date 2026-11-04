@@ -10,9 +10,34 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.centraldocasal.app.data.DataState
 import com.centraldocasal.app.data.SessionState
+import com.centraldocasal.app.domain.Record
+import java.time.LocalTime
 import com.centraldocasal.app.domain.occurs
 import com.centraldocasal.app.domain.occurrenceId
 import java.time.LocalDate
+
+/** Tarefas efetivamente pendentes do perfil, sem exibir tarefas exclusivas do outro membro. */
+internal fun reminderVisibleTasks(records: List<Record>, profileName: String, today: LocalDate): List<Record> =
+    records.filter { task ->
+        task.kind == "task" && taskBelongsTo(task, profileName) && occurs(task, today) &&
+            records.none { it.kind == "occurrence" && it.id == occurrenceId(task.id, today) && it.flag("done") }
+    }.sortedWith(compareBy<Record> {
+        runCatching { LocalTime.parse(it.text("time")) }.getOrNull() ?: LocalTime.MAX
+    }.thenBy { it.id })
+
+internal fun reminderReviewTasks(records: List<Record>, profileName: String): List<Record> =
+    records.filter { task -> task.kind == "task" && taskBelongsTo(task, profileName) &&
+        (task.flag("needsReview") || task.flag("needsTimeReview"))
+    }.sortedWith(compareBy<Record> { it.text("title") }.thenBy { it.id })
+
+/** Ter horário não comprova que o sistema operacional entregou a notificação. */
+internal fun reminderScheduleHint(task: Record): String = when {
+    task.flag("needsReview") -> "Dados da tarefa precisam ser confirmados."
+    task.flag("needsTimeReview") -> "Horário precisa ser confirmado."
+    task.flag("skipReminder") -> "Aviso desligado para esta tarefa."
+    runCatching { LocalTime.parse(task.text("time")) }.getOrNull() == null -> "Sem horário válido, sem aviso automático."
+    else -> "Horário registrado, consulte o estado do alarme."
+}
 
 @Composable
 internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: () -> Unit, openSettings: () -> Unit, openTask: (com.centraldocasal.app.domain.Record) -> Unit) {
@@ -23,9 +48,7 @@ internal fun ReminderInbox(session: SessionState, data: DataState, openRoutine: 
     val allowed=AndroidInteractions.notificationsAllowed(context)
     var testResult by remember(session.uid) { mutableStateOf<String?>(null) }
     var refreshKey by remember(session.uid) { mutableIntStateOf(0) }
-    val tasks=data.records.filter { task -> task.kind=="task" && occurs(task,today) &&
-        data.records.none { it.kind=="occurrence" && it.id==occurrenceId(task.id,today) && it.flag("done") } }
-        .sortedBy { it.text("time").ifBlank { "99:99" } }
+    val tasks = reminderVisibleTasks(data.records,session.name,today)
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item { SectionHero("Lembretes", "Seu dia, sem cobranças.",ReminderBell) }
         item { QuietCard("Notificações no aparelho", when {

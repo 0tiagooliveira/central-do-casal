@@ -27,6 +27,29 @@ test('imported history and catalog are readable only by members and immutable to
    await assertFails(updateDoc(ref,{total:0})); await assertFails(deleteDoc(ref));
  }
 });
+test('only members can update safe catalog inventory fields without changing imported data',async()=> {
+  await env.withSecurityRulesDisabled(async c=>setDoc(
+    doc(c.firestore(),'households/home/records/inventory-product'),
+    {kind:'catalogItem',private:false,title:'Sabonete',market:'Mercado',category:'Higiene',
+      stockKnown:false,stockMilli:0,storageRoom:'Banheiro'}
+  ));
+  const ref=doc(db('bob'),'households/home/records/inventory-product');
+  await assertSucceeds(updateDoc(ref,{
+    stockKnown:false,stockMilli:0,hasAtHome:true,storageRoom:'Banheiro',
+    updatedBy:'bob',updatedAt:serverTimestamp()
+  }));
+  await assertSucceeds(updateDoc(ref,{
+    stockKnown:true,stockMilli:3000,hasAtHome:true,storageRoom:'Banheiro',
+    updatedBy:'bob',updatedAt:serverTimestamp()
+  }));
+  await assertFails(updateDoc(ref,{title:'Produto adulterado',updatedBy:'bob',updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{stockMilli:-5,updatedBy:'bob',updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{stockMilli:100000001,updatedBy:'bob',updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{updatedBy:'alice',updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(doc(db('eve'),'households/home/records/inventory-product'),{
+    hasAtHome:false,updatedBy:'eve',updatedAt:serverTimestamp()
+  }));
+});
 test('raw import archive is not accessible to Android clients',async()=> {
  await env.withSecurityRulesDisabled(async c=>setDoc(doc(c.firestore(),'households/home/importArchive/main_0'),{data:'Fixture de arquivo'}));
  await assertFails(getDoc(doc(db('alice'),'households/home/importArchive/main_0')));
@@ -120,6 +143,8 @@ test('care events require genuine authorship and only the author can undo',async
  await assertFails(deleteDoc(doc(db('bob'),'households/home/records/care-alice')));
  await assertSucceeds(deleteDoc(ref));
  await assertFails(setDoc(doc(db('bob'),'households/home/records/care-forged'),care('alice')));
+ await assertSucceeds(setDoc(doc(db('alice'),'households/home/records/care-bottle'),care('alice','bottle','Lucca')));
+ await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid-bottle'),care('alice','bottle','Mel')));
  await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid'),care('alice','petFood','Lucca')));
 });
 test('user cannot forge mutation author',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/forged'),record('bob')));});

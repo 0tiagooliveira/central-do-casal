@@ -12,26 +12,53 @@ import com.centraldocasal.app.data.SessionState
 import com.centraldocasal.app.domain.*
 import java.time.LocalDate
 
+/** Personal timeline counters are distinct from the household's historical totals. */
+internal data class LifeOverviewSummary(
+    val pendingTasks: Int,
+    val pendingSteps: Int,
+    val unreviewedSteps: Int,
+    val pendingProducts: Int,
+    val moments: Int,
+    val plannedBills: Int,
+    val unconfirmedBills: Int
+)
+
+internal fun lifeOverviewSummary(
+    data: DataState, name: String, local: Boolean, day: LocalDate
+): LifeOverviewSummary {
+    val tasks = data.records.filter { it.kind == "task" && occurs(it,day) && taskBelongsTo(it,name) }
+    val pendingTasks = tasks.count { task ->
+        data.records.none {
+            it.kind == "occurrence" && it.id == occurrenceId(task.id,day) && it.flag("done")
+        }
+    }
+    val steps = data.records.filter { it.kind == "plan" }
+        .flatMap { (it.fields["steps"] as? List<*>)?.filterIsInstance<Map<*,*>>().orEmpty() }
+    val bills = data.records.filter {
+        it.kind == "plannedBill" && it.text("month") == java.time.YearMonth.from(day).toString()
+    }
+    return LifeOverviewSummary(
+        pendingTasks = pendingTasks,
+        pendingSteps = steps.count { it["done"] == false },
+        unreviewedSteps = steps.count { it["done"] !is Boolean },
+        pendingProducts = data.baskets.values.sumOf { basket -> basket.entries.count { !it.bought } },
+        moments = data.records.count { it.kind == "moment" && (local || !it.isPrivate) },
+        plannedBills = bills.size,
+        unconfirmedBills = bills.count { it.fields["amount"] !is Number }
+    )
+}
+
 @Composable
 internal fun LifeOverview(data: DataState, session: SessionState, onRoutine: () -> Unit, onPlans: () -> Unit, onMoments: () -> Unit, onShopping: () -> Unit) {
-    val day = LocalDate.now()
-    val tasks = data.records.filter { it.kind == "task" && occurs(it, day) }
-    val remainingTasks = tasks.count { task -> data.records.none { it.kind == "occurrence" && it.id == occurrenceId(task.id, day) && it.flag("done") } }
-    val steps = data.records.filter { it.kind == "plan" }.flatMap { (it.fields["steps"] as? List<*>)?.filterIsInstance<Map<*, *>>() ?: emptyList() }
-    val pendingSteps = steps.count { it["done"] == false }
-    val unknownSteps = steps.count { it["done"] !is Boolean }
-    val pendingProducts = data.baskets.values.sumOf { basket -> basket.entries.count { !it.bought } }
-    val moments = data.records.count { it.kind == "moment" && !it.isPrivate }
-    val bills = data.records.filter { it.kind == "plannedBill" }
-    val unknownBills = bills.count { it.fields["amount"] !is Number }
+    val summary = lifeOverviewSummary(data,session.name,session.local,LocalDate.now())
     OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("Vida em andamento", style = MaterialTheme.typography.titleMedium)
-            OverviewRow("Executar hoje", "$remainingTasks tarefas pendentes", onRoutine)
-            OverviewRow("Dar o próximo passo", "$pendingSteps etapas pendentes${if (unknownSteps > 0) " · $unknownSteps a confirmar" else ""}", onPlans)
-            OverviewRow("Preparar a compra", "$pendingProducts produtos pendentes", onShopping)
-            OverviewRow("Guardar o que aconteceu", "$moments ${if (session.local) "momentos neste aparelho" else "momentos compartilhados"}", onMoments)
-            if (bills.isNotEmpty()) Text("${bills.size} compromissos previstos · $unknownBills valores a confirmar. Pagamentos ainda não conciliados.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OverviewRow("Executar hoje", "${summary.pendingTasks} tarefas pendentes", onRoutine)
+            OverviewRow("Dar o próximo passo", "${summary.pendingSteps} etapas pendentes${if (summary.unreviewedSteps > 0) " · ${summary.unreviewedSteps} a confirmar" else ""}", onPlans)
+            OverviewRow("Preparar a compra", "${summary.pendingProducts} produtos pendentes", onShopping)
+            OverviewRow("Guardar o que aconteceu", "${summary.moments} ${if (session.local) "momentos neste aparelho" else "momentos compartilhados"}", onMoments)
+            if (summary.plannedBills > 0) Text("${summary.plannedBills} compromissos previstos neste mês · ${summary.unconfirmedBills} valores a confirmar. Pagamentos ainda não conciliados.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
