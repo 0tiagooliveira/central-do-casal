@@ -122,6 +122,18 @@ test('care events require genuine authorship and only the author can undo',async
  await assertFails(setDoc(doc(db('bob'),'households/home/records/care-forged'),care('alice')));
  await assertFails(setDoc(doc(db('alice'),'households/home/records/care-invalid'),care('alice','petFood','Lucca')));
 });
+test('Mel care events preserve author, subject and undo permissions',async()=> {
+ const care={kind:'careEvent',private:false,careType:'petFood',subject:'Mel',
+   actorUid:'bob',actorName:'Bob',occurredAt:Date.now(),date:'2026-11-05',
+   updatedBy:'bob',updatedAt:serverTimestamp()};
+ const ref=doc(db('bob'),'households/home/records/care-bob-mel');
+ await assertSucceeds(setDoc(ref,care));
+ await assertSucceeds(getDoc(doc(db('alice'),'households/home/records/care-bob-mel')));
+ await assertFails(updateDoc(ref,{actorName:'Alice'}));
+ await assertFails(deleteDoc(doc(db('alice'),'households/home/records/care-bob-mel')));
+ await assertFails(setDoc(doc(db('alice'),'households/home/records/care-forged-mel'),care));
+ await assertSucceeds(deleteDoc(ref));
+});
 test('user cannot forge mutation author',async()=> {await assertFails(setDoc(doc(db('alice'),'households/home/records/forged'),record('bob')));});
 test('receipt snapshots cannot be modified or deleted',async()=> {
   await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'households/home/records/receipt'),{...record('alice','receipt'),total:123});});
