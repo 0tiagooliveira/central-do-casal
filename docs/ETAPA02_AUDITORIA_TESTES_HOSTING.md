@@ -39,7 +39,7 @@ Data de referência: 05/11/2026. Base auditada: `main`. Este documento descreve 
 5. Configurar GitHub OIDC/WIF: pool/provider restritos ao repositório e branch autorizada; service account com permissão de Hosting; secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` e `GCP_SERVICE_ACCOUNT` configurados diretamente no GitHub. Não usar JSON de conta de serviço nem enviar valores ao chat.
 6. Validar testes e prévia antes da publicação live; por padrão, usar dados fictícios e usuários de teste, lembrando que um preview Hosting conectado ao Firestore de produção ainda pode modificar dados reais.
 7. Publicar *somente Hosting*, com aprovação de release, registrar URL real e validar HTTPS, login, privacidade, sincronização cruzada Android/Web, edição concorrente, modo offline, restore após refresh e navegação em celular.
-8. Revisar o workflow atual antes do merge: ele também publica automaticamente em pushes na `main` que alterem `web/**` ou `firebase.json`. Exigir política de aprovação apropriada; este pacote não altera o disparo de publicação.
+8. O workflow foi preparado nesta branch para publicação **exclusivamente manual**, com entrada `PUBLICAR` e execução permitida somente pela `main`. O GitHub não publicará uma versão web apenas porque o PR foi mesclado. Configurar proteção de branch e revisão de produção conforme as permissões disponíveis.
 9. Manter eventual domínio legado em modo somente leitura ou redirecionamento controlado até validar a nova URL; sem novos deploys na Netlify. Não desinstalar o APK nem apagar backups locais.
 
 ### Critérios para marcar Hosting como pronto
@@ -54,3 +54,9 @@ Data de referência: 05/11/2026. Base auditada: `main`. Este documento descreve 
 - **Test Enforcer:** testes Robolectric/Compose, Emulator e regressões estáticas do Hosting.
 - **Light Dev:** patches pequenos e isolados após testes, sem substituir arquivos grandes por placeholders.
 - **UI/UX:** geometria/cores por perfil, acessibilidade e semântica Compose. Sem mudança visual durante esta fase.
+
+## 6. Evidência da CI e limites
+- GitHub Actions na execução [#318](https://github.com/0tiagooliveira/central-do-casal/actions/runs/42129402671) concluiu **sucesso** em Android/JVM, `test:hosting`, Firestore Rules e APK DEV para o commit `470857e`. Não equivale a QA em produção.
+- O workflow de publicação manual foi modificado **depois** dessa execução. Revalidar a revisão atual antes de considerar o PR pronto.
+- O uso do domínio `central-do-casal.web.app` depende da existência/ID real do site. A documentação oficial de Firebase (novembro de 2026) informa que projetos criados após 15/10/2026 podem ter criação do site padrão adiada. Se o projeto já tinha site padrão, não recriar nem tentar trocar esse ID.
+- Verificar por `firebase hosting:sites:list --project central-do-casal`; se não houver site, aprovar explicitamente o provisionamento no Console ou por `firebase hosting:sites:create central-do-casal --project central-do-casal`, caso o ID esteja disponível. Criação de site é mudança de produção e não faz parte deste PR.
