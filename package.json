@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test:rules": "firebase emulators:exec --only firestore --project demo-central-do-casal \"node --test firestore/rules.test.mjs\"",
-    "test:hosting": "node --test web/tests/hosting-config.test.mjs"
+    "test:hosting": "node --test web/tests/hosting-config.test.mjs",
+    "test:web": "node --test web/tests/*.test.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
