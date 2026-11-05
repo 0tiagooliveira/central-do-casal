@@ -1,12 +1,11 @@
 name: Publicar Central do Casal Web no Firebase Hosting
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'web/**'
-      - 'firebase.json'
-      - '.github/workflows/deploy-web-firebase.yml'
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite PUBLICAR para autorizar uma publicação da main'
+        type: string
+        required: true
 permissions:
   contents: read
   id-token: write
@@ -15,32 +14,42 @@ concurrency:
   cancel-in-progress: true
 jobs:
   hosting:
-    name: Deploy Web
+    name: Deploy Web (aprovacao manual)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Exigir autorizacao explicita e main
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$CONFIRM" != "PUBLICAR" ]]; then
+            echo "::error::Publicacao bloqueada. Execute na main com confirmacao PUBLICAR."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      # Validação explícita: sem essas duas configurações IAM a publicação
-      # nunca ocorreu. Não faça fallback para Netlify nem GitHub Pages.
-      - name: Verificar autorização do Firebase Hosting
+      - name: Verificar autorizacao do Firebase Hosting
         env:
           PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: |
           if [[ -z "$PROVIDER" || -z "$ACCOUNT" ]]; then
-            echo "::error::Firebase Hosting sem autenticação: configure os secrets GCP_WORKLOAD_IDENTITY_PROVIDER e GCP_SERVICE_ACCOUNT nas configurações do repositório GitHub (Settings > Secrets and variables > Actions)."
-            echo "::error::O provider deve existir em Google Cloud IAM Workload Identity Federation, autorizar este repositório, e a service account deve ter as permissões necessárias de Firebase Hosting. Nenhuma publicação alternativa será tentada."
+            echo "::error::Configure GCP_WORKLOAD_IDENTITY_PROVIDER e GCP_SERVICE_ACCOUNT em Settings > Secrets and variables > Actions."
+            echo "::error::O provider OIDC deve confiar apenas no repositorio e branch autorizados; a conta precisa de permissao para Firebase Hosting."
             exit 1
           fi
-      - name: Autenticar sem chave JSON (Workload Identity Federation)
+      - name: Autenticar sem chave JSON
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - run: npm ci --no-audit --no-fund
-      - name: Publicar somente Hosting (nunca alterar regras automaticamente)
+      - name: Verificar arquivos do Hosting antes de publicar
+        run: npm run test:hosting
+      - name: Conferir site registrado no Firebase
+        run: npx firebase-tools hosting:sites:list --project central-do-casal --non-interactive
+      - name: Publicar somente Hosting (sem modificar regras)
         run: npx firebase-tools deploy --only hosting --project central-do-casal --non-interactive
