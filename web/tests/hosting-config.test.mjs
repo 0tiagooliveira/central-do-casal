@@ -23,10 +23,20 @@ test("Hosting workflow uses federated identity and does not deploy Firestore rul
   assert.match(workflow, /GCP_SERVICE_ACCOUNT/);
   assert.match(workflow, /google-github-actions\/auth@v2/);
   assert.match(workflow, /deploy --only hosting --project central-do-casal/);
+  assert.match(workflow, /hosting:sites:list --project central-do-casal/);
 });
 
 test("Web entrypoint contains no embedded server private key", () => {
   const main = read("web/main.js");
   assert.doesNotMatch(main, /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/);
   assert.doesNotMatch(main, /["']private_key["']\s*:/);
+});
+
+
+test("Production deployment requires explicit confirmation on main and cannot trigger on push", () => {
+  const workflow = read(".github/workflows/deploy-web-firebase.yml");
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /\$CONFIRM" != "PUBLICAR"/);
+  assert.match(workflow, /\$GITHUB_REF" != "refs\/heads\/main"/);
+  assert.doesNotMatch(workflow, /^  push:/m);
 });
