@@ -61,6 +61,9 @@ jobs:
       - name: Install Firebase test dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Validate Firebase Hosting readiness without deploying
+        run: npm run test:hosting
+
       - name: Run Firestore security rules tests
         run: npm run test:rules
 
