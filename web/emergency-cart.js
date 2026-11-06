@@ -1,3 +1,4 @@
+import {same,rebaseOfflineBasket} from "./basket-concurrency.js";
 // Contingência quando o Firestore bloqueia gravações por cota/limite.
 // Operações locais ficam isoladas por usuário, casa e mercado e NUNCA são
 // consideradas sincronizadas até a confirmação explícita do backend.
@@ -309,29 +310,16 @@ export function emergencyBanner(state) {
 // Opções para reconciliar manualmente o diário local com a lista remota.
 export function replayEmergency(remote,draft){
   if(!draft.baseline||!Array.isArray(draft.baseline.entries))
-    throw Error("Não há cópia da revisão original para conferir as alterações. O backup local foi preservado; não foi enviado ao Firebase.");
+    throw Error("Não há cópia da revisão original. O backup local foi preservado.");
   if(remote.generation!==draft.baseGeneration)
     throw Error("A compra foi finalizada em outro aparelho. Baixe seu backup e revise antes de sincronizar.");
-  const oldById=new Map((draft.baseline.entries||[]).map(e=>[e.id,e]));
-  const nowById=new Map((remote.entries||[]).map(e=>[e.id,e]));
-  const changedIds=new Set(draft.operations
-    .filter(o=>o.type==="update"||o.type==="remove").map(o=>o.id).filter(Boolean));
-  for(const op of draft.operations.filter(o=>o.type==="batchAddToCart")){
-    for(const entry of op.entries||[]){
-      const baselinePending=(draft.baseline.entries||[]).filter(e=>!e.bought&&
-        e.unit===entry.unit&&normalize(e.title)===normalize(entry.title));
-      if(baselinePending.length===1)changedIds.add(baselinePending[0].id);
-    }
-  }
-  for(const id of changedIds){
-    const baseline=oldById.get(id),latest=nowById.get(id);
-    if(JSON.stringify(baseline)!==JSON.stringify(latest))
-      throw Error("O produto foi alterado em outro aparelho. Seu backup local está preservado. Confira antes de sincronizar.");
-  }
-  let next=simple(remote);
-  for(const op of draft.operations){
-    // Não mutar o backup durante replay.
-    next=applyOperation(next,simple(op));
-  }
-  return next;
+  // Reconstituir o resultado somente a partir das operações preservadas.
+  const planned=(draft.operations||[]).reduce(
+    (basket,operation)=>applyOperation(basket,simple(operation)),simple(draft.baseline));
+  if(draft.basket&&(!same(planned.entries,draft.basket.entries)||
+      !same(planned.budget,draft.basket.budget)))
+    throw Error("As operações não correspondem à lista do backup. Nenhum dado foi enviado.");
+  return rebaseOfflineBasket(remote,draft.baseline,{
+    ...planned,generation:draft.baseGeneration
+  });
 }
