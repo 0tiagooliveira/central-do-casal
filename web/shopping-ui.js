@@ -1,7 +1,8 @@
 import {marketTotals} from "./market-totals.js";
+import {previewBackupAgainstServer} from "./backup-server-preview.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,isRecoverableSyncError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -24,6 +25,56 @@ const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
 // Unsaved price text is a preview, not a confirmed purchase or Firebase write.
 const priceDrafts={Mercado:{},Açougue:{}};
+// Relatório em memória: nenhuma cópia do backup é persistida por esta função.
+let backupReadOnlyAudit=null;
+function backupReadOnlyPanel(state){
+  const audit=backupReadOnlyAudit;
+  if(!audit||audit.uid!==state.uid||audit.household!==state.household)return "";
+  if(audit.error)return `<section class="panel" role="status">
+    <h3>Conferência de backup não concluída</h3>
+    <p class="emergency-sync-warning">${clean(audit.error)}</p>
+    <small>Nenhuma escrita foi realizada. O arquivo do backup permanece no seu dispositivo.</small>
+  </section>`;
+  const p=audit.report;
+  return `<section class="panel" role="status">
+    <h3>Prévia da recuperação · somente leitura</h3>
+    <p>Conferência feita com uma leitura explícita da cesta no servidor, em ${clean(audit.time)}.</p>
+    <div class="stats-bar">
+      <span>Itens no servidor: ${p.cloudItems}</span>
+      <span>Itens no backup: ${p.backupItems}</span>
+      <span>Comprados no backup: ${p.backupBought}</span>
+      <span>Inclusões sugeridas: ${p.added}</span>
+      <span>Itens alterados: ${p.updated}</span>
+      <span>Exclusões: ${p.removed}</span>
+    </div>
+    <p><strong>${p.status==="already-synced"?
+      "O backup já está refletido nesta versão do servidor.":
+      "Conciliação possível nesta captura. Nenhum item foi enviado."}</strong></p>
+    <small>A cesta pode mudar após esta conferência. Ao sincronizar será necessário conferir
+      novamente dentro da transação. Esta prévia não recupera, não finaliza e não altera compras.</small>
+  </section>`;
+}
+function localFirestoreDiagnostics(state){
+  const summary=state.firestoreUsage;
+  if(!summary)return "";
+  const sources=summary.bySource||[];
+  const critical=sources.filter(x=>x.errors).map(x=>
+    clean(x.source)+": "+clean(x.lastError)+" ("+x.errors+")").join(" · ");
+  return `<details class="panel" style="margin:12px 0">
+    <summary><strong>Diagnóstico de sincronização</strong> · ${summary.snapshots} atualizações observadas</summary>
+    <p class="info-line">Contadores somente deste navegador, reiniciados ao entrar na conta.
+    Não são leituras cobradas nem cotas oficiais do Firebase.</p>
+    <div class="stats-bar">
+      <span>${summary.changes} alterações/documentos recebidos</span>
+      <span>${summary.cacheSnapshots} snapshots do cache</span>
+      <span>${summary.pendingWritesSnapshots} snapshots com escrita pendente</span>
+      <span>${summary.errors} erros observados</span>
+    </div>
+    ${critical?`<p class="emergency-sync-warning">Erros: ${critical}</p>`:""}
+    <p class="info-line">Para verificar cobranças, consulte Firebase Console → Firestore → Uso.
+    Este painel não consulta nem grava dados extras.</p>
+  </details>`;
+}
 try{
   const remembered=JSON.parse(sessionStorage.getItem("cdc:shopping-filters")||"null");
   if(remembered&&typeof remembered==="object"){
@@ -78,7 +129,7 @@ export function shoppingView({state}) {
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+backupReadOnlyPanel(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state)+localFirestoreDiagnostics(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
@@ -225,6 +276,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         ". Dados ainda NÃO sincronizados com o Firebase. Baixe o backup antes de sair.");
     }catch(e){notify(e.message||"Não foi possível recuperar o backup.",true);}
   });
+  const emergencyCheckInput=document.createElement("input");
+  emergencyCheckInput.type="file";
+  emergencyCheckInput.accept="application/json,.json";
+  emergencyCheckInput.hidden=true;document.body.append(emergencyCheckInput);
+  emergencyCheckInput.addEventListener("change",async()=>{
+    const file=emergencyCheckInput.files?.[0];emergencyCheckInput.value="";
+    if(!file)return;
+    const userState=getState();
+    try{
+      if(file.size>2_000_000)throw Error("Arquivo acima de 2MB. Nenhum dado foi lido do servidor.");
+      const raw=JSON.parse(await file.text());
+      if(raw?.type!=="central-do-casal-emergency-backup"||
+        raw.household!==userState.household||
+        !["Mercado","Açougue"].includes(raw.market))
+        throw Error("O arquivo deve ser um backup de emergência desta casa.");
+      // Única consulta adicional, executada SOMENTE por ação explícita.
+      // getDocFromServer nunca promove cache local a comprovação da nuvem.
+      const remote=await actions.readBasketFromServer(raw.market);
+      const report=previewBackupAgainstServer(raw,userState,remote);
+      backupReadOnlyAudit={uid:userState.uid,household:userState.household,
+        report,time:new Date().toLocaleString("pt-BR")};
+      render();notify("Conferência somente leitura realizada. Nenhuma escrita foi feita.");
+    }catch(error){
+      backupReadOnlyAudit={uid:userState.uid,household:userState.household,
+        error:error?.message||"Não foi possível comparar o backup."};
+      render();
+      notify("Conferência interrompida. O arquivo original está preservado.",true);
+    }
+  });
   let busy=false;
   async function run(job,description,fallback=null){
     if(busy)return;
@@ -242,14 +322,14 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }
       await job();dlg.close();notify(description+" · sincronizado no Firebase.");
     }catch(e){
-      if(fallback?.market&&isQuotaError(e)){
+      if(fallback?.market&&isRecoverableSyncError(e)){
         try{
           saveEmergency(getState(),fallback.market,fallback.operation);
           if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
             delete priceDrafts[fallback.market][fallback.operation.id];
           if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
           dlg.close();render();
-          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
+          notify(description+" · conexão/limite do Firebase indisponível. Salvo SOMENTE neste aparelho. Faça backup.",true);
           return;
         }catch(saveError){
           notify(saveError.message,true);
@@ -282,7 +362,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     form.elements.title.focus();
     form.elements.bought.addEventListener("change",()=>{form.querySelector(".actual-field").hidden=!form.elements.bought.checked;});
     dlg.querySelector("[data-cancel]").addEventListener("click",()=>dlg.close());
-    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído",
+    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id,item),"Produto excluído",
       {market,operation:{type:"remove",id:item.id}});});
     form.addEventListener("submit",event=>{
       event.preventDefault();
@@ -294,7 +374,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         if(!entry.title)throw new Error("Informe o nome do produto.");
         const offlineEntry=item?{...item,...entry}:{...entry,id:crypto.randomUUID()};
         const operation=item?{type:"update",id:item.id,entry:offlineEntry}:{type:"add",entry:offlineEntry};
-        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),
+        run(()=>item?actions.updateItem(market,item.id,entry,item):actions.addItem(market,offlineEntry),
           "Produto salvo",{market,operation});
       }catch(e){notify(e.message,true);}
     });
@@ -407,6 +487,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       emergencyRestoreInput.click();
       return;
     }
+    if(act==="emergency-check-server"){
+      emergencyCheckInput.click();
+      return;
+    }
     if(act==="emergency-export-previous"){
       try{downloadPreviousEmergency(getState(),market);notify("Cópia do backup anterior baixada.");}
       catch(e){notify(e.message,true);}
@@ -504,13 +588,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     if(act==="market-add-cart"){
       showMarketAddDialog({dialog:dlg,state:s,notify,
-        onSubmit:entry=>run(async()=>{
-          await actions.addToCart(market,entry);
+        onSubmit:entry=>{
+        const stableEntry={...entry,id:entry.id||crypto.randomUUID()};
+        return run(async()=>{
+          await actions.addToCart(market,stableEntry);
           shopPrefs.marketSection="bought";
           rememberShoppingRoute();
           render();
         },"Produto registrado diretamente no carrinho",
-        {market,operation:{type:"addToCart",entry}})});
+        {market,operation:{type:"addToCart",entry:stableEntry}});
+        }});
       return;
     }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
@@ -552,8 +639,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
         estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
         sourceSkuId:sku.id});
-      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista",
-        {market,operation:{type:"add",entry:{...draft,id:crypto.randomUUID(),bought:false,actual:null}}});
+      const stableDraft={...draft,id:crypto.randomUUID()};
+      run(()=>actions.addItem(market,stableDraft),"Apresentação adicionada à lista",
+        {market,operation:{type:"add",entry:{...stableDraft,bought:false,actual:null}}});
       return;
     }
     if(act==="choose-catalog"){
@@ -568,8 +656,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
       const estimate=suggestedEstimate(d,s.shared,s.links||[],market);
       if(estimate?.safe){d.estimated=estimate.cents;d.estimateKnown=true;}
-      run(()=>actions.addItem(market,d),"Produto adicionado à lista",
-        {market,operation:{type:"add",entry:{...d,id:crypto.randomUUID(),bought:false,actual:null}}});
+      const stableDraft={...d,id:crypto.randomUUID()};
+      run(()=>actions.addItem(market,stableDraft),"Produto adicionado à lista",
+        {market,operation:{type:"add",entry:{...stableDraft,bought:false,actual:null}}});
       return;
     }
     if(act==="fill-estimates"){
@@ -586,7 +675,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="remove-inline"&&item){
       const wasBought=item.bought?" (já está no carrinho)":"";
       if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
-        run(()=>actions.removeItem(market,item.id),"Produto removido da lista",
+        run(()=>actions.removeItem(market,item.id,item),"Produto removido da lista",
           {market,operation:{type:"remove",id:item.id}});
       }
       return;
@@ -629,7 +718,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
-      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
+      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget,s.baskets[market]?.budget??0),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
       const previous=readOfflineClosure(getState(),market);
