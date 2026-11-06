@@ -154,7 +154,10 @@ export function createShoppingActions(db,auth,getState) {
       const next=replayEmergency(remote,draft);
       if(!Array.isArray(next.entries)||next.entries.length>200)
         throw Error("A lista ficou acima de 200 itens. Revise antes de sincronizar.");
+      if(same(next.entries,remote.entries)&&same(next.budget,remote.budget))
+        return {alreadySynced:true};
       tx.set(ref,{market,generation:remote.generation,budget:next.budget,entries:next.entries,revision:Number(remote.revision||0)+1});
+      return {saved:true};
     });
   }
   async function publishOfflinePurchase(market,draft,closed) {
