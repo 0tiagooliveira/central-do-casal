@@ -1,6 +1,7 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
 import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
+import {same,editItem,deleteItem,editBudget} from "./basket-concurrency.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
@@ -38,70 +39,103 @@ export function createShoppingActions(db,auth,getState) {
   const basketRef=(state,market)=>doc(db,"households",state.household,"baskets",market);
   async function modify(market,updater) {
     const state=getState();assertSession(state,auth);
-    if(!["Mercado","Açougue"].includes(market))throw new Error("Lista inválida.");
-    const expected=Number(state.baskets[market]?.revision||0);
-    await runTransaction(db,async tx=>{
+    if(!["Mercado","Açougue"].includes(market))throw Error("Lista inválida.");
+    const observed=state.baskets[market]||null;
+    const initial=freshBasket(market);
+    return runTransaction(db,async tx=>{
       const ref=basketRef(state,market),snap=await tx.get(ref);
-      const old=snap.exists()?snap.data():freshBasket(market);
-      if(Number(old.revision||0)!==expected)throw new Error("A lista mudou em outro aparelho. Confira os dados atualizados e tente novamente.");
+      const old=snap.exists()?snap.data():initial;
+      if(observed?.generation&&old.generation!==observed.generation)
+        throw Error("Esta compra foi finalizada em outro aparelho. Atualize o carrinho.");
       const next=updater(old);
-      if(next.entries.length>200)throw new Error("Limite de 200 itens por lista.");
+      if(!Array.isArray(next.entries)||next.entries.length>200)
+        throw Error("Limite de 200 itens por lista.");
+      if(same(next,old))return {unchanged:true};
       tx.set(ref,{...next,revision:Number(old.revision||0)+1});
+      return {saved:true};
     });
   }
-  const addItem=(market,entry)=>modify(market,old=>{
+  const addItem=(market,entry)=>{
     checkEntry(entry);
-    return {...old,entries:[...(old.entries||[]),{id:crypto.randomUUID(),title:entry.title.trim(),unit:entry.unit,plannedMilli:entry.plannedMilli,actualMilli:entry.plannedMilli,estimated:entry.estimated,actual:entry.bought?entry.actual:null,bought:entry.bought,estimateKnown:entry.estimateKnown!==false,unitReviewed:entry.unitReviewed!==false,quantityReviewed:entry.quantityReviewed!==false,sourceBaseId:entry.sourceBaseId||"",sourceSkuId:entry.sourceSkuId||"",category:entry.category||"",storageRoom:entry.storageRoom||"",recipient:entry.recipient||"Casa",group:entry.group||"Essenciais",subgroup:entry.subgroup||"",priority:entry.priority||"Normal",sourcePlanId:entry.sourcePlanId||"",sourceStepId:entry.sourceStepId||""}]};
-  });
+    const itemId=entry.id||crypto.randomUUID();
+    return modify(market,old=>{
+      if((old.entries||[]).some(e=>e.id===itemId))return old;
+      return {...old,entries:[...(old.entries||[]),{id:itemId,title:entry.title.trim(),
+        unit:entry.unit,plannedMilli:entry.plannedMilli,actualMilli:entry.plannedMilli,
+        estimated:entry.estimated,actual:entry.bought?entry.actual:null,bought:entry.bought,
+        estimateKnown:entry.estimateKnown!==false,unitReviewed:entry.unitReviewed!==false,
+        quantityReviewed:entry.quantityReviewed!==false,sourceBaseId:entry.sourceBaseId||"",
+        sourceSkuId:entry.sourceSkuId||"",category:entry.category||"",storageRoom:entry.storageRoom||"",
+        recipient:entry.recipient||"Casa",group:entry.group||"Essenciais",subgroup:entry.subgroup||"",
+        priority:entry.priority||"Normal",sourcePlanId:entry.sourcePlanId||"",
+        sourceStepId:entry.sourceStepId||""}]};
+    });
+  };
   /** Compra imprevista no supermercado: entra em No carrinho em uma transação.
    * Se já existe exatamente um pendente do mesmo item/variação e unidade,
    * move-o em vez de duplicar. Não altera notas ou catálogo.
    */
-  const addToCart=(market,entry)=>modify(market,old=>{
-    const purchased={...entry,bought:true,actualMilli:entry.plannedMilli,
-      estimated:entry.estimated??entry.actual,
-      actual:entry.actual,estimateKnown:true,
-      unitReviewed:true,quantityReviewed:true};
-    checkEntry(purchased);
+  const addToCart=(market,entry)=>{
+    const itemId=entry.id||crypto.randomUUID();
     const normalized=str=>String(str||"").normalize("NFD")
       .replace(/[\u0300-\u036f]/g,"").trim().toLowerCase().replace(/\s+/g," ");
-    const entries=old.entries||[];
-    const same=entries.filter(e=>!e.bought&&e.unit===purchased.unit&&
-      normalized(e.title)===normalized(purchased.title)&&
-      (!purchased.sourceSkuId||!e.sourceSkuId||e.sourceSkuId===purchased.sourceSkuId)&&
-      (!purchased.sourceBaseId||!e.sourceBaseId||e.sourceBaseId===purchased.sourceBaseId));
-    if(same.length===1){
-      return {...old,entries:entries.map(e=>e.id!==same[0].id?e:{
-        ...e,bought:true,actual:purchased.actual,actualMilli:purchased.plannedMilli,
-        plannedMilli:purchased.plannedMilli,estimated:e.estimateKnown!==false?e.estimated:purchased.actual,
+    const matching=items=>(items||[]).filter(e=>!e.bought&&e.unit===entry.unit&&
+      normalized(e.title)===normalized(entry.title)&&
+      (!entry.sourceSkuId||!e.sourceSkuId||e.sourceSkuId===entry.sourceSkuId)&&
+      (!entry.sourceBaseId||!e.sourceBaseId||e.sourceBaseId===entry.sourceBaseId));
+    const candidatesAtClick=matching(getState().baskets[market]?.entries);
+    return modify(market,old=>{
+      const purchased={...entry,bought:true,actualMilli:entry.plannedMilli,
+        estimated:entry.estimated??entry.actual,actual:entry.actual,estimateKnown:true,
+        unitReviewed:true,quantityReviewed:true};
+      checkEntry(purchased);
+      const entries=old.entries||[];
+      if(entries.some(e=>e.id===itemId))return old;
+      if(candidatesAtClick.length===1){
+        const original=candidatesAtClick[0],current=entries.find(e=>e.id===original.id);
+        if(!current||!same(current,original))
+          throw Error("Este produto mudou no outro aparelho. Confira antes de adicionar outra unidade.");
+      }
+      const samePending=matching(entries);
+      if(samePending.length===1){
+        return {...old,entries:entries.map(e=>e.id!==samePending[0].id?e:{
+          ...e,bought:true,actual:purchased.actual,actualMilli:purchased.plannedMilli,
+          plannedMilli:purchased.plannedMilli,
+          estimated:e.estimateKnown!==false?e.estimated:purchased.actual,
+          estimateKnown:true,unitReviewed:true,quantityReviewed:true,
+          sourceBaseId:e.sourceBaseId||purchased.sourceBaseId||"",
+          sourceSkuId:e.sourceSkuId||purchased.sourceSkuId||""
+        })};
+      }
+      const record={id:itemId,title:purchased.title.trim(),unit:purchased.unit,
+        plannedMilli:purchased.plannedMilli,actualMilli:purchased.plannedMilli,
+        estimated:purchased.actual,actual:purchased.actual,bought:true,
         estimateKnown:true,unitReviewed:true,quantityReviewed:true,
-        sourceBaseId:e.sourceBaseId||purchased.sourceBaseId||"",
-        sourceSkuId:e.sourceSkuId||purchased.sourceSkuId||""
-      })};
-    }
-    const record={id:crypto.randomUUID(),title:purchased.title.trim(),unit:purchased.unit,
-      plannedMilli:purchased.plannedMilli,actualMilli:purchased.plannedMilli,
-      estimated:purchased.actual,actual:purchased.actual,bought:true,
-      estimateKnown:true,unitReviewed:true,quantityReviewed:true,
-      sourceBaseId:purchased.sourceBaseId||"",sourceSkuId:purchased.sourceSkuId||"",
-      category:purchased.category||"",storageRoom:purchased.storageRoom||"",
-      recipient:purchased.recipient||"Casa",group:purchased.group||"Essenciais",
-      subgroup:purchased.subgroup||"",priority:purchased.priority||"Normal",
-      sourcePlanId:"",sourceStepId:""};
-    return {...old,entries:[...entries,record]};
-  });
-  const updateItem=(market,id,entry)=>modify(market,old=>{
-    const entries=old.entries||[];
-    const original=entries.find(e=>e.id===id);
-    if(!original)throw new Error("Produto não encontrado. Atualize a lista.");
-    const next={...original,...entry,title:entry.title.trim(),actualMilli:entry.bought?(entry.actualMilli??entry.plannedMilli):(entry.actualMilli??original.actualMilli??entry.plannedMilli),actual:entry.bought?entry.actual:null};
-    checkEntry(next);
-    return {...old,entries:entries.map(e=>e.id===id?next:e)};
-  });
-  const removeItem=(market,id)=>modify(market,old=>{
-    if(!(old.entries||[]).some(e=>e.id===id))throw new Error("Item não encontrado.");
-    return {...old,entries:old.entries.filter(e=>e.id!==id)};
-  });
+        sourceBaseId:purchased.sourceBaseId||"",sourceSkuId:purchased.sourceSkuId||"",
+        category:purchased.category||"",storageRoom:purchased.storageRoom||"",
+        recipient:purchased.recipient||"Casa",group:purchased.group||"Essenciais",
+        subgroup:purchased.subgroup||"",priority:purchased.priority||"Normal",
+        sourcePlanId:"",sourceStepId:""};
+      return {...old,entries:[...entries,record]};
+    });
+  };
+  const updateItem=(market,id,entry)=>{
+    const observed=getState().baskets[market]?.entries?.find(e=>e.id===id);
+    if(!observed)throw Error("Produto não encontrado no carrinho aberto. Atualize a tela.");
+    return modify(market,old=>{
+      const desired={...observed,...entry,title:entry.title.trim(),
+        actualMilli:entry.bought?(entry.actualMilli??entry.plannedMilli):
+          (entry.actualMilli??observed.actualMilli??entry.plannedMilli),
+        actual:entry.bought?entry.actual:null};
+      const merged=editItem(old.entries||[],observed,desired);
+      checkEntry(merged.find(e=>e.id===id));
+      return {...old,entries:merged};
+    });
+  };
+  const removeItem=(market,id)=>{
+    const observed=getState().baskets[market]?.entries?.find(e=>e.id===id);
+    return modify(market,old=>({...old,entries:deleteItem(old.entries||[],observed)}));
+  };
   // Aceita apenas sugestões derivadas de registros atuais; o usuário confirma
   // o lote antes da transação. Preços manuais ou itens comprados não são tocados.
   const fillMissingEstimates=(market,proposals)=>modify(market,old=>({
@@ -174,15 +208,21 @@ export function createShoppingActions(db,auth,getState) {
       return {saved:true};
     });
   }
-  const changeBudget=(market,budget)=>modify(market,old=>({...old,budget}));
-  const repurchase=(market,receiptId,itemId)=>modify(market,old=>{
+  const changeBudget=(market,budget)=>{
+    const previous=getState().baskets[market]?.budget||0;
+    return modify(market,old=>editBudget(old,previous,budget));
+  };
+  const repurchase=(market,receiptId,itemId)=>{
+    const newId=crypto.randomUUID();
+    return modify(market,old=>{
     const source=getState().shared.find(r=>r.kind==="receipt"&&r.id===receiptId&&r.market===market);
     const e=source?.entries?.find(e=>e.id===itemId&&e.bought&&String(e.title||"").trim());
     if(!e)throw new Error("Compra antiga não encontrada na nuvem.");
     const estimate=e.actual!=null?e.actual:e.estimated;
-    const next={...e,id:crypto.randomUUID(),bought:false,actual:null,actualMilli:e.plannedMilli,estimated:estimate,estimateKnown:estimate!=null,unitReviewed:UNITS.includes(e.unit),quantityReviewed:Number(e.plannedMilli)>0};
+    const next={...e,id:newId,bought:false,actual:null,actualMilli:e.plannedMilli,estimated:estimate,estimateKnown:estimate!=null,unitReviewed:UNITS.includes(e.unit),quantityReviewed:Number(e.plannedMilli)>0};
     return {...old,entries:[...(old.entries||[]),next]};
-  });
+    });
+  };
   /** Merge a user-exported Android shopping basket, never replacing cloud entries or IDs. */
   const importBackup=(market,backup)=>modify(market,old=>{
     const incoming=Array.isArray(backup?.entries)?backup.entries:[];
