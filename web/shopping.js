@@ -1,7 +1,7 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
 import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
-import {same,editItem,deleteItem,editBudget} from "./basket-concurrency.js";
+import {same,editItem,deleteItem,editBudget,retryIfRevisionAdvanced} from "./basket-concurrency.js";
 import {doc,runTransaction,getDocFromServer,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
@@ -50,8 +50,9 @@ export function createShoppingActions(db,auth,getState) {
     if(!["Mercado","Açougue"].includes(market))throw Error("Lista inválida.");
     const observed=state.baskets[market]||null;
     const initial=freshBasket(market);
-    return runTransaction(db,async tx=>{
-      const ref=basketRef(state,market),snap=await tx.get(ref);
+    const ref=basketRef(state,market);
+    const attempt=()=>runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);
       const old=snap.exists()?snap.data():initial;
       if(observed?.generation&&old.generation!==observed.generation)
         throw Error("Esta compra foi finalizada em outro aparelho. Atualize o carrinho.");
@@ -61,6 +62,16 @@ export function createShoppingActions(db,auth,getState) {
       if(same(next,old))return {unchanged:true};
       tx.set(ref,{...next,revision:Number(old.revision||0)+1});
       return {saved:true};
+    });
+    return retryIfRevisionAdvanced({
+      operation:attempt,
+      readLatest:async()=>{
+        const snapshot=await getDocFromServer(ref);
+        return snapshot.exists()?snapshot.data():null;
+      },
+      observedGeneration:observed?.generation,
+      observedRevision:observed?.revision??0,
+      maxRetries:2
     });
   }
   const addItem=(market,entry)=>{
