@@ -2,6 +2,7 @@ import {shoppingView,installShoppingUI,getShoppingRoutePrefs,restoreShoppingRout
 import {parseAppRoute,writeAppRoute} from "./navigation.js";
 import {captureViewPosition,saveViewPosition,loadViewPosition,restoreViewPosition} from "./scroll-position.js";
 import {isQuotaError,cacheBasketSnapshot} from "./emergency-cart.js";
+import {needsSharedRecords,needsCatalogLinks} from "./firestore-listener-policy.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -66,6 +67,7 @@ function restoreScrollAfterRefresh(){
 }
 let listeners = [];
 let houseListeners = [];
+let sharedSubscribed=false,linksSubscribed=false;
 const $ = (id) => document.getElementById(id);
 const fmt = (value) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(value)||0)/100);
 const esc = (s) => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -125,6 +127,7 @@ function scheduleRender(){
 }
 function render(){
   if(!$("app")||$("app").hidden) return;
+  ensureHeavyData();
   const currentHash=window.location.hash;
   const preserved=(scrollRestored&&currentHash===lastRenderedHash&&state.tab==="Compras")?
     captureViewPosition($("content")):null;
@@ -158,6 +161,7 @@ function clearListeners(){
   for(const stop of [...listeners,...houseListeners]) stop();
   listeners=[];houseListeners=[];
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
+  sharedSubscribed=false;linksSubscribed=false;
 }
 function watch(reference, callback, source, group="global", onError=null){
   // Sem includeMetadataChanges: mudanças só de metadados não precisam
@@ -165,7 +169,8 @@ function watch(reference, callback, source, group="global", onError=null){
   const stop=onSnapshot(reference,snapshot=>{
     if(state.uid!==auth.currentUser?.uid)return;
     callback(snapshot);
-    state.sync=snapshot.metadata.fromCache?"Exibindo cache · conferindo conexão":"Dados recebidos do Firebase";
+    state.sync=snapshot.metadata.hasPendingWrites?"Alterações locais · aguardando confirmação":
+      snapshot.metadata.fromCache?"Exibindo cache · conferindo conexão":"Dados recebidos do Firebase";
     scheduleRender();
   },error=>{
     state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";
@@ -175,10 +180,27 @@ function watch(reference, callback, source, group="global", onError=null){
   });
   if(group==="house")houseListeners.push(stop);else listeners.push(stop);
 }
+function ensureHeavyData(){
+  if(!state.household)return;
+  const mode=getShoppingRoutePrefs().shopMode;
+  if(needsSharedRecords(state.tab,mode)&&!sharedSubscribed){
+    sharedSubscribed=true;
+    watch(collection(db,"households",state.household,"records"),s=>{
+      state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;
+    },"registros compartilhados","house");
+  }
+  if(needsCatalogLinks(state.tab,mode)&&!linksSubscribed){
+    linksSubscribed=true;
+    watch(collection(db,"households",state.household,"catalogLinks"),s=>{
+      state.links=s.docs.map(d=>({id:d.id,...d.data()}));
+    },"vínculos do catálogo","house");
+  }
+}
 function connectHousehold(householdId){
   for(const stop of houseListeners)stop();
   houseListeners=[];
   state.shared=[];state.links=[];state.baskets={};
+  sharedSubscribed=false;linksSubscribed=false;
   firstHouseData={shared:false,baskets:false};
   state.household=householdId;
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
@@ -190,8 +212,7 @@ function connectHousehold(householdId){
       cacheBasketSnapshot(state,market,basket);
     firstHouseData.baskets=true;
   },"listas de compras","house");
-  watch(collection(db,"households",householdId,"records"),s=>{state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;},"registros compartilhados","house");
-  watch(collection(db,"households",householdId,"catalogLinks"),s=>{state.links=s.docs.map(d=>({id:d.id,...d.data()}));},"vínculos do catálogo","house");
+  ensureHeavyData();
 }
 installShoppingUI({root:$("content"),db,auth,getState:()=>state,render});
 
