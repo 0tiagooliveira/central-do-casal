@@ -69,7 +69,7 @@ function restoreScrollAfterRefresh(){
 }
 let listeners = [];
 let houseListeners = [];
-let sharedSubscribed=false,linksSubscribed=false;
+let sharedSubscribed=false,linksSubscribed=false,personalSubscribed=false;
 const $ = (id) => document.getElementById(id);
 const fmt = (value) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(value)||0)/100);
 const esc = (s) => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -163,7 +163,7 @@ function clearListeners(){
   for(const stop of [...listeners,...houseListeners]) stop();
   listeners=[];houseListeners=[];
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
-  sharedSubscribed=false;linksSubscribed=false;
+  sharedSubscribed=false;linksSubscribed=false;personalSubscribed=false;
   usageTracker.reset();state.firestoreUsage=usageTracker.summary();
 }
 function watch(reference, callback, source, group="global", onError=null){
@@ -186,8 +186,14 @@ function watch(reference, callback, source, group="global", onError=null){
   if(group==="house")houseListeners.push(stop);else listeners.push(stop);
 }
 function ensureHeavyData(){
-  if(!state.household)return;
   const mode=getShoppingRoutePrefs().shopMode;
+  if(state.uid&&needsSharedRecords(state.tab,mode)&&!personalSubscribed){
+    personalSubscribed=true;
+    watch(collection(db,"users",state.uid,"records"),s=>{
+      state.personal=s.docs.map(d=>({id:d.id,...d.data()}));
+    },"registros pessoais");
+  }
+  if(!state.household)return;
   if(needsSharedRecords(state.tab,mode)&&!sharedSubscribed){
     sharedSubscribed=true;
     watch(collection(db,"households",state.household,"records"),s=>{
@@ -252,7 +258,6 @@ onAuthStateChanged(auth,user=>{
       state.sync="Modo local disponível · Firestore com limite atingido";
     }
   });
-  watch(collection(db,"users",user.uid,"records"),s=>{state.personal=s.docs.map(d=>({id:d.id,...d.data()}));},"registros pessoais");
   render();
 },error=>{
   $("session-loading").hidden=true;
