@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {same,editItem,deleteItem,editBudget,rebaseOfflineBasket} from "../basket-concurrency.js";
+import {same,editItem,deleteItem,editBudget,rebaseOfflineBasket,retryIfRevisionAdvanced} from "../basket-concurrency.js";
 import {isRecoverableSyncError,replayEmergency} from "../emergency-cart.js";
 import {needsSharedRecords,needsCatalogLinks} from "../firestore-listener-policy.js";
 import {inspectLocalBackup} from "../../scripts/audit-local-backup.mjs";
@@ -229,4 +229,52 @@ test("read-only comparison rejects different purchase and conflicting field",()=
     basket([{...a,actual:600},b],{revision:9})),/outro aparelho/);
   assert.throws(()=>previewBackupAgainstServer(file,
     {...state,household:"outra-casa"},baseline),/mesma casa/);
+});
+
+test("permission-denied is retried only when the same basket revision really advanced",async()=>{
+  const denied=()=>Object.assign(new Error("Denied"),{code:"permission-denied"});
+  let writes=0,reads=0;
+  const result=await retryIfRevisionAdvanced({
+    operation:async()=>{writes++;if(writes===1)throw denied();return "salvo";},
+    readLatest:async()=>{reads++;return {generation:"valid",revision:10};},
+    observedGeneration:"valid",observedRevision:9,maxRetries:2
+  });
+  assert.equal(result,"salvo");
+  assert.equal(writes,2);
+  assert.equal(reads,1);
+});
+
+test("real permission denial and new shopping generation never trigger retry",async()=>{
+  const denied=()=>Object.assign(new Error("Permissão negada"),{code:"permission-denied"});
+  for(const latest of [
+    {generation:"valid",revision:9},
+    {generation:"other",revision:10},
+    null
+  ]){
+    let writes=0;
+    await assert.rejects(retryIfRevisionAdvanced({
+      operation:async()=>{writes++;throw denied();},
+      readLatest:async()=>latest,
+      observedGeneration:"valid",observedRevision:9,maxRetries:2
+    }),/Permissão negada/);
+    assert.equal(writes,1);
+  }
+});
+
+test("concurrent revision recovery has bounded retries and does not retry unrelated errors",async()=>{
+  let reads=0,attempts=0;
+  await assert.rejects(retryIfRevisionAdvanced({
+    operation:async()=>{attempts++;throw Object.assign(new Error("Denied"),{code:"permission-denied"});},
+    readLatest:async()=>({generation:"same",revision:++reads+4}),
+    observedGeneration:"same",observedRevision:4,maxRetries:2
+  }),/Denied/);
+  assert.equal(attempts,3);
+  assert.equal(reads,2);
+  let called=false;
+  await assert.rejects(retryIfRevisionAdvanced({
+    operation:async()=>{throw Object.assign(new Error("Network"),{code:"unavailable"});},
+    readLatest:async()=>{called=true;return null;},
+    observedGeneration:"same",observedRevision:4
+  }),/Network/);
+  assert.equal(called,false);
 });
