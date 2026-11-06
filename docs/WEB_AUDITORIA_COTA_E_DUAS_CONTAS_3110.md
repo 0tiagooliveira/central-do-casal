@@ -39,7 +39,7 @@ O plugin Firebase pode ser conectado pelo titular do projeto. A análise da nuve
 
 ## Backup exportado em 01/11
 
-Analisado **somente localmente** em memória, sem incluir o arquivo real no GitHub: 56 itens iniciais, 26 atualizações, 2 inclusões, 58 itens finais, 32 comprados e R$ 601,97 de total. Reprodução exata, sem IDs duplicados. A comparação com o estado real do servidor continua pendente por falta de acesso autenticado. Não interpretar a reprodução como sincronização confirmada.
+Analisado **somente localmente** em memória, sem incluir o arquivo real no GitHub: 56 itens iniciais, 26 atualizações, 2 inclusões, 58 itens finais e 32 marcados como comprados. Os valores monetários reais não foram colocados no repositório. Reprodução exata, sem IDs duplicados. A comparação com o estado real do servidor continua pendente por falta de acesso autenticado. Não interpretar a reprodução como sincronização confirmada.
 
 ## QA seguro para duas contas
 
