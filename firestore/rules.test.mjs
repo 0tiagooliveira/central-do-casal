@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { editItem, same } from '../web/basket-concurrency.js';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -133,6 +134,34 @@ test('member can leave and loses access immediately',async()=> {
   const d=db('bob'); const b=writeBatch(d); b.update(doc(d,'households/home'),{members:arrayRemove('bob')});b.update(doc(d,'users/bob'),{householdId:''});await assertSucceeds(b.commit());await assertFails(getDoc(doc(d,'households/home/records/shared')));
 });
 test('member cannot remove partner',async()=> {await assertFails(updateDoc(doc(db('alice'),'households/home'),{members:['alice']}));});
+
+test('two household members can buy different items during overlapping transactions', async()=>{
+  const alice=db('alice'),bob=db('bob');
+  const refA=doc(alice,'households/home/baskets/Mercado');
+  const refB=doc(bob,'households/home/baskets/Mercado');
+  const item=id=>({id,title:id,unit:'un',plannedMilli:1000,actualMilli:1000,
+    bought:false,actual:null,estimated:100,unitReviewed:true,quantityReviewed:true});
+  const a=item('arroz'),b=item('leite');
+  const initial={market:'Mercado',generation:'s'.repeat(32),budget:5000,revision:1,entries:[a,b]};
+  await assertSucceeds(setDoc(refA,initial));
+  const observedA=structuredClone(a),observedB=structuredClone(b);
+  async function commit(d,ref,observed,amount){
+    return runTransaction(d,async tx=>{
+      const snap=await tx.get(ref),latest=snap.data();
+      const next=editItem(latest.entries,observed,{...observed,bought:true,actual:amount});
+      if(!same(next,latest.entries))tx.set(ref,{...latest,entries:next,revision:latest.revision+1});
+    });
+  }
+  await assertSucceeds(Promise.all([
+    commit(alice,refA,observedA,220),
+    commit(bob,refB,observedB,350)
+  ]));
+  const after=(await getDoc(refA)).data();
+  assert.equal(after.entries.find(x=>x.id==='arroz').actual,220);
+  assert.equal(after.entries.find(x=>x.id==='leite').actual,350);
+  assert.equal(after.revision,3);
+});
+
 test('basket revisions reject stale concurrent updates',async()=> {
   const d=db('alice'); const ref=doc(d,'households/home/baskets/Mercado');
   const basket={market:'Mercado',generation:'a'.repeat(32),budget:1000,revision:1,entries:[]};await assertSucceeds(setDoc(ref,basket));await assertFails(setDoc(ref,basket));await assertSucceeds(setDoc(ref,{...basket,revision:2}));
