@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import { editItem, same } from '../web/basket-concurrency.js';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
