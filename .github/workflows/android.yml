@@ -61,6 +61,9 @@ jobs:
       - name: Install Firebase test dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Test Web purchase concurrency and offline recovery
+        run: npm run test:web
+
       - name: Run Firestore security rules tests
         run: npm run test:rules
 
