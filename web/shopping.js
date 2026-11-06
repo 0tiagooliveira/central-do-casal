@@ -211,8 +211,8 @@ export function createShoppingActions(db,auth,getState) {
       return {saved:true};
     });
   }
-  const changeBudget=(market,budget)=>{
-    const previous=getState().baskets[market]?.budget||0;
+  const changeBudget=(market,budget,observedBudget=null)=>{
+    const previous=observedBudget??(getState().baskets[market]?.budget||0);
     return modify(market,old=>editBudget(old,previous,budget));
   };
   const repurchase=(market,receiptId,itemId)=>{
