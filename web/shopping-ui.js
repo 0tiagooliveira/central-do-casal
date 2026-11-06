@@ -24,6 +24,27 @@ const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":
 const shopPrefs={mode:"catalog",source:"base",search:"",category:"Todas",limit:40,recoverableOnly:false,quantities:{},marketSection:"pending",listSearch:{Mercado:"",Açougue:""},marketSearch:{Mercado:"",Açougue:""}};
 // Unsaved price text is a preview, not a confirmed purchase or Firebase write.
 const priceDrafts={Mercado:{},Açougue:{}};
+function localFirestoreDiagnostics(state){
+  const summary=state.firestoreUsage;
+  if(!summary)return "";
+  const sources=summary.bySource||[];
+  const critical=sources.filter(x=>x.errors).map(x=>
+    clean(x.source)+": "+clean(x.lastError)+" ("+x.errors+")").join(" · ");
+  return `<details class="panel" style="margin:12px 0">
+    <summary><strong>Diagnóstico de sincronização</strong> · ${summary.snapshots} atualizações observadas</summary>
+    <p class="info-line">Contadores somente deste navegador, reiniciados ao entrar na conta.
+    Não são leituras cobradas nem cotas oficiais do Firebase.</p>
+    <div class="stats-bar">
+      <span>${summary.changes} alterações/documentos recebidos</span>
+      <span>${summary.cacheSnapshots} snapshots do cache</span>
+      <span>${summary.pendingWritesSnapshots} snapshots com escrita pendente</span>
+      <span>${summary.errors} erros observados</span>
+    </div>
+    ${critical?`<p class="emergency-sync-warning">Erros: ${critical}</p>`:""}
+    <p class="info-line">Para verificar cobranças, consulte Firebase Console → Firestore → Uso.
+    Este painel não consulta nem grava dados extras.</p>
+  </details>`;
+}
 try{
   const remembered=JSON.parse(sessionStorage.getItem("cdc:shopping-filters")||"null");
   if(remembered&&typeof remembered==="object"){
@@ -78,7 +99,7 @@ export function shoppingView({state}) {
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state)+localFirestoreDiagnostics(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
