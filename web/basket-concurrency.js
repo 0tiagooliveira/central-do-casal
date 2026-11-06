@@ -71,3 +71,29 @@ export function rebaseOfflineBasket(remote,baseline,local){
   }
   return {...remote,budget,entries:[...current.values()]};
 }
+
+// As regras exigem revisão crescente. Em disputa, a transação perdedora pode
+// receber permission-denied em vez de aborted. NÃO repetir sem evidência:
+// confirmar por leitura de servidor que a mesma cesta avançou de revisão.
+// Permissões reais continuam bloqueadas; há limite estrito de retentativas.
+export async function retryIfRevisionAdvanced({
+  operation,readLatest,observedGeneration,observedRevision,maxRetries=2
+}){
+  let lastSeen=Number(observedRevision);
+  if(!Number.isInteger(lastSeen)||lastSeen<0)lastSeen=0;
+  for(let attempt=0;;attempt++){
+    try{return await operation();}
+    catch(error){
+      const code=String(error?.code||"").replace(/^firestore\//,"");
+      if(code!=="permission-denied"||attempt>=maxRetries||!observedGeneration)
+        throw error;
+      let latest;
+      try{latest=await readLatest();}
+      catch{throw error;}
+      if(!latest||latest.generation!==observedGeneration||
+         !Number.isInteger(latest.revision)||latest.revision<=lastSeen)
+        throw error;
+      lastSeen=latest.revision;
+    }
+  }
+}
