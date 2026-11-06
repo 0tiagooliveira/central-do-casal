@@ -106,3 +106,29 @@ test("shopping basket stays live without eagerly loading the heavy collections",
   assert.equal(needsSharedRecords("Hoje","catalog"),true);
   assert.equal(needsCatalogLinks("Hoje","catalog"),false);
 });
+
+test("a long offline shopping session with repeated edits reconstructs without duplicates",()=>{
+  const baseline=basket(Array.from({length:56},(_,i)=>entry("fixture-"+i)));
+  const ops=[];
+  const finalEntries=baseline.entries.map(e=>({...e}));
+  for(let n=0;n<26;n++){
+    const index=n%20;
+    const updated={...finalEntries[index],actual:100+n,bought:true};
+    ops.push({type:"update",id:updated.id,entry:updated});
+    finalEntries[index]=updated;
+  }
+  for(const id of ["new-item-a","new-item-b"]){
+    const added=entry(id,{bought:true,actual:250});
+    ops.push({type:"add",entry:added});
+    finalEntries.push(added);
+  }
+  const draft={baseGeneration:baseline.generation,baseline,operations:ops,
+    basket:basket(finalEntries)};
+  const remote=basket(baseline.entries.map(e=>e.id==="fixture-55"?{...e,estimated:900}:e),
+    {revision:9});
+  const result=replayEmergency(remote,draft);
+  assert.equal(result.entries.length,58);
+  assert.equal(result.entries.find(e=>e.id==="fixture-55").estimated,900);
+  assert.equal(result.entries.find(e=>e.id==="fixture-0").actual,120);
+  assert.deepEqual(replayEmergency(result,draft).entries,result.entries);
+});
