@@ -3,6 +3,7 @@ import {parseAppRoute,writeAppRoute} from "./navigation.js";
 import {captureViewPosition,saveViewPosition,loadViewPosition,restoreViewPosition} from "./scroll-position.js";
 import {isQuotaError,cacheBasketSnapshot} from "./emergency-cart.js";
 import {needsSharedRecords,needsCatalogLinks} from "./firestore-listener-policy.js";
+import {createFirestoreUsageTracker} from "./firestore-usage-tracker.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -31,7 +32,8 @@ const initialHash=(()=>{
 if(!window.location.hash&&initialHash)window.history.replaceState(null,"",initialHash);
 const initialRoute=parseAppRoute(initialHash);
 restoreShoppingRoutePrefs(initialRoute);
-const state = { tab:initialRoute.tab, market:initialRoute.market, profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
+const usageTracker=createFirestoreUsageTracker();
+const state = { firestoreUsage:usageTracker.summary(),tab:initialRoute.tab, market:initialRoute.market, profile:null, uid:"", household:"", shared:[], personal:[], links:[], baskets:{}, error:"", sync:"Aguardando dados", loading:true };
 function saveHouseholdHint(uid,hid){
   if(!uid||!hid)return;
   try{localStorage.setItem("cdc:household-hint:"+uid,hid);}catch{}
@@ -162,6 +164,7 @@ function clearListeners(){
   listeners=[];houseListeners=[];
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
   sharedSubscribed=false;linksSubscribed=false;
+  usageTracker.reset();state.firestoreUsage=usageTracker.summary();
 }
 function watch(reference, callback, source, group="global", onError=null){
   // Sem includeMetadataChanges: mudanças só de metadados não precisam
@@ -169,10 +172,12 @@ function watch(reference, callback, source, group="global", onError=null){
   const stop=onSnapshot(reference,snapshot=>{
     if(state.uid!==auth.currentUser?.uid)return;
     callback(snapshot);
+    usageTracker.onSnapshot(source,snapshot);state.firestoreUsage=usageTracker.summary();
     state.sync=snapshot.metadata.hasPendingWrites?"Alterações locais · aguardando confirmação":
       snapshot.metadata.fromCache?"Exibindo cache · conferindo conexão":"Dados recebidos do Firebase";
     scheduleRender();
   },error=>{
+    usageTracker.onError(source,error);state.firestoreUsage=usageTracker.summary();
     state.error="Não foi possível acessar "+source+": "+(error?.code||"erro de sincronização")+". Confira regras e a conta.";
     state.sync="Conexão precisa de atenção";
     if(typeof onError==="function")onError(error);
