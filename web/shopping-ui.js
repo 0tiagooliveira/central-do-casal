@@ -591,7 +591,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(act==="remove-inline"&&item){
       const wasBought=item.bought?" (já está no carrinho)":"";
       if(confirm('Remover "'+item.title+'"'+wasBought+' da lista de '+market+'? O produto continua no catálogo e nas compras antigas.')){
-        run(()=>actions.removeItem(market,item.id),"Produto removido da lista",
+        run(()=>actions.removeItem(market,item.id,item),"Produto removido da lista",
           {market,operation:{type:"remove",id:item.id}});
       }
       return;
@@ -634,7 +634,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }else editor(item,true);}
     if(act==="budget"){
       const entry=prompt("Novo orçamento de "+market+" (R$)",inputMoney(s.baskets[market]?.budget||0));
-      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
+      if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget,s.baskets[market]?.budget??0),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
       const previous=readOfflineClosure(getState(),market);
