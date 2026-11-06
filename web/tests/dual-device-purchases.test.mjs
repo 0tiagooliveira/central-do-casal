@@ -4,6 +4,7 @@ import {same,editItem,deleteItem,editBudget,rebaseOfflineBasket} from "../basket
 import {isRecoverableSyncError,replayEmergency} from "../emergency-cart.js";
 import {needsSharedRecords,needsCatalogLinks} from "../firestore-listener-policy.js";
 import {inspectLocalBackup} from "../../scripts/audit-local-backup.mjs";
+import {previewBackupAgainstServer} from "../backup-server-preview.js";
 import {createFirestoreUsageTracker} from "../firestore-usage-tracker.js";
 
 const entry=(id,other={})=>({
@@ -186,4 +187,46 @@ test("client-side quota diagnostics only count snapshots, never write to Firebas
   assert.equal(JSON.stringify(data).includes("No user details"),false);
   tracker.reset();
   assert.equal(tracker.summary().snapshots,0);
+});
+
+test("read-only server comparison preserves independent remote edits and never mutates inputs",()=>{
+  const baseline=basket([a,b]);
+  const edited={...a,bought:true,actual:290};
+  const newEntry=entry("extra",{bought:true,actual:430});
+  const operations=[{type:"update",id:a.id,entry:edited},{type:"add",entry:newEntry}];
+  const file={type:"central-do-casal-emergency-backup",household:"home-simulado",
+    market:"Mercado",baseRevision:baseline.revision,baseline,operations,
+    baskets:{Mercado:basket([edited,b,newEntry])}};
+  const state={uid:"alice",household:"home-simulado",baskets:{}};
+  const remote=basket([a,{...b,estimated:720}],{revision:11});
+  const original=structuredClone(remote);
+  const result=previewBackupAgainstServer(file,state,remote);
+  assert.equal(result.status,"merge-possible");
+  assert.equal(result.added,1);
+  assert.equal(result.updated,1);
+  assert.equal(result.removed,0);
+  assert.equal(result.readOnly,true);
+  assert.equal(result.shouldRecheckAtCommit,true);
+  assert.deepEqual(remote,original);
+  const applied=replayEmergency(remote,{baseline,baseGeneration:baseline.generation,
+    operations,basket:file.baskets.Mercado});
+  const repeated=previewBackupAgainstServer(file,state,applied);
+  assert.equal(repeated.status,"already-synced");
+});
+
+test("read-only comparison rejects different purchase and conflicting field",()=>{
+  const baseline=basket([a,b]);
+  const bought={...a,bought:true,actual:200};
+  const file={type:"central-do-casal-emergency-backup",household:"home-simulado",
+    market:"Mercado",baseRevision:baseline.revision,baseline,
+    operations:[{type:"update",id:a.id,entry:bought}],
+    baskets:{Mercado:basket([bought,b])}};
+  const state={uid:"alice",household:"home-simulado",baskets:{}};
+  assert.throws(()=>previewBackupAgainstServer(file,state,null),/servidor/);
+  assert.throws(()=>previewBackupAgainstServer(file,state,
+    basket([a,b],{generation:"nova-geracao"})),/outra compra/);
+  assert.throws(()=>previewBackupAgainstServer(file,state,
+    basket([{...a,actual:600},b],{revision:9})),/outro aparelho/);
+  assert.throws(()=>previewBackupAgainstServer(file,
+    {...state,household:"outra-casa"},baseline),/mesma casa/);
 });
