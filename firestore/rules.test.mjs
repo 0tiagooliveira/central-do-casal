@@ -202,6 +202,10 @@ test('two member accounts commit overlapping Firestore transactions on different
   assert.equal(result.entries.find(x=>x.id==='arroz').actual,290);
   assert.equal(result.entries.find(x=>x.id==='leite').actual,430);
   assert.equal(result.entries.length,2);
+  // Ambos os logins conseguem recuperar exatamente a mesma cesta do servidor.
+  const bobView=(await getDocFromServer(refB)).data();
+  assert.equal(bobView.revision,3);
+  assert.deepEqual(bobView.entries,result.entries);
 });
 test('basket revisions reject stale concurrent updates',async()=> {
   const d=db('alice'); const ref=doc(d,'households/home/baskets/Mercado');
