@@ -4,6 +4,7 @@ import {same,editItem,deleteItem,editBudget,rebaseOfflineBasket} from "../basket
 import {isRecoverableSyncError,replayEmergency} from "../emergency-cart.js";
 import {needsSharedRecords,needsCatalogLinks} from "../firestore-listener-policy.js";
 import {inspectLocalBackup} from "../../scripts/audit-local-backup.mjs";
+import {createFirestoreUsageTracker} from "../firestore-usage-tracker.js";
 
 const entry=(id,other={})=>({
   id,title:id,unit:"un",plannedMilli:1000,actualMilli:1000,
@@ -162,4 +163,27 @@ test("local backup auditor reproduces 56 items and 28 operations with no Firebas
   const remote={...structuredClone(original),generation:"outra-geracao"};
   assert.equal(inspectLocalBackup(backup,remote).remoteStatus,
     "geração diferente: sincronização bloqueada");
+});
+
+test("client-side quota diagnostics only count snapshots, never write to Firebase",()=>{
+  const tracker=createFirestoreUsageTracker();
+  tracker.onSnapshot("listas de compras",{
+    docs:[{},{}],docChanges:()=>[{},{}],
+    metadata:{fromCache:false,hasPendingWrites:false}
+  });
+  tracker.onSnapshot("listas de compras",{
+    docs:[{},{}],docChanges:()=>[{}],
+    metadata:{fromCache:true,hasPendingWrites:true}
+  });
+  tracker.onError("listas de compras",{code:"resource-exhausted",message:"No user details saved"});
+  const data=tracker.summary();
+  assert.equal(data.snapshots,2);
+  assert.equal(data.changes,3);
+  assert.equal(data.cacheSnapshots,1);
+  assert.equal(data.pendingWritesSnapshots,1);
+  assert.equal(data.errors,1);
+  assert.equal(data.bySource[0].lastError,"resource-exhausted");
+  assert.equal(JSON.stringify(data).includes("No user details"),false);
+  tracker.reset();
+  assert.equal(tracker.summary().snapshots,0);
 });
