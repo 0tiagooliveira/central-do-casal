@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,isRecoverableSyncError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -242,14 +242,14 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }
       await job();dlg.close();notify(description+" · sincronizado no Firebase.");
     }catch(e){
-      if(fallback?.market&&isQuotaError(e)){
+      if(fallback?.market&&isRecoverableSyncError(e)){
         try{
           saveEmergency(getState(),fallback.market,fallback.operation);
           if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
             delete priceDrafts[fallback.market][fallback.operation.id];
           if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
           dlg.close();render();
-          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
+          notify(description+" · conexão/limite do Firebase indisponível. Salvo SOMENTE neste aparelho. Faça backup.",true);
           return;
         }catch(saveError){
           notify(saveError.message,true);
@@ -282,7 +282,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     form.elements.title.focus();
     form.elements.bought.addEventListener("change",()=>{form.querySelector(".actual-field").hidden=!form.elements.bought.checked;});
     dlg.querySelector("[data-cancel]").addEventListener("click",()=>dlg.close());
-    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id),"Produto excluído",
+    dlg.querySelector("[data-remove]")?.addEventListener("click",()=>{if(confirm("Excluir este produto da lista atual?"))run(()=>actions.removeItem(market,item.id,item),"Produto excluído",
       {market,operation:{type:"remove",id:item.id}});});
     form.addEventListener("submit",event=>{
       event.preventDefault();
@@ -294,7 +294,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         if(!entry.title)throw new Error("Informe o nome do produto.");
         const offlineEntry=item?{...item,...entry}:{...entry,id:crypto.randomUUID()};
         const operation=item?{type:"update",id:item.id,entry:offlineEntry}:{type:"add",entry:offlineEntry};
-        run(()=>item?actions.updateItem(market,item.id,entry):actions.addItem(market,entry),
+        run(()=>item?actions.updateItem(market,item.id,entry,item):actions.addItem(market,offlineEntry),
           "Produto salvo",{market,operation});
       }catch(e){notify(e.message,true);}
     });
@@ -504,13 +504,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     if(!s.household){notify("Você precisa entrar no mesmo espaço compartilhado do Android para editar.",true);return;}
     if(act==="market-add-cart"){
       showMarketAddDialog({dialog:dlg,state:s,notify,
-        onSubmit:entry=>run(async()=>{
-          await actions.addToCart(market,entry);
+        onSubmit:entry=>{
+        const stableEntry={...entry,id:entry.id||crypto.randomUUID()};
+        return run(async()=>{
+          await actions.addToCart(market,stableEntry);
           shopPrefs.marketSection="bought";
           rememberShoppingRoute();
           render();
         },"Produto registrado diretamente no carrinho",
-        {market,operation:{type:"addToCart",entry}})});
+        {market,operation:{type:"addToCart",entry:stableEntry}});
+        }});
       return;
     }
     const item=(s.baskets[market]?.entries||[]).find(e=>e.id===button.dataset.itemId);
@@ -552,8 +555,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         estimated:Number.isFinite(last.cents)?Math.round(last.cents):0,
         estimateKnown:Number.isFinite(last.cents)&&last.cents>=0,
         sourceSkuId:sku.id});
-      run(()=>actions.addItem(market,draft),"Apresentação adicionada à lista",
-        {market,operation:{type:"add",entry:{...draft,id:crypto.randomUUID(),bought:false,actual:null}}});
+      const stableDraft={...draft,id:crypto.randomUUID()};
+      run(()=>actions.addItem(market,stableDraft),"Apresentação adicionada à lista",
+        {market,operation:{type:"add",entry:{...stableDraft,bought:false,actual:null}}});
       return;
     }
     if(act==="choose-catalog"){
@@ -568,8 +572,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       d.plannedMilli=chosenQuantity;d.actualMilli=chosenQuantity;d.quantityReviewed=true;
       const estimate=suggestedEstimate(d,s.shared,s.links||[],market);
       if(estimate?.safe){d.estimated=estimate.cents;d.estimateKnown=true;}
-      run(()=>actions.addItem(market,d),"Produto adicionado à lista",
-        {market,operation:{type:"add",entry:{...d,id:crypto.randomUUID(),bought:false,actual:null}}});
+      const stableDraft={...d,id:crypto.randomUUID()};
+      run(()=>actions.addItem(market,stableDraft),"Produto adicionado à lista",
+        {market,operation:{type:"add",entry:{...stableDraft,bought:false,actual:null}}});
       return;
     }
     if(act==="fill-estimates"){
