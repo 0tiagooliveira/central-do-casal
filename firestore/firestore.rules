@@ -91,15 +91,19 @@ service cloud.firestore {
       );
       match /baskets/{market} {
         allow read: if member(hid);
-        allow create, update: if member(hid) && market in ['Mercado', 'Açougue']
-          && request.resource.data.keys().hasOnly(['market','generation','budget','revision','entries'])
-          && request.resource.data.market == market
-          && request.resource.data.generation is string && request.resource.data.generation.size() >= 32
-          && request.resource.data.budget is int && request.resource.data.budget >= 0 && request.resource.data.budget <= 1000000000
-          && request.resource.data.entries is list && request.resource.data.entries.size() <= 200
-          && request.resource.data.revision is int
-          && ((!exists(/databases/$(database)/documents/households/$(hid)/baskets/$(market)) && request.resource.data.revision == 1)
-            || (exists(/databases/$(database)/documents/households/$(hid)/baskets/$(market)) && request.resource.data.revision == resource.data.revision + 1));
+        function validBasket() {
+          return member(hid) && market in ['Mercado', 'Açougue']
+            && request.resource.data.keys().hasOnly(['market','generation','budget','revision','entries'])
+            && request.resource.data.market == market
+            && request.resource.data.generation is string && request.resource.data.generation.size() >= 32
+            && request.resource.data.budget is int && request.resource.data.budget >= 0 && request.resource.data.budget <= 1000000000
+            && request.resource.data.entries is list && request.resource.data.entries.size() <= 200
+            && request.resource.data.revision is int;
+        }
+        // Criar e atualizar são eventos distintos. Evita consultar a existência
+        // do próprio documento em plena transação e mantém CAS por revisão.
+        allow create: if validBasket() && request.resource.data.revision == 1;
+        allow update: if validBasket() && request.resource.data.revision == resource.data.revision + 1;
         allow delete: if false;
       }
       match /catalogLinks/{skuId} {
