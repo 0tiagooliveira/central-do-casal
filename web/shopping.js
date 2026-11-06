@@ -119,8 +119,8 @@ export function createShoppingActions(db,auth,getState) {
       return {...old,entries:[...entries,record]};
     });
   };
-  const updateItem=(market,id,entry)=>{
-    const observed=getState().baskets[market]?.entries?.find(e=>e.id===id);
+  const updateItem=(market,id,entry,originalSnapshot=null)=>{
+    const observed=originalSnapshot||getState().baskets[market]?.entries?.find(e=>e.id===id);
     if(!observed)throw Error("Produto não encontrado no carrinho aberto. Atualize a tela.");
     return modify(market,old=>{
       const desired={...observed,...entry,title:entry.title.trim(),
@@ -132,8 +132,8 @@ export function createShoppingActions(db,auth,getState) {
       return {...old,entries:merged};
     });
   };
-  const removeItem=(market,id)=>{
-    const observed=getState().baskets[market]?.entries?.find(e=>e.id===id);
+  const removeItem=(market,id,originalSnapshot=null)=>{
+    const observed=originalSnapshot||getState().baskets[market]?.entries?.find(e=>e.id===id);
     return modify(market,old=>({...old,entries:deleteItem(old.entries||[],observed)}));
   };
   // Aceita apenas sugestões derivadas de registros atuais; o usuário confirma
