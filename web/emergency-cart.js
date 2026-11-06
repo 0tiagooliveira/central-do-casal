@@ -130,6 +130,11 @@ export function isQuotaError(error) {
   return code.includes("resource-exhausted")||code.includes("quota")||
     /quota exceeded|exceeded.*quota|quota.*exceeded|limit.*exceeded|limite de cota/.test(message);
 }
+export function isRecoverableSyncError(error){
+  if(isQuotaError(error))return true;
+  const code=String(error?.code||"").toLowerCase().replace(/^firestore\//,"");
+  return ["unavailable","deadline-exceeded","network-request-failed"].includes(code);
+}
 export function hasOfflineClosurePending(state,market=state.market){
   if(!state?.uid||!state?.household||!allowed.includes(market))return false;
   try{
