@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {same,editItem,deleteItem,editBudget,rebaseOfflineBasket} from "../basket-concurrency.js";
 import {isRecoverableSyncError,replayEmergency} from "../emergency-cart.js";
 import {needsSharedRecords,needsCatalogLinks} from "../firestore-listener-policy.js";
+import {inspectLocalBackup} from "../../scripts/audit-local-backup.mjs";
 
 const entry=(id,other={})=>({
   id,title:id,unit:"un",plannedMilli:1000,actualMilli:1000,
@@ -131,4 +132,34 @@ test("a long offline shopping session with repeated edits reconstructs without d
   assert.equal(result.entries.find(e=>e.id==="fixture-55").estimated,900);
   assert.equal(result.entries.find(e=>e.id==="fixture-0").actual,120);
   assert.deepEqual(replayEmergency(result,draft).entries,result.entries);
+});
+
+test("local backup auditor reproduces 56 items and 28 operations with no Firebase calls",()=>{
+  const original=basket(Array.from({length:56},(_,i)=>entry("synthetic-"+i)));
+  const current=structuredClone(original),ops=[];
+  for(let i=0;i<26;i++){
+    const edited={...current.entries[i],bought:true,actual:105+i};
+    current.entries[i]=edited;
+    ops.push({type:"update",id:edited.id,entry:edited});
+  }
+  for(const name of ["new-a","new-b"]){
+    const added=entry(name,{bought:true,actual:230});
+    current.entries.push(added);
+    ops.push({type:"add",entry:added});
+  }
+  const backup={type:"central-do-casal-emergency-backup",market:"Mercado",
+    baseRevision:original.revision,baseline:original,operations:ops,
+    baskets:{Mercado:current}};
+  const stats=inspectLocalBackup(backup);
+  assert.equal(stats.baselineItems,56);
+  assert.equal(stats.operations,28);
+  assert.equal(stats.outputItems,58);
+  assert.equal(stats.purchasedItems,28);
+  assert.equal(stats.matchesExport,true);
+  assert.equal(stats.idempotent,true);
+  assert.equal(stats.liveFirebaseChecked,false);
+  assert.equal(stats.remoteStatus,"não fornecida");
+  const remote={...structuredClone(original),generation:"outra-geracao"};
+  assert.equal(inspectLocalBackup(backup,remote).remoteStatus,
+    "geração diferente: sincronização bloqueada");
 });
