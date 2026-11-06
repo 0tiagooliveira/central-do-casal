@@ -267,7 +267,10 @@ export function downloadEmergency(state,market){
 export function restoreBackupControl(state){
   if(!state.uid||!state.household)return "";
   return '<div class="emergency-restore-control"><button type="button" class="item-btn" data-shop-action="emergency-restore">'+
-    '↥ Recuperar compra do backup (.json)</button><span>Se o carrinho ficou desatualizado, carregue seu último backup para voltar a ver os preços neste celular.</span></div>';
+    '↥ Recuperar compra do backup (.json)</button>'+
+    '<button type="button" class="item-btn" data-shop-action="emergency-check-server">'+
+    'Conferir backup com servidor · somente leitura</button>'+
+    '<span>Conferir busca a cesta atual uma vez no Firebase, podendo consumir leituras, mas NÃO grava nem restaura dados. Recuperar carrega o backup só neste aparelho.</span></div>';
 }
 export function hasPreviousEmergency(state,market){
   try{return !!storage().getItem(key(state,market)+":anterior");}catch{return false;}
