@@ -2,7 +2,7 @@ import {applyMissingEstimates} from "./shopping-estimates.js";
 import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
 import {same,editItem,deleteItem,editBudget} from "./basket-concurrency.js";
-import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import {doc,runTransaction,getDocFromServer,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
 export function moneyCents(value) {
@@ -37,6 +37,14 @@ function assertSession(state,auth) {
 }
 export function createShoppingActions(db,auth,getState) {
   const basketRef=(state,market)=>doc(db,"households",state.household,"baskets",market);
+  // Só é acionado após escolha explícita de comparar o backup.
+  // Não escreve e não utiliza snapshot de cache como confirmação da nuvem.
+  async function readBasketFromServer(market){
+    const state=getState();assertSession(state,auth);
+    if(!["Mercado","Açougue"].includes(market))throw Error("Mercado inválido.");
+    const snapshot=await getDocFromServer(basketRef(state,market));
+    return snapshot.exists()?snapshot.data():null;
+  }
   async function modify(market,updater) {
     const state=getState();assertSession(state,auth);
     if(!["Mercado","Açougue"].includes(market))throw Error("Lista inválida.");
@@ -285,5 +293,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency,publishOfflinePurchase};
+  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency,publishOfflinePurchase,readBasketFromServer};
 }
