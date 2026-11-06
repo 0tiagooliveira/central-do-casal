@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { editItem, same } from '../web/basket-concurrency.js';
+import { editItem, same, retryIfRevisionAdvanced } from '../web/basket-concurrency.js';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 let env;
 const db = uid => env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
 const profile = uid => ({displayName: uid, householdId: 'home'});
@@ -175,16 +175,24 @@ test('two member accounts commit overlapping Firestore transactions on different
   const baseline={market:'Mercado',generation:'z'.repeat(32),budget:7000,
     revision:1,entries:[arroz,leite]};
   await assertSucceeds(setDoc(refA,baseline));
-  const submit=(database,reference,observed,price)=>runTransaction(database,async transaction=>{
-    const snapshot=await transaction.get(reference);
-    const remote=snapshot.data();
-    const desired={...observed,bought:true,actual:price};
-    const merged=editItem(remote.entries,observed,desired);
-    if(!same(merged,remote.entries))
-      transaction.set(reference,{...remote,entries:merged,revision:remote.revision+1});
+  const submit=(database,reference,observed,price)=>retryIfRevisionAdvanced({
+    operation:()=>runTransaction(database,async transaction=>{
+      const snapshot=await transaction.get(reference);
+      const remote=snapshot.data();
+      const desired={...observed,bought:true,actual:price};
+      const merged=editItem(remote.entries,observed,desired);
+      if(!same(merged,remote.entries))
+        transaction.set(reference,{...remote,entries:merged,revision:remote.revision+1});
+    }),
+    readLatest:async()=>{
+      const current=await getDocFromServer(reference);
+      return current.exists()?current.data():null;
+    },
+    observedGeneration:baseline.generation,observedRevision:baseline.revision,
+    maxRetries:2
   });
   // Ao contrário do teste de tela desatualizada, os commits começam no mesmo
-  // instante e o Firestore SDK precisa repetir a transação perdedora.
+  // instante. O cliente só tenta novamente após verificar que a revisão avançou.
   await assertSucceeds(Promise.all([
     submit(alice,refA,arroz,290),
     submit(bob,refB,leite,430)
