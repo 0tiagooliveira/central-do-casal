@@ -164,6 +164,37 @@ test('two household members retain independent edits from stale UI snapshots', a
   assert.equal(after.revision,3);
 });
 
+test('two member accounts commit overlapping Firestore transactions on different items',async()=>{
+  const alice=db('alice'),bob=db('bob');
+  const refA=doc(alice,'households/home/baskets/Mercado');
+  const refB=doc(bob,'households/home/baskets/Mercado');
+  const fixture=id=>({id,title:'Produto sintético '+id,unit:'un',
+    plannedMilli:1000,actualMilli:1000,bought:false,actual:null,
+    estimated:100,unitReviewed:true,quantityReviewed:true});
+  const arroz=fixture('arroz'),leite=fixture('leite');
+  const baseline={market:'Mercado',generation:'z'.repeat(32),budget:7000,
+    revision:1,entries:[arroz,leite]};
+  await assertSucceeds(setDoc(refA,baseline));
+  const submit=(database,reference,observed,price)=>runTransaction(database,async transaction=>{
+    const snapshot=await transaction.get(reference);
+    const remote=snapshot.data();
+    const desired={...observed,bought:true,actual:price};
+    const merged=editItem(remote.entries,observed,desired);
+    if(!same(merged,remote.entries))
+      transaction.set(reference,{...remote,entries:merged,revision:remote.revision+1});
+  });
+  // Ao contrário do teste de tela desatualizada, os commits começam no mesmo
+  // instante e o Firestore SDK precisa repetir a transação perdedora.
+  await assertSucceeds(Promise.all([
+    submit(alice,refA,arroz,290),
+    submit(bob,refB,leite,430)
+  ]));
+  const result=(await getDoc(refA)).data();
+  assert.equal(result.revision,3);
+  assert.equal(result.entries.find(x=>x.id==='arroz').actual,290);
+  assert.equal(result.entries.find(x=>x.id==='leite').actual,430);
+  assert.equal(result.entries.length,2);
+});
 test('basket revisions reject stale concurrent updates',async()=> {
   const d=db('alice'); const ref=doc(d,'households/home/baskets/Mercado');
   const basket={market:'Mercado',generation:'a'.repeat(32),budget:1000,revision:1,entries:[]};await assertSucceeds(setDoc(ref,basket));await assertFails(setDoc(ref,basket));await assertSucceeds(setDoc(ref,{...basket,revision:2}));
