@@ -69,7 +69,7 @@ function restoreScrollAfterRefresh(){
 }
 let listeners = [];
 let houseListeners = [];
-let sharedSubscribed=false,linksSubscribed=false,personalSubscribed=false;
+let sharedStop=null,linksStop=null,personalStop=null;
 const $ = (id) => document.getElementById(id);
 const fmt = (value) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(value)||0)/100);
 const esc = (s) => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -163,7 +163,7 @@ function clearListeners(){
   for(const stop of [...listeners,...houseListeners]) stop();
   listeners=[];houseListeners=[];
   state.shared=[];state.personal=[];state.links=[];state.baskets={};state.profile=null;state.household="";state.error="";
-  sharedSubscribed=false;linksSubscribed=false;personalSubscribed=false;
+  sharedStop=null;linksStop=null;personalStop=null;
   usageTracker.reset();state.firestoreUsage=usageTracker.summary();
 }
 function watch(reference, callback, source, group="global", onError=null){
@@ -184,25 +184,39 @@ function watch(reference, callback, source, group="global", onError=null){
     scheduleRender();
   });
   if(group==="house")houseListeners.push(stop);else listeners.push(stop);
+  return stop;
+}
+function releaseHeavyListener(stop,group){
+  if(!stop)return;
+  stop();
+  const active=group==="house"?houseListeners:listeners;
+  const index=active.indexOf(stop);
+  if(index!==-1)active.splice(index,1);
 }
 function ensureHeavyData(){
   const mode=getShoppingRoutePrefs().shopMode;
-  if(state.uid&&needsSharedRecords(state.tab,mode)&&!personalSubscribed){
-    personalSubscribed=true;
-    watch(collection(db,"users",state.uid,"records"),s=>{
+  const recordsNeeded=needsSharedRecords(state.tab,mode);
+  const linksNeeded=needsCatalogLinks(state.tab,mode);
+  if(!recordsNeeded){
+    releaseHeavyListener(personalStop,"global");personalStop=null;
+    releaseHeavyListener(sharedStop,"house");sharedStop=null;
+  }
+  if(!linksNeeded){
+    releaseHeavyListener(linksStop,"house");linksStop=null;
+  }
+  if(state.uid&&recordsNeeded&&!personalStop){
+    personalStop=watch(collection(db,"users",state.uid,"records"),s=>{
       state.personal=s.docs.map(d=>({id:d.id,...d.data()}));
     },"registros pessoais");
   }
   if(!state.household)return;
-  if(needsSharedRecords(state.tab,mode)&&!sharedSubscribed){
-    sharedSubscribed=true;
-    watch(collection(db,"households",state.household,"records"),s=>{
+  if(recordsNeeded&&!sharedStop){
+    sharedStop=watch(collection(db,"households",state.household,"records"),s=>{
       state.shared=s.docs.map(d=>({id:d.id,...d.data()}));firstHouseData.shared=true;
     },"registros compartilhados","house");
   }
-  if(needsCatalogLinks(state.tab,mode)&&!linksSubscribed){
-    linksSubscribed=true;
-    watch(collection(db,"households",state.household,"catalogLinks"),s=>{
+  if(linksNeeded&&!linksStop){
+    linksStop=watch(collection(db,"households",state.household,"catalogLinks"),s=>{
       state.links=s.docs.map(d=>({id:d.id,...d.data()}));
     },"vínculos do catálogo","house");
   }
@@ -211,7 +225,7 @@ function connectHousehold(householdId){
   for(const stop of houseListeners)stop();
   houseListeners=[];
   state.shared=[];state.links=[];state.baskets={};
-  sharedSubscribed=false;linksSubscribed=false;
+  sharedStop=null;linksStop=null;
   firstHouseData={shared:false,baskets:false};
   state.household=householdId;
   if(!householdId){state.sync="Sem espaço compartilhado";render();return;}
