@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { editItem, same, retryIfRevisionAdvanced } from '../web/basket-concurrency.js';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 let env;
 const db = uid => env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
 const profile = uid => ({displayName: uid, householdId: 'home'});
@@ -133,6 +135,78 @@ test('member can leave and loses access immediately',async()=> {
   const d=db('bob'); const b=writeBatch(d); b.update(doc(d,'households/home'),{members:arrayRemove('bob')});b.update(doc(d,'users/bob'),{householdId:''});await assertSucceeds(b.commit());await assertFails(getDoc(doc(d,'households/home/records/shared')));
 });
 test('member cannot remove partner',async()=> {await assertFails(updateDoc(doc(db('alice'),'households/home'),{members:['alice']}));});
+
+test('two household members retain independent edits from stale UI snapshots', async()=>{
+  const alice=db('alice'),bob=db('bob');
+  const refA=doc(alice,'households/home/baskets/Mercado');
+  const refB=doc(bob,'households/home/baskets/Mercado');
+  const item=id=>({id,title:id,unit:'un',plannedMilli:1000,actualMilli:1000,
+    bought:false,actual:null,estimated:100,unitReviewed:true,quantityReviewed:true});
+  const a=item('arroz'),b=item('leite');
+  const initial={market:'Mercado',generation:'s'.repeat(32),budget:5000,revision:1,entries:[a,b]};
+  await assertSucceeds(setDoc(refA,initial));
+  const observedA=structuredClone(a),observedB=structuredClone(b);
+  async function commit(d,ref,observed,amount){
+    return runTransaction(d,async tx=>{
+      const snap=await tx.get(ref),latest=snap.data();
+      const next=editItem(latest.entries,observed,{...observed,bought:true,actual:amount});
+      if(!same(next,latest.entries))tx.set(ref,{...latest,entries:next,revision:latest.revision+1});
+    });
+  }
+  // Simula duas telas abertas na revisão 1. Cada conta aplica sua operação
+  // no estado atual, com snapshots de UI anteriores e sem sincronizar a tela.
+  // O teste de requisições verdadeiramente simultâneas fica para QA separado.
+  await assertSucceeds(commit(alice,refA,observedA,220));
+  await assertSucceeds(commit(bob,refB,observedB,350));
+  const after=(await getDoc(refA)).data();
+  assert.equal(after.entries.find(x=>x.id==='arroz').actual,220);
+  assert.equal(after.entries.find(x=>x.id==='leite').actual,350);
+  assert.equal(after.revision,3);
+});
+
+test('two member accounts commit overlapping Firestore transactions on different items',async()=>{
+  const alice=db('alice'),bob=db('bob');
+  const refA=doc(alice,'households/home/baskets/Mercado');
+  const refB=doc(bob,'households/home/baskets/Mercado');
+  const fixture=id=>({id,title:'Produto sintético '+id,unit:'un',
+    plannedMilli:1000,actualMilli:1000,bought:false,actual:null,
+    estimated:100,unitReviewed:true,quantityReviewed:true});
+  const arroz=fixture('arroz'),leite=fixture('leite');
+  const baseline={market:'Mercado',generation:'z'.repeat(32),budget:7000,
+    revision:1,entries:[arroz,leite]};
+  await assertSucceeds(setDoc(refA,baseline));
+  const submit=(database,reference,observed,price)=>retryIfRevisionAdvanced({
+    operation:()=>runTransaction(database,async transaction=>{
+      const snapshot=await transaction.get(reference);
+      const remote=snapshot.data();
+      const desired={...observed,bought:true,actual:price};
+      const merged=editItem(remote.entries,observed,desired);
+      if(!same(merged,remote.entries))
+        transaction.set(reference,{...remote,entries:merged,revision:remote.revision+1});
+    }),
+    readLatest:async()=>{
+      const current=await getDocFromServer(reference);
+      return current.exists()?current.data():null;
+    },
+    observedGeneration:baseline.generation,observedRevision:baseline.revision,
+    maxRetries:2
+  });
+  // Ao contrário do teste de tela desatualizada, os commits começam no mesmo
+  // instante. O cliente só tenta novamente após verificar que a revisão avançou.
+  await assertSucceeds(Promise.all([
+    submit(alice,refA,arroz,290),
+    submit(bob,refB,leite,430)
+  ]));
+  const result=(await getDoc(refA)).data();
+  assert.equal(result.revision,3);
+  assert.equal(result.entries.find(x=>x.id==='arroz').actual,290);
+  assert.equal(result.entries.find(x=>x.id==='leite').actual,430);
+  assert.equal(result.entries.length,2);
+  // Ambos os logins conseguem recuperar exatamente a mesma cesta do servidor.
+  const bobView=(await getDocFromServer(refB)).data();
+  assert.equal(bobView.revision,3);
+  assert.deepEqual(bobView.entries,result.entries);
+});
 test('basket revisions reject stale concurrent updates',async()=> {
   const d=db('alice'); const ref=doc(d,'households/home/baskets/Mercado');
   const basket={market:'Mercado',generation:'a'.repeat(32),budget:1000,revision:1,entries:[]};await assertSucceeds(setDoc(ref,basket));await assertFails(setDoc(ref,basket));await assertSucceeds(setDoc(ref,{...basket,revision:2}));

@@ -1,3 +1,4 @@
+import {same,rebaseOfflineBasket} from "./basket-concurrency.js";
 // Contingência quando o Firestore bloqueia gravações por cota/limite.
 // Operações locais ficam isoladas por usuário, casa e mercado e NUNCA são
 // consideradas sincronizadas até a confirmação explícita do backend.
@@ -128,6 +129,11 @@ export function isQuotaError(error) {
   const message=String(error?.message||error||"").toLowerCase();
   return code.includes("resource-exhausted")||code.includes("quota")||
     /quota exceeded|exceeded.*quota|quota.*exceeded|limit.*exceeded|limite de cota/.test(message);
+}
+export function isRecoverableSyncError(error){
+  if(isQuotaError(error))return true;
+  const code=String(error?.code||"").toLowerCase().replace(/^firestore\//,"");
+  return ["unavailable","deadline-exceeded","network-request-failed"].includes(code);
 }
 export function hasOfflineClosurePending(state,market=state.market){
   if(!state?.uid||!state?.household||!allowed.includes(market))return false;
@@ -261,7 +267,10 @@ export function downloadEmergency(state,market){
 export function restoreBackupControl(state){
   if(!state.uid||!state.household)return "";
   return '<div class="emergency-restore-control"><button type="button" class="item-btn" data-shop-action="emergency-restore">'+
-    '↥ Recuperar compra do backup (.json)</button><span>Se o carrinho ficou desatualizado, carregue seu último backup para voltar a ver os preços neste celular.</span></div>';
+    '↥ Recuperar compra do backup (.json)</button>'+
+    '<button type="button" class="item-btn" data-shop-action="emergency-check-server">'+
+    'Conferir backup com servidor · somente leitura</button>'+
+    '<span>Conferir busca a cesta atual uma vez no Firebase, podendo consumir leituras, mas NÃO grava nem restaura dados. Recuperar carrega o backup só neste aparelho.</span></div>';
 }
 export function hasPreviousEmergency(state,market){
   try{return !!storage().getItem(key(state,market)+":anterior");}catch{return false;}
@@ -309,29 +318,16 @@ export function emergencyBanner(state) {
 // Opções para reconciliar manualmente o diário local com a lista remota.
 export function replayEmergency(remote,draft){
   if(!draft.baseline||!Array.isArray(draft.baseline.entries))
-    throw Error("Não há cópia da revisão original para conferir as alterações. O backup local foi preservado; não foi enviado ao Firebase.");
+    throw Error("Não há cópia da revisão original. O backup local foi preservado.");
   if(remote.generation!==draft.baseGeneration)
     throw Error("A compra foi finalizada em outro aparelho. Baixe seu backup e revise antes de sincronizar.");
-  const oldById=new Map((draft.baseline.entries||[]).map(e=>[e.id,e]));
-  const nowById=new Map((remote.entries||[]).map(e=>[e.id,e]));
-  const changedIds=new Set(draft.operations
-    .filter(o=>o.type==="update"||o.type==="remove").map(o=>o.id).filter(Boolean));
-  for(const op of draft.operations.filter(o=>o.type==="batchAddToCart")){
-    for(const entry of op.entries||[]){
-      const baselinePending=(draft.baseline.entries||[]).filter(e=>!e.bought&&
-        e.unit===entry.unit&&normalize(e.title)===normalize(entry.title));
-      if(baselinePending.length===1)changedIds.add(baselinePending[0].id);
-    }
-  }
-  for(const id of changedIds){
-    const baseline=oldById.get(id),latest=nowById.get(id);
-    if(JSON.stringify(baseline)!==JSON.stringify(latest))
-      throw Error("O produto foi alterado em outro aparelho. Seu backup local está preservado. Confira antes de sincronizar.");
-  }
-  let next=simple(remote);
-  for(const op of draft.operations){
-    // Não mutar o backup durante replay.
-    next=applyOperation(next,simple(op));
-  }
-  return next;
+  // Reconstituir o resultado somente a partir das operações preservadas.
+  const planned=(draft.operations||[]).reduce(
+    (basket,operation)=>applyOperation(basket,simple(operation)),simple(draft.baseline));
+  if(draft.basket&&(!same(planned.entries,draft.basket.entries)||
+      !same(planned.budget,draft.basket.budget)))
+    throw Error("As operações não correspondem à lista do backup. Nenhum dado foi enviado.");
+  return rebaseOfflineBasket(remote,draft.baseline,{
+    ...planned,generation:draft.baseGeneration
+  });
 }

@@ -54,7 +54,7 @@ export function marketView(state,{section="pending",search="",priceDrafts={}}={}
   const {spent,budget}=totals;
   const active=section==="bought"?"bought":"pending";
   const progress=total?Math.round((bought.length/total)*100):0;
-  return `<div class="market-quick-action"><button type="button" class="primary-btn" data-shop-action="market-add-cart">+ Produto direto no carrinho</button><span>Esqueceu de incluir algo? Registre aqui sem voltar à lista.</span></div>
+  return `<div class="market-quick-action"><button type="button" class="primary-btn" data-shop-action="add">+ Adicionar à lista</button><button type="button" class="item-btn" data-shop-action="market-add-cart">+ Produto direto no carrinho</button><span>Inclua o que falta ou registre uma compra imprevista sem sair do mercado.</span></div>
   ${shoppingSearchBar({area:"market",query:search,total:active==="pending"?remaining.length:bought.length,
     shown:active==="pending"?visibleRemaining.length:visibleBought.length,
     label:"Buscar produtos da compra"})}
