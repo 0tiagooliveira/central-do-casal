@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,reconcileEmergencyAfterSync,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -18,6 +18,8 @@ import {marketView,quantityControls} from "./shopping-market.js";
 import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
 
 const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(n)||0)/100);
+const purchaseDateBR=value=>/^\d{4}-\d{2}-\d{2}$/.test(String(value||""))?
+  value.slice(8,10)+"/"+value.slice(5,7)+"/"+value.slice(0,4):"Data não informada";
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -73,18 +75,38 @@ function entryHTML(e,state) {
     </div>
   </article>`;
 }
+// Ações administrativas ficam acessíveis, sem disputar espaço com a compra.
+function shoppingToolsMenu(state){
+  if(!state.uid||!state.household)return "";
+  const draft=readEmergency(state,state.market);
+  const closed=readOfflineClosure(state,state.market);
+  const basket=state.baskets[state.market];
+  return '<section class="shop-tools-footer"><details class="shop-utilities">'+
+    '<summary aria-label="Abrir ferramentas e backups">☰ Ferramentas e backups</summary>'+
+    '<div class="shop-utilities-body">'+
+    '<p>Importar, exportar ou recuperar dados sem atrapalhar sua compra.</p>'+
+    '<button type="button" class="item-btn" data-shop-action="import">Importar lista antiga do Android</button>'+
+    (!draft&&basket?.generation?'<button type="button" class="item-btn" data-shop-action="export-basket">Exportar cópia da lista atual</button>':"")+
+    (draft?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup local não sincronizado</button>':"")+
+    (draft&&hasPreviousEmergency(state,state.market)?
+      '<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar backup anterior</button>':"")+
+    (closed?.status==="pending"?'<button type="button" class="item-btn" data-shop-action="offline-closed-export">Baixar compra finalizada offline</button>':"")+
+    restoreBackupControl(state)+
+    '</div></details></section>';
+}
 export function shoppingView({state}) {
   state=projectedShoppingState(state);
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+
+    offlineClosureBanner(state,false)+cartBatchBanner(state)+emergencyBanner(state,false,shopPrefs.mode);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
-  if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
-  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
+  if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state)+shoppingToolsMenu(state);
+  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs)+shoppingToolsMenu(state);
   if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
-    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]});
+    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]})+shoppingToolsMenu(state);
   const b=state.baskets[market]||{market,entries:[],budget:0};
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
@@ -144,11 +166,12 @@ export function shoppingView({state}) {
           </div>`).join("")}</details>`:""}
           <small>Valores documentados pelo arquivo enviado, sem verificação fiscal externa.</small></div>`:
         '<p class="info-line">Compra sem nota fiscal vinculada.</p>';
-      return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
+      return `<details class="panel receipt-detail"><summary><strong>${purchaseDateBR(r.date)}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
+        <p class="info-line">${r.purchaseDateSource==="nota"?"Data sugerida pela nota fiscal":r.purchaseDateSource==="manual"?"Data informada manualmente":r.purchaseDateSource==="fechamento"?"Data do fechamento":"Data histórica: origem ainda não conferida"}${invoice?.date&&invoice.date!==r.date?" · Nota emitida em "+purchaseDateBR(invoice.date):""}</p>
         ${invoiceInfo}
         <div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
     }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
-    <div class="backup-panel"><div><strong>Compras antigas no Android?</strong><p>Você pode importar as listas de um JSON exportado pelo aplicativo. Itens existentes são preservados e títulos repetidos não são mesclados automaticamente.</p></div><button type="button" class="item-btn" data-shop-action="import">Importar lista antiga</button></div>`;
+    `+shoppingToolsMenu(state);
 }
 export function installShoppingUI({root,db,auth,getState,render}) {
   const actions=createShoppingActions(db,auth,getState);
@@ -225,40 +248,87 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         ". Dados ainda NÃO sincronizados com o Firebase. Baixe o backup antes de sair.");
     }catch(e){notify(e.message||"Não foi possível recuperar o backup.",true);}
   });
-  let busy=false;
+  let busy=false,syncBusy=false,marketSyncTimer=null,lastMarketSyncAt=0;
+  let autoSyncPauseUntil=0,autoSyncNeedsReview=false;
+  // No mercado: agrupar toques em vez de escrever ao Firestore por produto.
+  // O rascunho já foi gravado antes de iniciar este relógio.
+  function scheduleMarketSync(market){
+    if(shopPrefs.mode!=="market"||!navigator.onLine||marketSyncTimer||
+       autoSyncNeedsReview||!readEmergency(getState(),market))return;
+    const wait=Math.max(9000,20000-(Date.now()-lastMarketSyncAt),autoSyncPauseUntil-Date.now());
+    marketSyncTimer=setTimeout(()=>{
+      marketSyncTimer=null;
+      if(shopPrefs.mode!=="market"||getState().market!==market||
+         document.visibilityState==="hidden"||!navigator.onLine)return;
+      if(busy||syncBusy){scheduleMarketSync(market);return;}
+      synchronizeDraft(market,true);
+    },wait);
+  }
+  async function synchronizeDraft(market,automatic=false){
+    if(syncBusy)return;
+    const current=getState(),draft=readEmergency(current,market);
+    if(!draft?.operations?.length)return;
+    if(readOfflineClosure(current,market)?.status==="pending")return;
+    syncBusy=true;
+    lastMarketSyncAt=Date.now();
+    try{
+      const confirmed=await actions.synchronizeEmergency(market,draft);
+      if(current.uid!==getState().uid||current.household!==getState().household)
+        return;
+      const outcome=reconcileEmergencyAfterSync(current,market,draft,confirmed.basket);
+      if(confirmed?.basket &&
+        Number(getState().baskets?.[market]?.revision||0)<=Number(confirmed.revision||0))
+        getState().baskets[market]=confirmed.basket;
+      autoSyncPauseUntil=0;autoSyncNeedsReview=false;
+      render();
+      if(outcome.pending){
+        notify("Lote sincronizado. Mais "+outcome.pending+" alteração(ões) recente(s) continuam protegidas neste aparelho.");
+        if(shopPrefs.mode==="market")scheduleMarketSync(market);
+      }else if(!automatic){
+        notify("Lista salva no Firebase. Os dois celulares receberão a atualização.");
+      }
+    }catch(e){
+      if(automatic){
+        if(isQuotaError(e))autoSyncPauseUntil=Date.now()+180000;
+        else autoSyncNeedsReview=true;
+      }
+      if(!automatic||!isQuotaError(e))
+        notify((e.message||"Não foi possível sincronizar")+". O rascunho local foi preservado.",true);
+      render();
+    }finally{syncBusy=false;}
+  }
+  function resumeMarketSync(){
+    const state=getState();
+    if(document.visibilityState!=="hidden"&&state?.uid&&state?.household&&
+       shopPrefs.mode==="market"&&readEmergency(state,state.market))
+      scheduleMarketSync(state.market);
+  }
+  // Refazer a tentativa ao voltar à aba ou ao recuperar a conexão, não em cada renderização.
+  window.addEventListener("online",resumeMarketSync);
+  document.addEventListener("visibilitychange",resumeMarketSync);
+  // Recupera rascunhos que já existiam quando o navegador foi aberto.
+  setInterval(resumeMarketSync,30000);
+
   async function run(job,description,fallback=null){
     if(busy)return;
     busy=true;
     dlg.querySelectorAll("button").forEach(b=>b.disabled=true);
     try{
-      if(fallback?.market&&readEmergency(getState(),fallback.market)){
+      if(fallback?.market){
         saveEmergency(getState(),fallback.market,fallback.operation);
         if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
           delete priceDrafts[fallback.market][fallback.operation.id];
         if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
         dlg.close();render();
-        notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
+        if(shopPrefs.mode==="market")scheduleMarketSync(fallback.market);
+        notify(description+" · rascunho protegido neste aparelho"+(shopPrefs.mode==="market"?" · sincronização agrupada ativa.":". Salve a lista quando terminar."));
         return;
       }
       await job();dlg.close();notify(description+" · sincronizado no Firebase.");
     }catch(e){
-      if(fallback?.market&&isQuotaError(e)){
-        try{
-          saveEmergency(getState(),fallback.market,fallback.operation);
-          if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
-            delete priceDrafts[fallback.market][fallback.operation.id];
-          if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
-          dlg.close();render();
-          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
-          return;
-        }catch(saveError){
-          notify(saveError.message,true);
-        }
-      }else{
-        notify(isQuotaError(e)?
-          "Limite de uso do Firebase atingido. Os dados NÃO foram sincronizados. Anote o preço e use o modo local.":
-          (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
-      }
+      notify(fallback?.market?
+        (e.message||"Não foi possível proteger o rascunho")+". Nenhuma alteração foi confirmada.":
+        (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
       dlg.querySelectorAll("button").forEach(b=>b.disabled=false);
     }finally{busy=false;}
   }
@@ -356,15 +426,22 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       shopPrefs.quantities[event.target.dataset.qtyKey]=event.target.value;return;
     }
     if(event.target.id!=="shop-catalog-search")return;
-    shopPrefs.search=event.target.value;shopPrefs.limit=40;
+    const searchText=event.target.value;
+    const market=getState().market,source=shopPrefs.source;
+    shopPrefs.search=searchText;shopPrefs.limit=40;
     persistShoppingFilters();
-    const cursor=event.target.selectionStart??shopPrefs.search.length;
+    const cursor=event.target.selectionStart??searchText.length;
     clearTimeout(catalogSearchTimer);
     catalogSearchTimer=setTimeout(()=>{
+      // Não redesenhar outra aba nem roubar o foco depois de navegação.
+      if(getState().market!==market||shopPrefs.source!==source||shopPrefs.mode!=="catalog")return;
       render();
       const field=root.querySelector("#shop-catalog-search");
-      if(field){field.focus();field.setSelectionRange(cursor,cursor);}
-    },140);
+      if(field){
+        try{field.focus({preventScroll:true});}catch{field.focus();}
+        try{field.setSelectionRange(cursor,cursor);}catch{}
+      }
+    },120);
   });
   root.addEventListener("change",event=>{
     if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
@@ -422,6 +499,24 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       catch(e){notify(e.message,true);}
       return;
     }
+    if(act==="export-basket"){
+      const live=getState(),basket=live.baskets?.[market];
+      if(readEmergency(live,market)){
+        notify("Há alterações locais pendentes. Use Baixar backup local não sincronizado.",true);
+        return;
+      }
+      if(!basket?.generation||!Array.isArray(basket.entries)){
+        notify("Não há uma lista sincronizada disponível para exportar.",true);return;
+      }
+      const file={type:"central-do-casal-basket-backup",exportedAt:new Date().toISOString(),
+        baskets:{[market]:basket}};
+      const url=URL.createObjectURL(new Blob([JSON.stringify(file,null,2)],{type:"application/json"}));
+      const a=document.createElement("a");
+      a.href=url;a.download="central-lista-"+(market==="Mercado"?"mercado":"acougue")+"-"+new Date().toISOString().slice(0,10)+".json";
+      document.body.append(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+      notify("Cópia da lista disponível para download. Não altera os dados da nuvem.");return;
+    }
     if(act==="emergency-sync"){
       const draft=readEmergency(getState(),market),closed=readOfflineClosure(getState(),market);
       if(!draft){notify("Nenhuma alteração local pendente.");render();return;}
@@ -441,15 +536,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         }finally{busy=false;}
         return;
       }
-      if(!confirm("Enviar "+draft.operations.length+" alteração(ões) locais para o Firebase? Se outro aparelho alterou o mesmo produto, a sincronização será interrompida para preservar seus dados."))return;
-      if(busy)return;busy=true;
-      try{
-        await actions.synchronizeEmergency(market,draft);
-        clearEmergency(getState(),market);render();
-        notify("Alterações locais sincronizadas. Confira o carrinho atualizado.");
-      }catch(e){
-        notify(isQuotaError(e)?"O Firebase continua com a cota excedida. Seu backup local foi preservado. Tente sincronizar depois.":(e.message||"Não foi possível sincronizar. Seu backup está preservado."),true);
-      }finally{busy=false;}
+      await synchronizeDraft(market);
       return;
     }
     if(act==="clear-shopping-search"){
@@ -474,6 +561,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       shopPrefs.mode=act.slice(5);
       rememberShoppingRoute();
       render();
+      if(shopPrefs.mode==="market"&&readEmergency(getState(),market))
+        scheduleMarketSync(market);
       window.scrollTo({top:0,behavior:"auto"});
       return;
     }
@@ -632,6 +721,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
+      if(syncBusy){
+        notify("Há uma sincronização sendo confirmada. Confira o status antes de finalizar.",true);
+        return;
+      }
       const previous=readOfflineClosure(getState(),market);
       if(previous?.status==="pending"){
         notify("Esta compra já foi FINALIZADA offline. Use Baixar compra finalizada ou Enviar compra e nota ao Firebase.",true);
@@ -642,16 +735,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         notify("Marque ao menos um produto comprado antes de finalizar.",true);return;
       }
       const localDraft=readEmergency(getState(),market);
-      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>{
+      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping,purchaseDate)=>{
         if(localDraft){
+          let archived;
           try{
-            const archived=archiveOfflinePurchase(getState(),market,invoice,mapping);
+            archived=archiveOfflinePurchase(getState(),market,invoice,mapping,purchaseDate);
             dlg.close();render();
-            notify("Compra FINALIZADA neste aparelho ("+
-              currency(archived.receipt.total)+"). Nota e histórico offline salvos; baixe a compra finalizada.");
-          }catch(e){notify(e.message||"Erro ao finalizar offline.",true);}
+          }catch(e){notify(e.message||"Erro ao guardar a compra neste aparelho.",true);return;}
+          if(!navigator.onLine){
+            notify("Compra finalizada neste aparelho, ainda NÃO sincronizada. O histórico e a nota estão protegidos localmente.");
+            return;
+          }
+          syncBusy=true;
+          (async()=>{
+            try{
+              const saved=await actions.publishOfflinePurchase(market,localDraft,archived);
+              markOfflineClosureSynced(getState(),market);
+              clearEmergency(getState(),market);
+              if(saved?.basket&&Number(getState().baskets?.[market]?.revision||0)<=saved.basket.revision)
+                getState().baskets[market]=saved.basket;
+              render();
+              notify("Compra finalizada e sincronizada no histórico do casal.");
+            }catch(error){
+              render();
+              notify("Compra guardada neste aparelho, mas ainda NÃO sincronizada: "+
+                (error.message||"erro de conexão")+". Não apague o backup.",true);
+            }finally{syncBusy=false;}
+          })();
         }else{
-          run(()=>actions.closeBasket(market,invoice,mapping),
+          run(()=>actions.closeBasket(market,invoice,mapping,purchaseDate),
             "Compra e conferência salvas no histórico");
         }
       }});

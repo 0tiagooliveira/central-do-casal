@@ -19,10 +19,19 @@ export function catalogCategories(items) {
   return ["Todas",...[...cats].sort((a,b)=>a.localeCompare(b,"pt-BR"))];
 }
 export function queryCatalog(items,query,category) {
-  const needle=normalizeCatalogText(query);
-  return items.filter(p=>
-    (category==="Todas"||(asText(p.category)||"Sem categoria")===category)
-    && (!needle || normalizeCatalogText([p.title,p.category,p.subgroup,p.store,p.group].filter(Boolean).join(" ")).includes(needle)));
+  // Ex.: "arroz branco 5kg" também corresponde a "Arroz 5 KG Branco".
+  const comparable=value=>normalizeCatalogText(value)
+    .replace(/(\d)\s*(kg|g|ml|l)\b/g,"$1 $2");
+  const tokens=comparable(query).split(/\s+/).filter(Boolean);
+  return items.filter(p=>{
+    if(category!=="Todas"&&(asText(p.category)||"Sem categoria")!==category)return false;
+    if(!tokens.length)return true;
+    const haystack=comparable([
+      p.title,p.brand,p.marca,p.category,p.subgroup,p.store,p.group,
+      p.unit,p.quantityText,p.storageRoom,p.recipient
+    ].filter(Boolean).join(" ")).replace(/\s+/g," ");
+    return tokens.every(token=>haystack.includes(token));
+  });
 }
 export function catalogPrice(record) {
   // Na base, reference já representa centavos; SKU usa valor decimal textual.

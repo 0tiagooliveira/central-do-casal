@@ -1,4 +1,5 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
+import {resolvePurchaseDate} from "./purchase-date.js";
 import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -115,12 +116,19 @@ export function createShoppingActions(db,auth,getState) {
       throw Error("Backup local inválido para sincronização.");
     return runTransaction(db,async tx=>{
       const ref=basketRef(state,market),snap=await tx.get(ref);
-      if(!snap.exists())throw Error("A lista não existe mais no Firebase. Preserve o backup.");
-      const remote=snap.data();
-      const next=replayEmergency(remote,draft);
-      if(!Array.isArray(next.entries)||next.entries.length>200)
+      const isFirstSave=!snap.exists();
+      if(isFirstSave&&Number(draft.baseRevision)!==0)
+        throw Error("A lista original sumiu do Firebase. O rascunho foi preservado.");
+      const remote=isFirstSave?draft.baseline:snap.data();
+      if(!remote||remote.generation!==draft.baseGeneration)
+        throw Error("Há uma lista diferente neste mercado. Seu rascunho foi preservado para conciliação.");
+      const merged=replayEmergency(remote,draft);
+      if(!Array.isArray(merged.entries)||merged.entries.length>200)
         throw Error("A lista ficou acima de 200 itens. Revise antes de sincronizar.");
-      tx.set(ref,{market,generation:remote.generation,budget:next.budget,entries:next.entries,revision:Number(remote.revision||0)+1});
+      const saved={market,generation:remote.generation,budget:merged.budget,
+        entries:merged.entries,revision:Number(remote.revision||0)+1};
+      tx.set(ref,saved);
+      return {revision:saved.revision,generation:saved.generation,basket:saved};
     });
   }
   async function publishOfflinePurchase(market,draft,closed) {
@@ -136,6 +144,20 @@ export function createShoppingActions(db,auth,getState) {
       throw Error("Este backup não tem a revisão original para sincronização segura. O histórico offline foi preservado.");
     const ref=basketRef(state,market);
     const receiptRef=doc(db,"households",state.household,"records",closed.receipt.generation);
+    // Quando a lista nunca foi enviada, criar primeiro SOMENTE a base vazia
+    // da mesma geração. As regras do recibo exigem uma cesta anterior.
+    if(Number(draft.baseRevision)===0){
+      await runTransaction(db,async tx=>{
+        const first=await tx.get(ref);
+        if(first.exists())return;
+        const base=draft.baseline;
+        if(!base||base.generation!==draft.baseGeneration||
+           !Array.isArray(base.entries)||base.entries.length>200)
+          throw Error("A lista original do rascunho não pode ser restaurada com segurança.");
+        tx.set(ref,{market,generation:base.generation,
+          budget:Number(base.budget)||0,entries:base.entries,revision:1});
+      });
+    }
     const sorted=entries=>JSON.stringify((entries||[]).map(e=>[
       e.id,e.title,e.bought,e.unit,e.plannedMilli,e.actualMilli,e.actual,
       e.estimated,e.estimateKnown,e.unitReviewed,e.quantityReviewed
@@ -161,7 +183,9 @@ export function createShoppingActions(db,auth,getState) {
         throw Error("Há diferenças entre a lista de outro aparelho e a compra finalizada offline. Não substituí nenhum dado. Baixe o histórico e revise antes de sincronizar.");
       const receipt={market,generation:old.generation,budget:old.budget,revision:old.revision,
         entries:replayed.entries,kind:"receipt",private:false,total:closed.receipt.total,
-        date:closed.receipt.date,updatedBy:state.uid,updatedAt:serverTimestamp(),
+        date:closed.receipt.date,purchaseDateSource:closed.receipt.purchaseDateSource||"fechamento",
+        recordedAt:closed.receipt.recordedAt||new Date().toISOString(),
+        updatedBy:state.uid,updatedAt:serverTimestamp(),
         invoice:closed.receipt.invoice||null};
       if(JSON.stringify({...receipt,updatedAt:null}).length>790000)
         throw Error("O comprovante é grande demais para o Firebase. O histórico offline continua salvo.");
@@ -169,9 +193,10 @@ export function createShoppingActions(db,auth,getState) {
       const nextEntries=replayed.entries.map(e=>e.bought?
         {...e,estimated:e.actual,actual:null,bought:false,
           estimateKnown:true,unitReviewed:true,quantityReviewed:true}:e);
-      tx.set(ref,{market,budget:old.budget,revision:Number(old.revision)+1,
-        generation:crypto.randomUUID(),entries:nextEntries});
-      return {saved:true};
+      const fresh={market,budget:old.budget,revision:Number(old.revision)+1,
+        generation:crypto.randomUUID(),entries:nextEntries};
+      tx.set(ref,fresh);
+      return {saved:true,basket:fresh};
     });
   }
   const changeBudget=(market,budget)=>modify(market,old=>({...old,budget}));
@@ -196,7 +221,7 @@ export function createShoppingActions(db,auth,getState) {
     const budget=old.budget===0&&Number.isSafeInteger(backup.budget)&&backup.budget>=0?backup.budget:old.budget;
     return {...old,budget,entries:[...(old.entries||[]),...additions]};
   });
-  async function closeBasket(market,invoice=null,mapping={}) {
+  async function closeBasket(market,invoice=null,mapping={},purchaseDate="") {
     if(invoice){
       if(!["xml","image","pdf","pdf-transcription"].includes(invoice.source))throw new Error("Formato de nota não reconhecido.");
       if(!Array.isArray(invoice.lines)||invoice.lines.length>250)throw new Error("Nota com itens demais.");
@@ -226,11 +251,11 @@ export function createShoppingActions(db,auth,getState) {
           throw new Error("Revise nome, quantidade, unidade e preço real de "+(e.title||"um produto")+".");
       }
       const total=bought.reduce((n,e)=>n+subtotal(e.actual,e.actualMilli),0);
-      const dateParts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
-      const date=dateParts.year+"-"+dateParts.month+"-"+dateParts.day;
+      const chosen=resolvePurchaseDate(invoice,purchaseDate);
       const report=compareInvoice(entries,invoice,mapping);
-      const receipt={...b,kind:"receipt",private:false,total,date,updatedBy:state.uid,
-        updatedAt:serverTimestamp(),
+      const receipt={...b,kind:"receipt",private:false,total,
+        date:chosen.date,purchaseDateSource:chosen.source,recordedAt:new Date().toISOString(),
+        updatedBy:state.uid,updatedAt:serverTimestamp(),
         invoice:invoice?{...invoice,comparison:report,mappings:mapping,
           attachedAt:new Date().toISOString(),comparisonStatus:report.status}:null};
       // Firestore documents must remain under 1 MiB, including cart + attachment.

@@ -422,3 +422,24 @@
 .offline-closed-actions{display:flex;gap:9px;flex-wrap:wrap}
 .offline-closed-actions button{min-height:45px;flex:1;min-width:150px;padding:11px;font-weight:800;font-size:.78rem}
 @media(max-width:540px){.offline-closed-actions{flex-direction:column}.offline-closed-actions button{width:100%}}
+
+
+/* Compras local-first: operações de backup discretas e status inequívoco. */
+.shop-tools-footer{margin:36px 0 25px}
+.shop-utilities{border:1px solid #d9e4f2;background:#f7fafd;border-radius:16px;overflow:hidden}
+.shop-utilities summary{display:flex;align-items:center;cursor:pointer;padding:15px 18px;font-size:.84rem;font-weight:750;color:#42648c;list-style:none;min-height:48px}
+.shop-utilities summary::-webkit-details-marker{display:none}
+.shop-utilities summary::after{content:"⌄";font-size:1.05rem;margin-left:auto}
+.shop-utilities[open] summary::after{transform:rotate(180deg)}
+.shop-utilities-body{display:grid;gap:10px;padding:0 16px 17px}
+.shop-utilities-body p{font-size:.78rem;color:#6b7d93;line-height:1.45;margin:0 0 3px}
+.shop-utilities-body>.item-btn{text-align:left;min-height:45px}
+.shop-utilities-body .emergency-restore-control{margin:0;border:0;background:#edf3fb;gap:10px}
+.shop-utilities-body .emergency-restore-control span{font-size:.74rem}
+.emergency-banner.draft-banner{background:#eff6ff;border:1px solid #c9def6;padding:15px 17px}
+.emergency-banner.draft-banner>strong{color:#20558e}
+.emergency-banner.draft-banner>p{color:#496987}
+.emergency-banner.draft-banner .emergency-live-totals{background:#fff;color:#395b80}
+.emergency-banner.draft-banner .primary-btn{min-height:46px;box-shadow:none}
+.emergency-banner.draft-banner small{color:#54708f}
+@media(max-width:540px){.shop-utilities-body{padding:0 12px 14px}.shop-utilities-body>.item-btn{width:100%}.emergency-banner.draft-banner .emergency-buttons{flex-direction:column}.emergency-banner.draft-banner .emergency-buttons button{width:100%}}

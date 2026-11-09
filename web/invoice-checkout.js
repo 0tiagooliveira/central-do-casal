@@ -3,6 +3,7 @@
 import {parseFiscalXml,parseManualInvoiceLines} from "./invoice-parser.js";
 import {compareInvoice,suggestInvoiceMappings,labelInvoiceStatus} from "./invoice-reconcile.js";
 import {moneyCents} from "./shopping.js";
+import {purchaseDateInBrazil,isValidPurchaseDate} from "./purchase-date.js";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const brl=c=>Number.isFinite(c)?new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(c/100):"Não informado";
 const fileLimit=350000; // DataURL chars. Keeps the whole Firestore receipt under 1 MiB.
@@ -66,6 +67,8 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
     '<form id="invoice-close-form" method="dialog">',
     '<div class="dialog-header"><h2>Conferir nota e finalizar</h2><button type="button" class="item-btn" data-dismiss>Fechar</button></div>',
     '<p class="info-line">Compare o que anotou no mercado com os valores do comprovante antes de salvar a compra no histórico.</p>',
+    '<label>Data real da compra<input id="invoice-purchase-date" type="date" required value="'+purchaseDateInBrazil()+'" /></label>',
+    '<p class="invoice-format-note">Ao anexar XML, sugerimos a data de emissão da nota. Revise se corresponde ao dia da compra. O horário do registro no Firebase será guardado separadamente.</p>',
     '<label>Enviar nota fiscal (XML, foto ou PDF)<input type="file" id="invoice-upload" accept=".xml,application/xml,text/xml,.pdf,application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" /></label>',
     '<p class="invoice-format-note">XML NFC-e/NF-e: lê automaticamente produtos, quantidades e valores. Foto/PDF: guarda um anexo reduzido, mas não faz leitura automática. O XML é a melhor opção para conferir cada preço.</p>',
     '<label>Total que aparece na nota (R$)<input id="invoice-total" inputmode="decimal" placeholder="Ex.: 71,82" /></label>',
@@ -81,7 +84,8 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
   const form=dialog.querySelector("form");
   const upload=form.querySelector("#invoice-upload"),totalInput=form.querySelector("#invoice-total"),
     linesInput=form.querySelector("#invoice-lines"),comparison=form.querySelector("#invoice-compare"),
-    finish=form.querySelector("#invoice-finish");
+    finish=form.querySelector("#invoice-finish"),
+    purchaseDateInput=form.querySelector("#invoice-purchase-date");
   const getReport=()=>compareInvoice(bought,invoice,mapping);
   const row=lines=>lines.map(line=>{
     const selected=mapping[line.id]||"";
@@ -135,6 +139,7 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
     comparison.innerHTML='<p class="info-line">Lendo arquivo…</p>';
     try{
       invoice=await readInvoiceFile(file);
+      if(isValidPurchaseDate(invoice.date))purchaseDateInput.value=invoice.date;
       mapping=suggestInvoiceMappings(invoice.lines,bought);
       totalInput.value=invoice.totalCents==null?"":(invoice.totalCents/100).toFixed(2).replace(".",",");
       totalInput.readOnly=invoice.source==="xml"||invoice.source==="pdf-transcription";
@@ -168,11 +173,17 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
   });
   form.querySelector("[data-dismiss]").addEventListener("click",()=>dialog.close());
   form.querySelector("#invoice-without").addEventListener("click",()=>{
-    if(confirm("Salvar a compra sem comprovante? Os preços do mercado ficarão no histórico, mas sem conferência fiscal."))onFinish(null,{});
+    if(!isValidPurchaseDate(purchaseDateInput.value)){
+      notify("Informe a data real da compra.",true);return;
+    }
+    if(confirm("Salvar a compra sem comprovante? Os preços do mercado ficarão no histórico, mas sem conferência fiscal."))onFinish(null,{},purchaseDateInput.value);
   });
   form.addEventListener("submit",event=>{
     event.preventDefault();
     if(loading)return;
+    if(!isValidPurchaseDate(purchaseDateInput.value)){
+      notify("Informe a data real da compra.",true);return;
+    }
     if(!invoice){notify("Anexe a nota ou use 'Salvar sem nota'.",true);return;}
     if(!["xml","pdf-transcription"].includes(invoice.source)&&totalInput.value.trim()){
       try{invoice.totalCents=moneyCents(totalInput.value);}catch(err){notify(err.message,true);return;}
@@ -181,6 +192,6 @@ export function showInvoiceCheckout({dialog,state,notify,onFinish}) {
     const warning=report.status==="matched"?"Conferência completa. Salvar compra e nota?":
       "Há diferenças ou dados ainda não conferidos. Eles serão salvos como pendentes no histórico, sem alterar os preços que você registrou. Continuar?";
     if(!confirm(warning))return;
-    onFinish(invoice,mapping);
+    onFinish(invoice,mapping,purchaseDateInput.value);
   });
 }

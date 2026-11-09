@@ -1,0 +1,22 @@
+name: Verificar Compras Web (sem deploy)
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/check-web-shopping.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shopping-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar sintaxe de todos os módulos Web
+        run: find web -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Testar rascunhos de compras
+        run: node --test web/tests/*.test.mjs

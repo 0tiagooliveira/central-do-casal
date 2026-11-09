@@ -213,22 +213,33 @@ export function saveEmergency(state,market,input) {
   let draft=readEmergency(state,market);
   if(!draft){
     const baseline=state.baskets?.[market]?.generation?state.baskets[market]:readCachedBasket(state,market);
-    if(!baseline||!Array.isArray(baseline.entries)||!baseline.generation)
-      throw Error("Não há cópia da lista disponível para usar offline. Anote o item e o preço.");
+    // Uma lista nova também nasce em rascunho, sem criar documento remoto.
+    // A geração escolhida aqui será verificada antes do primeiro envio.
+    const startingBasket=baseline||{market,generation:crypto.randomUUID(),
+      revision:0,budget:0,entries:[]};
+    if(!Array.isArray(startingBasket.entries)||!startingBasket.generation)
+      throw Error("Não há uma lista válida para criar o rascunho. Nenhuma alteração foi salva.");
     draft={version:1,uid:state.uid,household:state.household,market,
       createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
-      baseRevision:Number(baseline.revision)||0,baseGeneration:baseline.generation,
-      baseline:simple(baseline),basket:simple(baseline),operations:[]};
+      baseRevision:Number(startingBasket.revision)||0,baseGeneration:startingBasket.generation,
+      baseline:simple(startingBasket),basket:simple(startingBasket),operations:[]};
   }
   const op=simple(input);
   const result=applyOperation(draft.basket,op);
   draft.basket={...result,market,revision:draft.baseRevision,localPending:true};
-  draft.operations.push(op);draft.updatedAt=new Date().toISOString();
+  draft.operations.push(op);
+  if(draft.operations.length>300)
+    throw Error("O rascunho atingiu 300 alterações. Sincronize antes de continuar.");
+  draft.updatedAt=new Date().toISOString();
+  // Gravação primeiro no dispositivo; em falha, mantém a versão anterior intacta.
+  const raw=JSON.stringify(draft);
   try{
-    storage().setItem(key(state,market),JSON.stringify(draft));
-    if(!readEmergency(state,market))throw Error("Erro de verificação do backup.");
+    storage().setItem(key(state,market),raw);
+    const saved=readEmergency(state,market);
+    if(!saved||saved.operations.length!==draft.operations.length||
+       saved.updatedAt!==draft.updatedAt)throw Error("Falha na verificação.");
   }catch{
-    throw Error("O navegador não conseguiu salvar o backup local. NÃO considere o item salvo. Registre o preço fora do app.");
+    throw Error("Não foi possível proteger o rascunho neste aparelho. Nenhuma alteração pode ser considerada salva.");
   }
   return draft;
 }
@@ -245,6 +256,37 @@ export function projectedShoppingState(state) {
 }
 export function clearEmergency(state,market){
   storage().removeItem(key(state,market));
+}
+// Outro separador do navegador pode modificar a lista enquanto a nuvem grava.
+// Nunca apagar mudanças posteriores a uma sincronização.
+// Após confirmação remota, remove só as operações efetivamente enviadas.
+// Se outra aba adicionou novas ações, elas são reaplicadas a uma base revisada.
+export function reconcileEmergencyAfterSync(state,market,sent,confirmedBasket){
+  const current=readEmergency(state,market);
+  if(!current)return {status:"synced",pending:0};
+  if(!sent||!confirmedBasket||
+     current.baseGeneration!==sent.baseGeneration||
+     current.baseRevision!==sent.baseRevision||
+     confirmedBasket.generation!==sent.baseGeneration)
+    throw Error("A lista mudou durante a sincronização. O backup local continua disponível.");
+  const prefix=current.operations.slice(0,sent.operations.length);
+  if(JSON.stringify(prefix)!==JSON.stringify(sent.operations))
+    throw Error("Outra aba alterou a ordem das operações. Nenhum backup foi apagado.");
+  const remaining=current.operations.slice(sent.operations.length);
+  if(!remaining.length){
+    clearEmergency(state,market);
+    return {status:"synced",pending:0};
+  }
+  let projected=simple(confirmedBasket);
+  for(const operation of remaining)projected=applyOperation(projected,simple(operation));
+  const rebased={...current,baseline:simple(confirmedBasket),
+    baseRevision:confirmedBasket.revision,baseGeneration:confirmedBasket.generation,
+    basket:{...projected,revision:confirmedBasket.revision,localPending:true},
+    operations:remaining,updatedAt:new Date().toISOString()};
+  storage().setItem(key(state,market),JSON.stringify(rebased));
+  if(readEmergency(state,market)?.operations.length!==remaining.length)
+    throw Error("Falha ao preservar as alterações feitas após a sincronização.");
+  return {status:"pending",pending:remaining.length};
 }
 export function downloadEmergency(state,market){
   const draft=readEmergency(state,market);
@@ -279,7 +321,7 @@ export function downloadPreviousEmergency(state,market) {
   document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1200);
 }
-export function emergencyBanner(state) {
+export function emergencyBanner(state,showExports=true,mode="") {
   const draft=readEmergency(state,state.market);
   if(!draft){
     return state.cachedBasketOnly?
@@ -290,19 +332,22 @@ export function emergencyBanner(state) {
     sum+Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000),0);
   const fmt=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n/100);
   const budget=Number(draft.basket.budget)||0;
-  return '<section class="emergency-banner" role="status">'+
-    '<strong>⚠ Modo local: '+draft.operations.length+' alteração(ões) NÃO sincronizada(s)'+
+  const planning=mode!=="market";
+  return '<section class="emergency-banner draft-banner" role="status">'+
+    '<strong>'+(planning?"✎ Rascunho salvo neste aparelho: ":"↻ Compra em andamento: ")+draft.operations.length+' alteração(ões) aguardando sincronização'+
       (draft.restoredFromFile?" · backup restaurado":"")+'</strong>'+
     '<div class="emergency-live-totals"><span>No carrinho neste aparelho: <strong>'+fmt(spent)+'</strong></span>'+
     '<span>Restante'+(budget?" do orçamento":" (orçamento não definido)")+
     ': <strong>'+(budget?fmt(budget-spent):"não disponível")+'</strong></span></div>'+
-    '<p>Os valores acima são desta compra local, independentemente da conexão. Não limpe os dados do navegador e baixe um backup antes de sair.</p>'+
+    '<p>'+(planning?"Edite a lista inteira e toque em Salvar lista quando terminar. ":"No mercado, o envio será agrupado automaticamente quando houver conexão. ")+
+       'Este rascunho ainda não está disponível no outro aparelho. Não limpe os dados do navegador.</p>'+
     (draft.syncBlockedReason?'<p class="emergency-sync-warning">⚠ '+escapeHTML(draft.syncBlockedReason)+'</p>':"")+
-    '<div class="emergency-buttons"><button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>'+
-    (hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
+    '<div class="emergency-buttons">'+
+    (showExports?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>':"")+
+    (showExports&&hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
     (!hasOfflineClosurePending(state,state.market)?
       '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
-        (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button>':"")+
+        (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>'+(planning?"Salvar lista":"Sincronizar agora")+'</button>':"")+
       '</div>'+
     '<small>A compra só ficará disponível em outros aparelhos depois da sincronização.</small></section>';
 }
