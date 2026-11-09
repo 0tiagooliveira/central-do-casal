@@ -19,10 +19,18 @@ export function catalogCategories(items) {
   return ["Todas",...[...cats].sort((a,b)=>a.localeCompare(b,"pt-BR"))];
 }
 export function queryCatalog(items,query,category) {
-  const needle=normalizeCatalogText(query);
-  return items.filter(p=>
-    (category==="Todas"||(asText(p.category)||"Sem categoria")===category)
-    && (!needle || normalizeCatalogText([p.title,p.category,p.subgroup,p.store,p.group].filter(Boolean).join(" ")).includes(needle)));
+  // Todas as palavras podem aparecer em qualquer ordem e sem acentos.
+  // Ex.: "arroz branco 5kg" encontra "Arroz 5 KG Branco".
+  const tokens=normalizeCatalogText(query).split(/\s+/).filter(Boolean);
+  return items.filter(p=>{
+    if(category!=="Todas"&&(asText(p.category)||"Sem categoria")!==category)return false;
+    if(!tokens.length)return true;
+    const haystack=normalizeCatalogText([
+      p.title,p.brand,p.marca,p.category,p.subgroup,p.store,p.group,
+      p.unit,p.quantityText,p.storageRoom,p.recipient
+    ].filter(Boolean).join(" ")).replace(/\s+/g," ");
+    return tokens.every(token=>haystack.includes(token));
+  });
 }
 export function catalogPrice(record) {
   // Na base, reference já representa centavos; SKU usa valor decimal textual.
