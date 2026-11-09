@@ -259,15 +259,34 @@ export function clearEmergency(state,market){
 }
 // Outro separador do navegador pode modificar a lista enquanto a nuvem grava.
 // Nunca apagar mudanças posteriores a uma sincronização.
-export function clearEmergencyIfUnchanged(state,market,sent){
+// Após confirmação remota, remove só as operações efetivamente enviadas.
+// Se outra aba adicionou novas ações, elas são reaplicadas a uma base revisada.
+export function reconcileEmergencyAfterSync(state,market,sent,confirmedBasket){
   const current=readEmergency(state,market);
-  if(!current)return true;
-  if(!sent||current.baseGeneration!==sent.baseGeneration||
-      current.baseRevision!==sent.baseRevision||
-      JSON.stringify(current.operations)!==JSON.stringify(sent.operations))
-    return false;
-  clearEmergency(state,market);
-  return true;
+  if(!current)return {status:"synced",pending:0};
+  if(!sent||!confirmedBasket||
+     current.baseGeneration!==sent.baseGeneration||
+     current.baseRevision!==sent.baseRevision||
+     confirmedBasket.generation!==sent.baseGeneration)
+    throw Error("A lista mudou durante a sincronização. O backup local continua disponível.");
+  const prefix=current.operations.slice(0,sent.operations.length);
+  if(JSON.stringify(prefix)!==JSON.stringify(sent.operations))
+    throw Error("Outra aba alterou a ordem das operações. Nenhum backup foi apagado.");
+  const remaining=current.operations.slice(sent.operations.length);
+  if(!remaining.length){
+    clearEmergency(state,market);
+    return {status:"synced",pending:0};
+  }
+  let projected=simple(confirmedBasket);
+  for(const operation of remaining)projected=applyOperation(projected,simple(operation));
+  const rebased={...current,baseline:simple(confirmedBasket),
+    baseRevision:confirmedBasket.revision,baseGeneration:confirmedBasket.generation,
+    basket:{...projected,revision:confirmedBasket.revision,localPending:true},
+    operations:remaining,updatedAt:new Date().toISOString()};
+  storage().setItem(key(state,market),JSON.stringify(rebased));
+  if(readEmergency(state,market)?.operations.length!==remaining.length)
+    throw Error("Falha ao preservar as alterações feitas após a sincronização.");
+  return {status:"pending",pending:remaining.length};
 }
 export function downloadEmergency(state,market){
   const draft=readEmergency(state,market);
