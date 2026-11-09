@@ -9,7 +9,7 @@ const items=[
 ];
 
 test("pesquisa encontra palavras em ordem diferente",()=>{
-  assert.deepEqual(queryCatalog(items,"5kg arroz branco","Todas").map(x=>x.title),[]);
+  assert.deepEqual(queryCatalog(items,"5kg arroz branco","Todas").map(x=>x.title),["Arroz Branco 5 KG"]);
   assert.deepEqual(queryCatalog(items,"branco arroz","Todas").map(x=>x.title),["Arroz Branco 5 KG"]);
 });
 test("pesquisa ignora acentos e combina categoria com texto",()=>{
