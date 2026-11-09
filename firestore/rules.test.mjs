@@ -137,6 +137,27 @@ test('basket revisions reject stale concurrent updates',async()=> {
   const d=db('alice'); const ref=doc(d,'households/home/baskets/Mercado');
   const basket={market:'Mercado',generation:'a'.repeat(32),budget:1000,revision:1,entries:[]};await assertSucceeds(setDoc(ref,basket));await assertFails(setDoc(ref,basket));await assertSucceeds(setDoc(ref,{...basket,revision:2}));
 });
+test('first local draft is published as one basket before atomic receipt closure',async()=> {
+  const d=db('alice'),generation='d'.repeat(32);
+  const ref=doc(d,'households/home/baskets/Mercado');
+  const baseline={market:'Mercado',generation,budget:0,revision:1,entries:[]};
+  await assertSucceeds(setDoc(ref,baseline));
+  const entries=[{id:'arroz',title:'Arroz',unit:'un',bought:true,plannedMilli:1000,actualMilli:1000,actual:699}];
+  const receipt={...baseline,...record('alice','receipt'),entries,total:699,
+    date:'2026-11-08',purchaseDateSource:'nota',recordedAt:'2026-11-09T17:00:00Z'};
+  const batch=writeBatch(d);
+  batch.set(doc(d,'households/home/records/'+generation),receipt);
+  batch.set(ref,{...baseline,revision:2,generation:'e'.repeat(32),entries:[]});
+  // O recibo tem de conter exatamente a lista ANTERIOR à sua finalização.
+  await assertFails(batch.commit());
+  const checked={...baseline,revision:2,entries};
+  await assertSucceeds(setDoc(ref,checked));
+  const correctReceipt={...receipt,revision:2};
+  const close=writeBatch(d);
+  close.set(doc(d,'households/home/records/'+generation),correctReceipt);
+  close.set(ref,{...checked,revision:3,generation:'e'.repeat(32),entries:[]});
+  await assertSucceeds(close.commit());
+});
 test('separate butcher budget is permitted and negative budget denied',async()=> {
   await assertSucceeds(setDoc(doc(db('bob'),'households/home/baskets/Açougue'),{market:'Açougue',generation:'b'.repeat(32),budget:2000,revision:1,entries:[]}));
   await assertFails(setDoc(doc(db('bob'),'households/home/baskets/Mercado'),{market:'Mercado',generation:'a'.repeat(32),budget:-1,revision:1,entries:[]}));
