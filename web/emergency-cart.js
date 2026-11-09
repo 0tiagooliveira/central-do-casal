@@ -302,7 +302,7 @@ export function downloadPreviousEmergency(state,market) {
   document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1200);
 }
-export function emergencyBanner(state,showExports=true) {
+export function emergencyBanner(state,showExports=true,mode="") {
   const draft=readEmergency(state,state.market);
   if(!draft){
     return state.cachedBasketOnly?
@@ -313,20 +313,22 @@ export function emergencyBanner(state,showExports=true) {
     sum+Math.round((Number(e.actual)||0)*Number(e.actualMilli??e.plannedMilli??1000)/1000),0);
   const fmt=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n/100);
   const budget=Number(draft.basket.budget)||0;
-  return '<section class="emergency-banner" role="status">'+
-    '<strong>⚠ Modo local: '+draft.operations.length+' alteração(ões) NÃO sincronizada(s)'+
+  const planning=mode!=="market";
+  return '<section class="emergency-banner draft-banner" role="status">'+
+    '<strong>'+(planning?"✎ Rascunho salvo neste aparelho: ":"↻ Compra em andamento: ")+draft.operations.length+' alteração(ões) aguardando sincronização'+
       (draft.restoredFromFile?" · backup restaurado":"")+'</strong>'+
     '<div class="emergency-live-totals"><span>No carrinho neste aparelho: <strong>'+fmt(spent)+'</strong></span>'+
     '<span>Restante'+(budget?" do orçamento":" (orçamento não definido)")+
     ': <strong>'+(budget?fmt(budget-spent):"não disponível")+'</strong></span></div>'+
-    '<p>Os valores acima são desta compra local, independentemente da conexão. Não limpe os dados do navegador e baixe um backup antes de sair.</p>'+
+    '<p>'+(planning?"Edite a lista inteira e toque em Salvar lista quando terminar. ":"No mercado, o envio será agrupado automaticamente quando houver conexão. ")+
+       'Este rascunho ainda não está disponível no outro aparelho. Não limpe os dados do navegador.</p>'+
     (draft.syncBlockedReason?'<p class="emergency-sync-warning">⚠ '+escapeHTML(draft.syncBlockedReason)+'</p>':"")+
     '<div class="emergency-buttons">'+
     (showExports?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>':"")+
     (showExports&&hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
     (!hasOfflineClosurePending(state,state.market)?
       '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
-        (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button>':"")+
+        (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>'+(planning?"Salvar lista":"Sincronizar agora")+'</button>':"")+
       '</div>'+
     '<small>A compra só ficará disponível em outros aparelhos depois da sincronização.</small></section>';
 }
