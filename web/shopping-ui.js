@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,clearEmergencyIfUnchanged,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,reconcileEmergencyAfterSync,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -270,13 +270,14 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       const confirmed=await actions.synchronizeEmergency(market,draft);
       if(current.uid!==getState().uid||current.household!==getState().household)
         return;
-      const cleared=clearEmergencyIfUnchanged(current,market,draft);
+      const outcome=reconcileEmergencyAfterSync(current,market,draft,confirmed.basket);
       if(confirmed?.basket &&
         Number(getState().baskets?.[market]?.revision||0)<=Number(confirmed.revision||0))
         getState().baskets[market]=confirmed.basket;
       render();
-      if(!cleared){
-        notify("Uma outra aba alterou a lista durante o envio. O backup foi preservado. Confira antes de tentar novamente.",true);
+      if(outcome.pending){
+        notify("Lote sincronizado. Mais "+outcome.pending+" alteração(ões) recente(s) continuam protegidas neste aparelho.");
+        if(shopPrefs.mode==="market")scheduleMarketSync(market);
       }else if(!automatic){
         notify("Lista salva no Firebase. Os dois celulares receberão a atualização.");
       }
