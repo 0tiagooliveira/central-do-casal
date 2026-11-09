@@ -246,11 +246,13 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     }catch(e){notify(e.message||"Não foi possível recuperar o backup.",true);}
   });
   let busy=false,marketSyncTimer=null,lastMarketSyncAt=0;
+  let autoSyncPauseUntil=0,autoSyncNeedsReview=false;
   // No mercado: agrupar toques em vez de escrever ao Firestore por produto.
   // O rascunho já foi gravado antes de iniciar este relógio.
   function scheduleMarketSync(market){
-    if(shopPrefs.mode!=="market"||!navigator.onLine||marketSyncTimer)return;
-    const wait=Math.max(9000,20000-(Date.now()-lastMarketSyncAt));
+    if(shopPrefs.mode!=="market"||!navigator.onLine||marketSyncTimer||
+       autoSyncNeedsReview||!readEmergency(getState(),market))return;
+    const wait=Math.max(9000,20000-(Date.now()-lastMarketSyncAt),autoSyncPauseUntil-Date.now());
     marketSyncTimer=setTimeout(()=>{
       marketSyncTimer=null;
       if(shopPrefs.mode!=="market"||getState().market!==market||
@@ -274,6 +276,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(confirmed?.basket &&
         Number(getState().baskets?.[market]?.revision||0)<=Number(confirmed.revision||0))
         getState().baskets[market]=confirmed.basket;
+      autoSyncPauseUntil=0;autoSyncNeedsReview=false;
       render();
       if(outcome.pending){
         notify("Lote sincronizado. Mais "+outcome.pending+" alteração(ões) recente(s) continuam protegidas neste aparelho.");
@@ -282,11 +285,27 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         notify("Lista salva no Firebase. Os dois celulares receberão a atualização.");
       }
     }catch(e){
+      if(automatic){
+        if(isQuotaError(e))autoSyncPauseUntil=Date.now()+180000;
+        else autoSyncNeedsReview=true;
+      }
       if(!automatic||!isQuotaError(e))
         notify((e.message||"Não foi possível sincronizar")+". O rascunho local foi preservado.",true);
       render();
     }finally{busy=false;}
   }
+  function resumeMarketSync(){
+    const state=getState();
+    if(document.visibilityState!=="hidden"&&state?.uid&&state?.household&&
+       shopPrefs.mode==="market"&&readEmergency(state,state.market))
+      scheduleMarketSync(state.market);
+  }
+  // Refazer a tentativa ao voltar à aba ou ao recuperar a conexão, não em cada renderização.
+  window.addEventListener("online",resumeMarketSync);
+  document.addEventListener("visibilitychange",resumeMarketSync);
+  // Recupera rascunhos que já existiam quando o navegador foi aberto.
+  setInterval(resumeMarketSync,30000);
+
   async function run(job,description,fallback=null){
     if(busy)return;
     busy=true;
