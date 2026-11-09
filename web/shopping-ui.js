@@ -73,18 +73,38 @@ function entryHTML(e,state) {
     </div>
   </article>`;
 }
+// Ações administrativas ficam acessíveis, sem disputar espaço com a compra.
+function shoppingToolsMenu(state){
+  if(!state.uid||!state.household)return "";
+  const draft=readEmergency(state,state.market);
+  const closed=readOfflineClosure(state,state.market);
+  const basket=state.baskets[state.market];
+  return '<section class="shop-tools-footer"><details class="shop-utilities">'+
+    '<summary aria-label="Abrir ferramentas e backups">☰ Ferramentas e backups</summary>'+
+    '<div class="shop-utilities-body">'+
+    '<p>Importar, exportar ou recuperar dados sem atrapalhar sua compra.</p>'+
+    '<button type="button" class="item-btn" data-shop-action="import">Importar lista antiga do Android</button>'+
+    (!draft&&basket?.generation?'<button type="button" class="item-btn" data-shop-action="export-basket">Exportar cópia da lista atual</button>':"")+
+    (draft?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup local não sincronizado</button>':"")+
+    (draft&&localStorage.getItem("cdc:emergency-v1:"+encodeURIComponent(state.uid)+":"+encodeURIComponent(state.household)+":"+encodeURIComponent(state.market)+":anterior")?
+      '<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar backup anterior</button>':"")+
+    (closed?.status==="pending"?'<button type="button" class="item-btn" data-shop-action="offline-closed-export">Baixar compra finalizada offline</button>':"")+
+    restoreBackupControl(state)+
+    '</div></details></section>';
+}
 export function shoppingView({state}) {
   state=projectedShoppingState(state);
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+
+    offlineClosureBanner(state,false)+cartBatchBanner(state)+emergencyBanner(state,false);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
-  if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
-  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs);
+  if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state)+shoppingToolsMenu(state);
+  if(shopPrefs.mode==="catalog")return viewHeader+catalogView(state,shopPrefs)+shoppingToolsMenu(state);
   if(shopPrefs.mode==="market")return viewHeader+`<div class="switcher shop-market-switch">${options}</div>`+
-    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]});
+    marketView(state,{section:shopPrefs.marketSection,search:shopPrefs.marketSearch[market]||"",priceDrafts:priceDrafts[market]})+shoppingToolsMenu(state);
   const b=state.baskets[market]||{market,entries:[],budget:0};
   const entries=Array.isArray(b.entries)?b.entries:[];
   const list=entries.filter(e=>!e.bought);
@@ -148,7 +168,7 @@ export function shoppingView({state}) {
         ${invoiceInfo}
         <div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
     }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
-    <div class="backup-panel"><div><strong>Compras antigas no Android?</strong><p>Você pode importar as listas de um JSON exportado pelo aplicativo. Itens existentes são preservados e títulos repetidos não são mesclados automaticamente.</p></div><button type="button" class="item-btn" data-shop-action="import">Importar lista antiga</button></div>`;
+    `+shoppingToolsMenu(state);
 }
 export function installShoppingUI({root,db,auth,getState,render}) {
   const actions=createShoppingActions(db,auth,getState);
@@ -428,6 +448,24 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       try{downloadEmergency(getState(),market);notify("Backup da compra baixado neste aparelho.");}
       catch(e){notify(e.message,true);}
       return;
+    }
+    if(act==="export-basket"){
+      const live=getState(),basket=live.baskets?.[market];
+      if(readEmergency(live,market)){
+        notify("Há alterações locais pendentes. Use Baixar backup local não sincronizado.",true);
+        return;
+      }
+      if(!basket?.generation||!Array.isArray(basket.entries)){
+        notify("Não há uma lista sincronizada disponível para exportar.",true);return;
+      }
+      const file={type:"central-do-casal-basket-backup",exportedAt:new Date().toISOString(),
+        baskets:{[market]:basket}};
+      const url=URL.createObjectURL(new Blob([JSON.stringify(file,null,2)],{type:"application/json"}));
+      const a=document.createElement("a");
+      a.href=url;a.download="central-lista-"+(market==="Mercado"?"mercado":"acougue")+"-"+new Date().toISOString().slice(0,10)+".json";
+      document.body.append(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+      notify("Cópia da lista disponível para download. Não altera os dados da nuvem.");return;
     }
     if(act==="emergency-sync"){
       const draft=readEmergency(getState(),market),closed=readOfflineClosure(getState(),market);
