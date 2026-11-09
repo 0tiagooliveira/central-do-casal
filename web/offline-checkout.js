@@ -2,6 +2,7 @@
 // recusa gravações. Arquiva compra e comprovante SEM afirmar sincronização.
 import {readEmergency,closedKey} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
+import {resolvePurchaseDate} from "./purchase-date.js";
 const store=()=>window.localStorage;
 const clone=v=>JSON.parse(JSON.stringify(v));
 const fmt=c=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(c/100);
@@ -15,7 +16,7 @@ export function readOfflineClosure(state,market=state.market){
     return c;
   }catch{return null;}
 }
-export function archiveOfflinePurchase(state,market,invoice=null,mapping={}){
+export function archiveOfflinePurchase(state,market,invoice=null,mapping={},purchaseDate=""){
   const draft=readEmergency(state,market);
   if(!draft||!draft.basket?.generation)
     throw Error("Não existe uma compra offline para finalizar neste aparelho.");
@@ -43,12 +44,12 @@ export function archiveOfflinePurchase(state,market,invoice=null,mapping={}){
       throw Error("Comprovante inválido ou grande demais para guardar com a compra.");
   }
   const total=bought.reduce((n,e)=>n+Math.round(e.actual*Number(e.actualMilli??e.plannedMilli)/1000),0);
-  const d=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",
-    year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+  const chosen=resolvePurchaseDate(invoice,purchaseDate);
   const report=compareInvoice(entries,invoice,mapping);
   const receipt={market,generation:basket.generation,revision:Number(draft.baseRevision)||0,
     budget:basket.budget||0,entries,kind:"receipt",private:false,total,
-    date:d.year+"-"+d.month+"-"+d.day,updatedBy:state.uid,updatedAt:new Date().toISOString(),
+    date:chosen.date,purchaseDateSource:chosen.source,recordedAt:new Date().toISOString(),
+    updatedBy:state.uid,updatedAt:new Date().toISOString(),
     invoice:invoice?{...clone(invoice),mappings:clone(mapping),comparison:report,
       comparisonStatus:report.status,attachedAt:new Date().toISOString()}:null};
   const archive={version:1,status:"pending",uid:state.uid,household:state.household,market,
