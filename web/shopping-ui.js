@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -86,7 +86,7 @@ function shoppingToolsMenu(state){
     '<button type="button" class="item-btn" data-shop-action="import">Importar lista antiga do Android</button>'+
     (!draft&&basket?.generation?'<button type="button" class="item-btn" data-shop-action="export-basket">Exportar cópia da lista atual</button>':"")+
     (draft?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup local não sincronizado</button>':"")+
-    (draft&&localStorage.getItem("cdc:emergency-v1:"+encodeURIComponent(state.uid)+":"+encodeURIComponent(state.household)+":"+encodeURIComponent(state.market)+":anterior")?
+    (draft&&hasPreviousEmergency(state,state.market)?
       '<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar backup anterior</button>':"")+
     (closed?.status==="pending"?'<button type="button" class="item-btn" data-shop-action="offline-closed-export">Baixar compra finalizada offline</button>':"")+
     restoreBackupControl(state)+
