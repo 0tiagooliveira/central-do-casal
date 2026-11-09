@@ -18,6 +18,8 @@ import {marketView,quantityControls} from "./shopping-market.js";
 import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
 
 const currency=n=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format((Number(n)||0)/100);
+const purchaseDateBR=value=>/^\d{4}-\d{2}-\d{2}$/.test(String(value||""))?
+  value.slice(8,10)+"/"+value.slice(5,7)+"/"+value.slice(0,4):"Data não informada";
 const quantity=n=>(Number(n||1000)/1000).toLocaleString("pt-BR",{maximumFractionDigits:3});
 const inputMoney=n=>((Number(n)||0)/100).toFixed(2).replace(".",",");
 const clean=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -164,7 +166,8 @@ export function shoppingView({state}) {
           </div>`).join("")}</details>`:""}
           <small>Valores documentados pelo arquivo enviado, sem verificação fiscal externa.</small></div>`:
         '<p class="info-line">Compra sem nota fiscal vinculada.</p>';
-      return `<details class="panel receipt-detail"><summary><strong>${clean(r.date||"Compra registrada")}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
+      return `<details class="panel receipt-detail"><summary><strong>${purchaseDateBR(r.date)}</strong> · ${purchased.length} produtos <span>${currency(r.total)}</span></summary>
+        <p class="info-line">${r.purchaseDateSource==="nota"?"Data sugerida pela nota fiscal":r.purchaseDateSource==="manual"?"Data informada manualmente":r.purchaseDateSource==="fechamento"?"Data do fechamento":"Data histórica: origem ainda não conferida"}${invoice?.date&&invoice.date!==r.date?" · Nota emitida em "+purchaseDateBR(invoice.date):""}</p>
         ${invoiceInfo}
         <div class="receipt-items">${purchased.map(e=>`<div class="receipt-row"><span>${clean(e.title||"Sem nome")} · ${quantity(e.actualMilli||e.plannedMilli)} ${clean(e.unit)}</span><button type="button" class="item-btn" data-shop-action="repurchase" data-receipt-id="${clean(r.id)}" data-item-id="${clean(e.id)}">Repor</button></div>`).join("")||"<p>Sem produtos marcados.</p>"}</div></details>`;
     }).join(""):`<div class="empty">Ainda não há compras concluídas sincronizadas.</div>`}</div>
