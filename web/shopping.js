@@ -124,9 +124,10 @@ export function createShoppingActions(db,auth,getState) {
       const merged=replayEmergency(remote,draft);
       if(!Array.isArray(merged.entries)||merged.entries.length>200)
         throw Error("A lista ficou acima de 200 itens. Revise antes de sincronizar.");
-      tx.set(ref,{market,generation:remote.generation,budget:merged.budget,
-        entries:merged.entries,revision:Number(remote.revision||0)+1});
-      return {revision:Number(remote.revision||0)+1,generation:remote.generation};
+      const saved={market,generation:remote.generation,budget:merged.budget,
+        entries:merged.entries,revision:Number(remote.revision||0)+1};
+      tx.set(ref,saved);
+      return {revision:saved.revision,generation:saved.generation,basket:saved};
     });
   }
   async function publishOfflinePurchase(market,draft,closed) {
