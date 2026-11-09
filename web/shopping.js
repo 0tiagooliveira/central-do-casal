@@ -115,12 +115,18 @@ export function createShoppingActions(db,auth,getState) {
       throw Error("Backup local inválido para sincronização.");
     return runTransaction(db,async tx=>{
       const ref=basketRef(state,market),snap=await tx.get(ref);
-      if(!snap.exists())throw Error("A lista não existe mais no Firebase. Preserve o backup.");
-      const remote=snap.data();
-      const next=replayEmergency(remote,draft);
-      if(!Array.isArray(next.entries)||next.entries.length>200)
+      const isFirstSave=!snap.exists();
+      if(isFirstSave&&Number(draft.baseRevision)!==0)
+        throw Error("A lista original sumiu do Firebase. O rascunho foi preservado.");
+      const remote=isFirstSave?draft.baseline:snap.data();
+      if(!remote||remote.generation!==draft.baseGeneration)
+        throw Error("Há uma lista diferente neste mercado. Seu rascunho foi preservado para conciliação.");
+      const merged=replayEmergency(remote,draft);
+      if(!Array.isArray(merged.entries)||merged.entries.length>200)
         throw Error("A lista ficou acima de 200 itens. Revise antes de sincronizar.");
-      tx.set(ref,{market,generation:remote.generation,budget:next.budget,entries:next.entries,revision:Number(remote.revision||0)+1});
+      tx.set(ref,{market,generation:remote.generation,budget:merged.budget,
+        entries:merged.entries,revision:Number(remote.revision||0)+1});
+      return {revision:Number(remote.revision||0)+1,generation:remote.generation};
     });
   }
   async function publishOfflinePurchase(market,draft,closed) {
