@@ -279,7 +279,7 @@ export function downloadPreviousEmergency(state,market) {
   document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1200);
 }
-export function emergencyBanner(state) {
+export function emergencyBanner(state,showExports=true) {
   const draft=readEmergency(state,state.market);
   if(!draft){
     return state.cachedBasketOnly?
@@ -298,8 +298,9 @@ export function emergencyBanner(state) {
     ': <strong>'+(budget?fmt(budget-spent):"não disponível")+'</strong></span></div>'+
     '<p>Os valores acima são desta compra local, independentemente da conexão. Não limpe os dados do navegador e baixe um backup antes de sair.</p>'+
     (draft.syncBlockedReason?'<p class="emergency-sync-warning">⚠ '+escapeHTML(draft.syncBlockedReason)+'</p>':"")+
-    '<div class="emergency-buttons"><button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>'+
-    (hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
+    '<div class="emergency-buttons">'+
+    (showExports?'<button type="button" class="item-btn" data-shop-action="emergency-export">Baixar backup</button>':"")+
+    (showExports&&hasPreviousEmergency(state,state.market)?'<button type="button" class="item-btn" data-shop-action="emergency-export-previous">Baixar cópia anterior</button>':"")+
     (!hasOfflineClosurePending(state,state.market)?
       '<button type="button" class="primary-btn" data-shop-action="emergency-sync"'+
         (draft.syncBlockedReason?' disabled title="Exige conferência da versão original"':"")+'>Tentar sincronizar</button>':"")+
