@@ -1,7 +1,7 @@
 import {marketTotals} from "./market-totals.js";
 import {readCartBatch,planCartBatch,cartBatchBanner,consumeCartBatchLink} from "./cart-batch-import.js";
 import {writeAppRoute} from "./navigation.js";
-import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
+import {isQuotaError,readEmergency,saveEmergency,projectedShoppingState,clearEmergency,clearEmergencyIfUnchanged,downloadEmergency,emergencyBanner,restoreBackupControl,inspectEmergencyBackup,restoreEmergencyBackup,downloadPreviousEmergency,hasPreviousEmergency} from "./emergency-cart.js";
 import {showMarketAddDialog} from "./market-add-dialog.js";
 import {archiveOfflinePurchase,readOfflineClosure,offlineClosureBanner,downloadOfflineClosure,markOfflineClosureSynced} from "./offline-checkout.js";
 import {showInvoiceCheckout} from "./invoice-checkout.js";
@@ -245,36 +245,65 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         ". Dados ainda NÃO sincronizados com o Firebase. Baixe o backup antes de sair.");
     }catch(e){notify(e.message||"Não foi possível recuperar o backup.",true);}
   });
-  let busy=false;
+  let busy=false,marketSyncTimer=null,lastMarketSyncAt=0;
+  // No mercado: agrupar toques em vez de escrever ao Firestore por produto.
+  // O rascunho já foi gravado antes de iniciar este relógio.
+  function scheduleMarketSync(market){
+    if(shopPrefs.mode!=="market"||!navigator.onLine||marketSyncTimer)return;
+    const wait=Math.max(9000,20000-(Date.now()-lastMarketSyncAt));
+    marketSyncTimer=setTimeout(()=>{
+      marketSyncTimer=null;
+      if(shopPrefs.mode!=="market"||getState().market!==market||
+         document.visibilityState==="hidden"||!navigator.onLine)return;
+      if(busy){scheduleMarketSync(market);return;}
+      synchronizeDraft(market,true);
+    },wait);
+  }
+  async function synchronizeDraft(market,automatic=false){
+    if(busy)return;
+    const current=getState(),draft=readEmergency(current,market);
+    if(!draft?.operations?.length)return;
+    if(readOfflineClosure(current,market)?.status==="pending")return;
+    busy=true;
+    lastMarketSyncAt=Date.now();
+    try{
+      const confirmed=await actions.synchronizeEmergency(market,draft);
+      if(current.uid!==getState().uid||current.household!==getState().household)
+        return;
+      const cleared=clearEmergencyIfUnchanged(current,market,draft);
+      if(confirmed?.basket &&
+        Number(getState().baskets?.[market]?.revision||0)<=Number(confirmed.revision||0))
+        getState().baskets[market]=confirmed.basket;
+      render();
+      if(!cleared){
+        notify("Uma outra aba alterou a lista durante o envio. O backup foi preservado. Confira antes de tentar novamente.",true);
+      }else if(!automatic){
+        notify("Lista salva no Firebase. Os dois celulares receberão a atualização.");
+      }
+    }catch(e){
+      if(!automatic||!isQuotaError(e))
+        notify((e.message||"Não foi possível sincronizar")+". O rascunho local foi preservado.",true);
+      render();
+    }finally{busy=false;}
+  }
   async function run(job,description,fallback=null){
     if(busy)return;
     busy=true;
     dlg.querySelectorAll("button").forEach(b=>b.disabled=true);
     try{
-      if(fallback?.market&&readEmergency(getState(),fallback.market)){
+      if(fallback?.market){
         saveEmergency(getState(),fallback.market,fallback.operation);
         if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
           delete priceDrafts[fallback.market][fallback.operation.id];
         if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
         dlg.close();render();
-        notify(description+" · salvo SOMENTE neste aparelho. Baixe o backup.");
+        if(shopPrefs.mode==="market")scheduleMarketSync(fallback.market);
+        notify(description+" · rascunho protegido neste aparelho"+(shopPrefs.mode==="market"?" · sincronização agrupada ativa.":". Salve a lista quando terminar."));
         return;
       }
       await job();dlg.close();notify(description+" · sincronizado no Firebase.");
     }catch(e){
-      if(fallback?.market&&isQuotaError(e)){
-        try{
-          saveEmergency(getState(),fallback.market,fallback.operation);
-          if(fallback.operation.type==="update"&&fallback.operation.entry?.actual!=null)
-            delete priceDrafts[fallback.market][fallback.operation.id];
-          if(fallback.operation.type==="addToCart"){shopPrefs.marketSection="bought";rememberShoppingRoute();}
-          dlg.close();render();
-          notify(description+" · limite do Firebase atingido. Salvo SOMENTE neste aparelho. Faça backup.",true);
-          return;
-        }catch(saveError){
-          notify(saveError.message,true);
-        }
-      }else{
+      {
         notify(isQuotaError(e)?
           "Limite de uso do Firebase atingido. Os dados NÃO foram sincronizados. Anote o preço e use o modo local.":
           (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
