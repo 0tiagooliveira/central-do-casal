@@ -88,7 +88,7 @@ export function downloadOfflineClosure(state,market){
   document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1200);
 }
-export function offlineClosureBanner(state){
+export function offlineClosureBanner(state,showExport=true){
   const c=readOfflineClosure(state,state.market);
   if(!c||c.status!=="pending")return "";
   const r=c.receipt,number=r.entries.filter(e=>e.bought).length;
@@ -99,7 +99,8 @@ export function offlineClosureBanner(state){
       ' estão guardados no histórico offline. Sua lista original foi preservada.</p>'+
     (r.invoice?.comparison?'<p>Conferência da nota: '+esc(r.invoice.comparison.status)+
       '. Diferenças não foram apagadas.</p>':"")+
-    '<div class="offline-closed-actions"><button type="button" class="primary-btn" data-shop-action="offline-closed-export">Baixar compra finalizada</button>'+
+    '<div class="offline-closed-actions">'+
+    (showExport?'<button type="button" class="primary-btn" data-shop-action="offline-closed-export">Baixar compra finalizada</button>':"")+
     '<button type="button" class="item-btn" data-shop-action="emergency-sync">Enviar compra e nota ao Firebase</button></div>'+
     '<small>O celular da outra pessoa só terá essa compra após a sincronização. Até lá, não inicie outra compra sobre a mesma lista.</small></section>';
 }
