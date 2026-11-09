@@ -213,22 +213,33 @@ export function saveEmergency(state,market,input) {
   let draft=readEmergency(state,market);
   if(!draft){
     const baseline=state.baskets?.[market]?.generation?state.baskets[market]:readCachedBasket(state,market);
-    if(!baseline||!Array.isArray(baseline.entries)||!baseline.generation)
-      throw Error("Não há cópia da lista disponível para usar offline. Anote o item e o preço.");
+    // Uma lista nova também nasce em rascunho, sem criar documento remoto.
+    // A geração escolhida aqui será verificada antes do primeiro envio.
+    const startingBasket=baseline||{market,generation:crypto.randomUUID(),
+      revision:0,budget:0,entries:[]};
+    if(!Array.isArray(startingBasket.entries)||!startingBasket.generation)
+      throw Error("Não há uma lista válida para criar o rascunho. Nenhuma alteração foi salva.");
     draft={version:1,uid:state.uid,household:state.household,market,
       createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
-      baseRevision:Number(baseline.revision)||0,baseGeneration:baseline.generation,
-      baseline:simple(baseline),basket:simple(baseline),operations:[]};
+      baseRevision:Number(startingBasket.revision)||0,baseGeneration:startingBasket.generation,
+      baseline:simple(startingBasket),basket:simple(startingBasket),operations:[]};
   }
   const op=simple(input);
   const result=applyOperation(draft.basket,op);
   draft.basket={...result,market,revision:draft.baseRevision,localPending:true};
-  draft.operations.push(op);draft.updatedAt=new Date().toISOString();
+  draft.operations.push(op);
+  if(draft.operations.length>300)
+    throw Error("O rascunho atingiu 300 alterações. Sincronize antes de continuar.");
+  draft.updatedAt=new Date().toISOString();
+  // Gravação primeiro no dispositivo; em falha, mantém a versão anterior intacta.
+  const raw=JSON.stringify(draft);
   try{
-    storage().setItem(key(state,market),JSON.stringify(draft));
-    if(!readEmergency(state,market))throw Error("Erro de verificação do backup.");
+    storage().setItem(key(state,market),raw);
+    const saved=readEmergency(state,market);
+    if(!saved||saved.operations.length!==draft.operations.length||
+       saved.updatedAt!==draft.updatedAt)throw Error("Falha na verificação.");
   }catch{
-    throw Error("O navegador não conseguiu salvar o backup local. NÃO considere o item salvo. Registre o preço fora do app.");
+    throw Error("Não foi possível proteger o rascunho neste aparelho. Nenhuma alteração pode ser considerada salva.");
   }
   return draft;
 }
