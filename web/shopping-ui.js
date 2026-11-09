@@ -98,7 +98,7 @@ export function shoppingView({state}) {
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
   const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+
-    offlineClosureBanner(state,false)+cartBatchBanner(state)+emergencyBanner(state,false);
+    offlineClosureBanner(state,false)+cartBatchBanner(state)+emergencyBanner(state,false,shopPrefs.mode);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state)+shoppingToolsMenu(state);
@@ -538,6 +538,8 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       shopPrefs.mode=act.slice(5);
       rememberShoppingRoute();
       render();
+      if(shopPrefs.mode==="market"&&readEmergency(getState(),market))
+        scheduleMarketSync(market);
       window.scrollTo({top:0,behavior:"auto"});
       return;
     }
