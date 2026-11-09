@@ -356,15 +356,22 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       shopPrefs.quantities[event.target.dataset.qtyKey]=event.target.value;return;
     }
     if(event.target.id!=="shop-catalog-search")return;
-    shopPrefs.search=event.target.value;shopPrefs.limit=40;
+    const searchText=event.target.value;
+    const market=getState().market,source=shopPrefs.source;
+    shopPrefs.search=searchText;shopPrefs.limit=40;
     persistShoppingFilters();
-    const cursor=event.target.selectionStart??shopPrefs.search.length;
+    const cursor=event.target.selectionStart??searchText.length;
     clearTimeout(catalogSearchTimer);
     catalogSearchTimer=setTimeout(()=>{
+      // Não redesenhar outra aba nem roubar o foco depois de navegação.
+      if(getState().market!==market||shopPrefs.source!==source||shopPrefs.mode!=="catalog")return;
       render();
       const field=root.querySelector("#shop-catalog-search");
-      if(field){field.focus();field.setSelectionRange(cursor,cursor);}
-    },140);
+      if(field){
+        try{field.focus({preventScroll:true});}catch{field.focus();}
+        try{field.setSelectionRange(cursor,cursor);}catch{}
+      }
+    },120);
   });
   root.addEventListener("change",event=>{
     if(event.target.id==="shop-catalog-category"){shopPrefs.category=event.target.value;shopPrefs.limit=40;persistShoppingFilters();render();}
