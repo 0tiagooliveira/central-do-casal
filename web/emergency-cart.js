@@ -257,6 +257,18 @@ export function projectedShoppingState(state) {
 export function clearEmergency(state,market){
   storage().removeItem(key(state,market));
 }
+// Outro separador do navegador pode modificar a lista enquanto a nuvem grava.
+// Nunca apagar mudanças posteriores a uma sincronização.
+export function clearEmergencyIfUnchanged(state,market,sent){
+  const current=readEmergency(state,market);
+  if(!current)return true;
+  if(!sent||current.baseGeneration!==sent.baseGeneration||
+      current.baseRevision!==sent.baseRevision||
+      JSON.stringify(current.operations)!==JSON.stringify(sent.operations))
+    return false;
+  clearEmergency(state,market);
+  return true;
+}
 export function downloadEmergency(state,market){
   const draft=readEmergency(state,market);
   if(!draft)throw Error("Nenhum backup local pendente.");
