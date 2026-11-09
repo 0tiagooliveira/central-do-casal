@@ -245,7 +245,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         ". Dados ainda NÃO sincronizados com o Firebase. Baixe o backup antes de sair.");
     }catch(e){notify(e.message||"Não foi possível recuperar o backup.",true);}
   });
-  let busy=false,marketSyncTimer=null,lastMarketSyncAt=0;
+  let busy=false,syncBusy=false,marketSyncTimer=null,lastMarketSyncAt=0;
   let autoSyncPauseUntil=0,autoSyncNeedsReview=false;
   // No mercado: agrupar toques em vez de escrever ao Firestore por produto.
   // O rascunho já foi gravado antes de iniciar este relógio.
@@ -257,16 +257,16 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       marketSyncTimer=null;
       if(shopPrefs.mode!=="market"||getState().market!==market||
          document.visibilityState==="hidden"||!navigator.onLine)return;
-      if(busy){scheduleMarketSync(market);return;}
+      if(busy||syncBusy){scheduleMarketSync(market);return;}
       synchronizeDraft(market,true);
     },wait);
   }
   async function synchronizeDraft(market,automatic=false){
-    if(busy)return;
+    if(syncBusy)return;
     const current=getState(),draft=readEmergency(current,market);
     if(!draft?.operations?.length)return;
     if(readOfflineClosure(current,market)?.status==="pending")return;
-    busy=true;
+    syncBusy=true;
     lastMarketSyncAt=Date.now();
     try{
       const confirmed=await actions.synchronizeEmergency(market,draft);
@@ -292,7 +292,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(!automatic||!isQuotaError(e))
         notify((e.message||"Não foi possível sincronizar")+". O rascunho local foi preservado.",true);
       render();
-    }finally{busy=false;}
+    }finally{syncBusy=false;}
   }
   function resumeMarketSync(){
     const state=getState();
@@ -718,6 +718,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       if(entry!==null){try{const budget=moneyCents(entry);run(()=>actions.changeBudget(market,budget),"Orçamento atualizado",{market,operation:{type:"budget",budget}});}catch(e){notify(e.message,true);}}
     }
     if(act==="close"){
+      if(syncBusy){
+        notify("Há uma sincronização sendo confirmada. Confira o status antes de finalizar.",true);
+        return;
+      }
       const previous=readOfflineClosure(getState(),market);
       if(previous?.status==="pending"){
         notify("Esta compra já foi FINALIZADA offline. Use Baixar compra finalizada ou Enviar compra e nota ao Firebase.",true);
