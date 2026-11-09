@@ -303,11 +303,9 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       }
       await job();dlg.close();notify(description+" · sincronizado no Firebase.");
     }catch(e){
-      {
-        notify(isQuotaError(e)?
-          "Limite de uso do Firebase atingido. Os dados NÃO foram sincronizados. Anote o preço e use o modo local.":
-          (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
-      }
+      notify(fallback?.market?
+        (e.message||"Não foi possível proteger o rascunho")+". Nenhuma alteração foi confirmada.":
+        (e.message||"Erro na sincronização")+". Verifique a conexão.",true);
       dlg.querySelectorAll("button").forEach(b=>b.disabled=false);
     }finally{busy=false;}
   }
@@ -515,15 +513,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         }finally{busy=false;}
         return;
       }
-      if(!confirm("Enviar "+draft.operations.length+" alteração(ões) locais para o Firebase? Se outro aparelho alterou o mesmo produto, a sincronização será interrompida para preservar seus dados."))return;
-      if(busy)return;busy=true;
-      try{
-        await actions.synchronizeEmergency(market,draft);
-        clearEmergency(getState(),market);render();
-        notify("Alterações locais sincronizadas. Confira o carrinho atualizado.");
-      }catch(e){
-        notify(isQuotaError(e)?"O Firebase continua com a cota excedida. Seu backup local foi preservado. Tente sincronizar depois.":(e.message||"Não foi possível sincronizar. Seu backup está preservado."),true);
-      }finally{busy=false;}
+      await synchronizeDraft(market);
       return;
     }
     if(act==="clear-shopping-search"){
