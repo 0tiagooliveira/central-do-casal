@@ -732,16 +732,35 @@ export function installShoppingUI({root,db,auth,getState,render}) {
         notify("Marque ao menos um produto comprado antes de finalizar.",true);return;
       }
       const localDraft=readEmergency(getState(),market);
-      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping)=>{
+      showInvoiceCheckout({dialog:dlg,state:s,notify,onFinish:(invoice,mapping,purchaseDate)=>{
         if(localDraft){
+          let archived;
           try{
-            const archived=archiveOfflinePurchase(getState(),market,invoice,mapping);
+            archived=archiveOfflinePurchase(getState(),market,invoice,mapping,purchaseDate);
             dlg.close();render();
-            notify("Compra FINALIZADA neste aparelho ("+
-              currency(archived.receipt.total)+"). Nota e histórico offline salvos; baixe a compra finalizada.");
-          }catch(e){notify(e.message||"Erro ao finalizar offline.",true);}
+          }catch(e){notify(e.message||"Erro ao guardar a compra neste aparelho.",true);return;}
+          if(!navigator.onLine){
+            notify("Compra finalizada neste aparelho, ainda NÃO sincronizada. O histórico e a nota estão protegidos localmente.");
+            return;
+          }
+          syncBusy=true;
+          (async()=>{
+            try{
+              const saved=await actions.publishOfflinePurchase(market,localDraft,archived);
+              markOfflineClosureSynced(getState(),market);
+              clearEmergency(getState(),market);
+              if(saved?.basket&&Number(getState().baskets?.[market]?.revision||0)<=saved.basket.revision)
+                getState().baskets[market]=saved.basket;
+              render();
+              notify("Compra finalizada e sincronizada no histórico do casal.");
+            }catch(error){
+              render();
+              notify("Compra guardada neste aparelho, mas ainda NÃO sincronizada: "+
+                (error.message||"erro de conexão")+". Não apague o backup.",true);
+            }finally{syncBusy=false;}
+          })();
         }else{
-          run(()=>actions.closeBasket(market,invoice,mapping),
+          run(()=>actions.closeBasket(market,invoice,mapping,purchaseDate),
             "Compra e conferência salvas no histórico");
         }
       }});
