@@ -405,6 +405,10 @@ export function installShoppingUI({root,db,auth,getState,render}) {
       return;
     }
     if(act==="ean-sync"){
+      if(readEmergency(getState(),market)||readOfflineClosure(getState(),market)?.status==="pending"){
+        notify("Existe uma compra offline não sincronizada. Sincronize ou finalize esse backup antes do lote EAN, sem perder o rascunho.",true);
+        return;
+      }
       const key=eanDraftKey(s);
       const drafts=readEanDrafts(window.localStorage,key);
       if(!drafts.length){notify("Não há produtos para sincronizar.");return;}

@@ -5,7 +5,7 @@
 - GTIN-8, GTIN-12, GTIN-13 e GTIN-14 passam pela verificação do dígito final. **Códigos internos do Muffato, como `17246`, não são EAN**.
 - A consulta começa com catálogo e linhas de XML fiscal já carregados no estado da família (sem leitura adicional). Depois tenta cache do navegador, PreçoMelhor e Open Food Facts. Resultados indicam a fonte e não incluem preços pagos.
 - Rascunhos do scanner ficam no `localStorage` separados por usuário, casa e Mercado/Açougue. Até a confirmação do usuário, **zero leituras/gravações no Firestore por scanner**. Um lote é enviado por uma transação, com verificação de revisão e sem substituir registros dos outros celulares.
-- Itens já encontrados por EAN ou por título/unidade não são duplicados. Se a lista mudou enquanto o usuário revisava, o rascunho continua no aparelho. Para problemas de conexão, não limpar o rascunho.
+- O lote EAN não é enviado enquanto há operações ou finalização offline pendentes nessa lista. Itens já encontrados por EAN ou por título/unidade não são duplicados. Se a lista mudou enquanto o usuário revisava, o rascunho continua no aparelho. Para problemas de conexão, não limpar o rascunho.
 - A importação fiscal de XML já preserva `cEAN` em `web/invoice-parser.js`. Somente itens do histórico carregado cujo `gtin` seja válido podem ser sugeridos para revisão. Esta etapa **não** vincula automaticamente descrições fiscais a códigos internos, não importa os PDFs desta conversa e não grava um catálogo global; associação com código interno de loja exige confirmação e evidência.
 - Não se faz deploy, merge, escrita na base de produtos, migração de Firestore ou publicação de regras neste PR.
 
