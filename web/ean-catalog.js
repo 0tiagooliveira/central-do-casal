@@ -46,6 +46,30 @@ export function fromOpenFoodFacts(body, ean) {
   return product(ean,"openfoodfacts",p.product_name_pt || p.product_name,p.brands,p.quantity,p.image_front_url || p.image_url);
 }
 
+// O histórico já carregado é consultado em memória. Não cria nova leitura Firestore.
+export function fromLocalRecords(records,ean) {
+  const entries=Array.isArray(records)?records:[];
+  for(const item of entries){
+    if(!["catalogItem","catalogSku"].includes(item?.kind))continue;
+    const code=normalizeGtin(item.gtin ?? item.ean ?? item.barcode ?? "");
+    if(code===ean){
+      const found=product(ean,"minha-base",item.title,item.brand,item.package ?? item.quantityText,"");
+      if(found)return found;
+    }
+  }
+  for(const receipt of entries){
+    if(receipt?.kind!=="receipt")continue;
+    const lines=receipt.invoice?.lines;
+    if(!Array.isArray(lines))continue;
+    for(const line of lines){
+      if(normalizeGtin(line?.gtin)===ean){
+        const found=product(ean,"nota-anterior",line.name,line.brand,line.quantityText,"");
+        if(found)return found;
+      }
+    }
+  }
+  return null;
+}
 const cacheKey = ean => "cdc:ean:lookup:v1:" + ean;
 function readCache(storage, ean) {
   try {
@@ -69,9 +93,11 @@ async function getBody(fetchImpl, url) {
 }
 
 export async function lookupGtin(input,{fetchImpl=globalThis.fetch,storage=globalThis.localStorage,
-    now=Date.now()}={}) {
+    localRecords=[],now=Date.now()}={}) {
   const ean=normalizeGtin(input);
   if (!ean) throw Error("Código EAN/GTIN inválido. Confira os dígitos e tente novamente.");
+  const local=fromLocalRecords(localRecords,ean);
+  if(local)return {ean,status:"found",product:local,fromLocal:true,fromCache:false};
   const cached=readCache(storage,ean);
   if (cached && cached.expiresAt > now) return {...cached.value,fromCache:true};
   const sources=[

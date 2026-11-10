@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {normalizeGtin,lookupGtin,fromOpenFoodFacts,fromPrecoMelhor} from "../web/ean-catalog.js";
+import {normalizeGtin,lookupGtin,fromOpenFoodFacts,fromPrecoMelhor,fromLocalRecords} from "../web/ean-catalog.js";
 import {eanDraftKey,readEanDrafts,addEanDraft,clearEanDrafts,planEanDraftBatch} from "../web/ean-drafts.js";
 
 const storage=()=>{const values=new Map();return {
@@ -34,6 +34,18 @@ test("consultas: cache elimina requisições repetidas e nenhum dado é salvo no
   assert.equal(first.status,"found");
   assert.equal(second.fromCache,true);
   assert.equal(requests,1);
+});
+test("a Central identifica EAN do catálogo e de XMLs anteriores sem chamar APIs",async()=>{
+  const local=[
+    {kind:"catalogItem",ean,title:"Leite em pó 800g",brand:"Ninho"},
+    {kind:"receipt",invoice:{lines:[{gtin:ean,name:"Arroz comprovado em XML"}]}}
+  ];
+  assert.equal(fromLocalRecords(local,ean).title,"Arroz comprovado em XML");
+  let requested=0;
+  const r=await lookupGtin(ean,{localRecords:local,storage:storage(),
+    fetchImpl:async()=>{requested++;throw Error("Não deveria chamar API");}});
+  assert.equal(r.product.source,"nota-anterior");
+  assert.equal(requested,0);
 });
 test("consulta usa Open Food Facts somente depois de resposta vazia do PreçoMelhor",async()=>{
   let calls=0;

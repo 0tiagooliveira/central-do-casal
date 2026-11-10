@@ -177,7 +177,7 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     toastTimeout=setTimeout(()=>{toast.hidden=true;},6000);
   }
   installReceiptWorkspace({root,getState,render,notify});
-  const scanner=installEanScanner({notify,onDraft:({ean,title,quantity})=>{
+  const scanner=installEanScanner({notify,getLocalRecords:()=>getState().shared||[],onDraft:({ean,title,quantity})=>{
     const key=eanDraftKey(getState());
     if(!key)throw Error("Entre no espaço do casal antes de adicionar produtos.");
     const drafts=addEanDraft(window.localStorage,key,{ean,title,quantity});

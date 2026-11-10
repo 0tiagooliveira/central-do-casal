@@ -1,6 +1,6 @@
 import {lookupGtin,normalizeGtin} from "./ean-catalog.js";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-export function installEanScanner({onDraft,notify}) {
+export function installEanScanner({onDraft,notify,getLocalRecords=()=>[]}) {
   const dialog=document.createElement("dialog");
   dialog.className="shop-dialog ean-dialog";
   dialog.innerHTML=`<div class="dialog-header"><h2>📷 Identificar produto</h2>
@@ -39,7 +39,7 @@ export function installEanScanner({onDraft,notify}) {
     const token=++requestToken;
     busy=true;searchButton.disabled=true;status.textContent="Consultando catálogo local e bases públicas…";
     let record;
-    try{record=await lookupGtin(ean);}
+    try{record=await lookupGtin(ean,{localRecords:getLocalRecords()});}
     catch(error){status.textContent=error.message||"Falha na consulta.";return;}
     finally{busy=false;searchButton.disabled=false;}
     if (!dialog.open || token!==requestToken)return;
@@ -49,13 +49,13 @@ export function installEanScanner({onDraft,notify}) {
       "Confira a descrição e a embalagem antes de adicionar.":
       record.status==="missing"?"Produto não encontrado. Informe a descrição manualmente.":
       "Não foi possível consultar as fontes. Digite a descrição e guarde o EAN.";
-    status.textContent=(record.fromCache?"Resultado do cache. ":"")+hint;
+    status.textContent=(record.fromLocal?"Identificado no histórico da Central. ":record.fromCache?"Resultado do cache. ":"")+hint;
     const photo=record.product?.imageUrl ?
       `<img class="ean-photo" src="${esc(record.product.imageUrl)}" alt="Foto do produto" loading="lazy" referrerpolicy="no-referrer">`:"";
     const brand=record.product?.brand?`<small>Marca: ${esc(record.product.brand)}</small>`:"";
     const amount=record.product?.package?`<small>Embalagem: ${esc(record.product.package)}</small>`:"";
     result.innerHTML=`<div class="ean-product">${photo}<div><strong>EAN: ${esc(ean)}</strong>${brand}${amount}
-      <small>Origem: ${source==="precomelhor"?"PreçoMelhor":source==="openfoodfacts"?"Open Food Facts":"Informação manual"}</small></div></div>
+      <small>Origem: ${source==="precomelhor"?"PreçoMelhor":source==="openfoodfacts"?"Open Food Facts":source==="minha-base"?"Minha base":source==="nota-anterior"?"Nota fiscal anterior":"Informação manual"}</small></div></div>
       <form data-ean-draft><label>Nome do produto<input name="name" maxlength="200" required
         value="${esc(name)}" placeholder="Informe nome, marca e tamanho"></label>
         <label>Quantidade de embalagens<input type="number" name="quantity" min="1" max="100" step="1" value="1" required></label>
