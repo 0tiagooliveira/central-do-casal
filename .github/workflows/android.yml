@@ -61,6 +61,9 @@ jobs:
       - name: Install Firebase test dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Test EAN lookup, local drafts and web syntax
+        run: npm run test:ean
+
       - name: Run Firestore security rules tests
         run: npm run test:rules
 

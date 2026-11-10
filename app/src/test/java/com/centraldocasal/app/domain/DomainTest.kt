@@ -38,4 +38,13 @@ class DomainTest {
         assertFalse(restored.quantityReviewed)
     }
 
+    @Test fun shoppingEntryRoundTripKeepsEanFromWebScanner() {
+        val original = Entry(title = "Arroz 1kg", ean = "7896006716112", estimateKnown = false)
+        val restored = Entry.from(original.toMap())
+        assertEquals("7896006716112", restored.ean)
+        assertFalse(restored.estimateKnown)
+        val old = Entry.from(Entry(title = "Sem código").toMap())
+        assertEquals("", old.ean)
+    }
+
 }

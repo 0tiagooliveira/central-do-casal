@@ -422,3 +422,15 @@
 .offline-closed-actions{display:flex;gap:9px;flex-wrap:wrap}
 .offline-closed-actions button{min-height:45px;flex:1;min-width:150px;padding:11px;font-weight:800;font-size:.78rem}
 @media(max-width:540px){.offline-closed-actions{flex-direction:column}.offline-closed-actions button{width:100%}}
+
+/* Scanner de EAN: leitura acessível e rascunho sem persistência remota automática. */
+.ean-scanner-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0}
+.ean-draft-banner{margin:12px 0;padding:16px;border:1px solid var(--border,#b9c9dd);border-radius:15px;background:var(--card,#f5f9ff)}
+.ean-draft-banner p{margin:5px 0 11px}
+.ean-dialog{width:min(92vw,520px);max-height:min(90vh,820px);overflow:auto}
+.ean-video{width:100%;max-height:280px;object-fit:cover;border-radius:12px;background:#141c29;margin:12px 0}
+.ean-product{display:flex;gap:15px;align-items:flex-start;margin:12px 0}
+.ean-product>div{display:grid;gap:6px}
+.ean-photo{width:88px;height:88px;object-fit:contain;background:#fff;border:1px solid #dde6f1;border-radius:10px}
+.ean-dialog [data-ean-result]{margin:12px 0}
+.ean-dialog [data-ean-status]{margin:12px 0}

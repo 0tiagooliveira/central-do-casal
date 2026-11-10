@@ -13,6 +13,8 @@ import {presentationSeries} from "./product-presentation.js";
 import {confirmCatalogAssociation} from "./catalog-reconcile.js";
 import {catalogView} from "./catalog-ui.js";
 import {catalogDraft,catalogQuickDraft,alreadyAdded} from "./catalog.js";
+import {installEanScanner} from "./ean-scanner.js";
+import {eanDraftKey,readEanDrafts,addEanDraft,clearEanDrafts,planEanDraftBatch} from "./ean-drafts.js";
 import {priceHistory,priceTrend} from "./catalog-history.js";
 import {marketView,quantityControls} from "./shopping-market.js";
 import {createShoppingActions,UNITS,moneyCents,milliQty,subtotal} from "./shopping.js";
@@ -78,7 +80,17 @@ export function shoppingView({state}) {
   const market=state.market;
   const options=["Mercado","Açougue"].map(x=>`<button type="button" data-market="${x}" aria-pressed="${x===market}">${x}</button>`).join("");
   const modes=[["catalog","Catálogo"],["list","Minha lista"],["market","No mercado"],["review","Conferência"]].map(([id,label])=>`<button type="button" class="shop-tab ${shopPrefs.mode===id?"selected":""}" data-shop-action="view-${id}" aria-pressed="${shopPrefs.mode===id}">${label}</button>`).join("");
-  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>`+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
+  // A leitura do rascunho é local; nenhum listener ou escrita no Firebase por render.
+  const currentDrafts=readEanDrafts(window.localStorage,eanDraftKey(state));
+  const eanDraftBanner=currentDrafts.length?
+    `<section class="ean-draft-banner"><div><strong>📦 Rascunho do scanner: ${currentDrafts.length} produto(s)</strong>
+      <p>Salvo somente neste aparelho. Os outros dispositivos verão o lote após a confirmação.</p></div>
+      <div class="dialog-actions"><button class="primary-btn" type="button" data-shop-action="ean-sync">Salvar lote na lista</button>
+      <button class="item-btn" type="button" data-shop-action="ean-clear">Descartar rascunho</button></div></section>`:"";
+  const viewHeader=`<nav class="shop-mode-tabs" aria-label="Áreas de compras">${modes}</nav>
+    <div class="ean-scanner-toolbar"><button type="button" class="item-btn" data-shop-action="scan-ean">▥ Escanear código de barras</button>
+      <span class="info-line">Consultar EAN e preparar itens, sem gravar a cada leitura</span></div>`+
+    eanDraftBanner+restoreBackupControl(state)+offlineClosureBanner(state)+cartBatchBanner(state)+emergencyBanner(state);
   // Importante: não analisar notas, gráficos, preços e 50+ itens a cada
   // entrada em No mercado. Tudo abaixo só é necessário em Minha lista.
   if(shopPrefs.mode==="review")return viewHeader+receiptWorkspaceView(state);
@@ -165,6 +177,13 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     toastTimeout=setTimeout(()=>{toast.hidden=true;},6000);
   }
   installReceiptWorkspace({root,getState,render,notify});
+  const scanner=installEanScanner({notify,getLocalRecords:()=>getState().shared||[],onDraft:({ean,title,quantity})=>{
+    const key=eanDraftKey(getState());
+    if(!key)throw Error("Entre no espaço do casal antes de adicionar produtos.");
+    const drafts=addEanDraft(window.localStorage,key,{ean,title,quantity});
+    render();
+    notify("Produto guardado no rascunho ("+drafts.length+"). Nenhuma gravação no Firebase.");
+  }});
   const uploader=document.createElement("input");
   uploader.type="file";uploader.accept="application/json,.json";uploader.hidden=true;document.body.append(uploader);
   uploader.addEventListener("change",async()=>{
@@ -374,6 +393,43 @@ export function installShoppingUI({root,db,auth,getState,render}) {
     const button=event.target.closest("[data-shop-action]");
     if(!button||busy)return;
     const s=projectedShoppingState(getState()),act=button.dataset.shopAction,market=s.market;
+    if(act==="scan-ean"){
+      if(!s.household||!s.uid){notify("Entre no espaço do casal antes de escanear.",true);return;}
+      scanner.open();return;
+    }
+    if(act==="ean-clear"){
+      const key=eanDraftKey(s);
+      if(key&&confirm("Descartar todos os produtos escaneados neste aparelho? A lista sincronizada não será alterada.")){
+        clearEanDrafts(window.localStorage,key);render();notify("Rascunho local descartado.");
+      }
+      return;
+    }
+    if(act==="ean-sync"){
+      if(readEmergency(getState(),market)||readOfflineClosure(getState(),market)?.status==="pending"){
+        notify("Existe uma compra offline não sincronizada. Sincronize ou finalize esse backup antes do lote EAN, sem perder o rascunho.",true);
+        return;
+      }
+      const key=eanDraftKey(s);
+      const drafts=readEanDrafts(window.localStorage,key);
+      if(!drafts.length){notify("Não há produtos para sincronizar.");return;}
+      let plan;
+      try {plan=planEanDraftBatch(drafts,s.baskets[market]?.entries||[]);}
+      catch(error){notify(error.message,true);return;}
+      if(!plan.needed.length){
+        notify("Todos os produtos do rascunho já estão na lista. Revise ou descarte o rascunho.");return;
+      }
+      const msg="SALVAR LISTA ESCANEADA?\n\n"+
+        plan.needed.length+" novo(s) produto(s) serão adicionados numa transação ao Firebase.\n"+
+        plan.skipped.length+" já estão na lista ou estão duplicados.\n"+
+        "Preços permanecerão em branco. Se a lista mudar noutro celular, o rascunho será preservado.\n\nContinuar?";
+      if(!confirm(msg))return;
+      run(async()=>{
+        await actions.addEanBatch(market,drafts);
+        clearEanDrafts(window.localStorage,key);
+        render();
+      },plan.needed.length+" produto(s) do scanner adicionados à lista");
+      return;
+    }
     if(act==="import-link-cart"){
       const batch=readCartBatch();
       if(!batch||!s.uid||!s.household||market!=="Mercado"){
