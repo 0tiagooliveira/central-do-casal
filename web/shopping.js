@@ -1,6 +1,7 @@
 import {applyMissingEstimates} from "./shopping-estimates.js";
 import {replayEmergency} from "./emergency-cart.js";
 import {compareInvoice} from "./invoice-reconcile.js";
+import {planEanDraftBatch} from "./ean-drafts.js";
 import {doc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 export const UNITS=["un","kg","g","L","mL","pacote"];
@@ -107,6 +108,37 @@ export function createShoppingActions(db,auth,getState) {
   const fillMissingEstimates=(market,proposals)=>modify(market,old=>({
     ...old,entries:applyMissingEstimates(old.entries||[],proposals)
   }));
+  // Publica os produtos escaneados numa única transação, nunca por leitura.
+  // Se o outro celular alterou a lista, falha sem tocar no rascunho local.
+  async function addEanBatch(market,drafts) {
+    const state=getState();assertSession(state,auth);
+    if(!["Mercado","Açougue"].includes(market)||!Array.isArray(drafts)||
+        !drafts.length||drafts.length>40)throw Error("Rascunho EAN inválido.");
+    const expected=Number(state.baskets[market]?.revision||0);
+    return runTransaction(db,async tx=>{
+      const ref=basketRef(state,market),snap=await tx.get(ref);
+      const old=snap.exists()?snap.data():freshBasket(market);
+      if(Number(old.revision||0)!==expected)
+        throw Error("A lista mudou noutro aparelho. Rascunho preservado. Confira antes de sincronizar.");
+      const plan=planEanDraftBatch(drafts,old.entries||[]);
+      if(!plan.needed.length)return {added:0,skipped:plan.skipped.length};
+      if((old.entries||[]).length+plan.needed.length>200)
+        throw Error("A lista ultrapassaria o limite de 200 itens. Rascunho preservado.");
+      const additions=plan.needed.map(item=>({
+        id:item.id,ean:item.ean,title:item.title,unit:"un",
+        plannedMilli:item.plannedMilli,actualMilli:item.plannedMilli,
+        estimated:0,actual:null,bought:false,estimateKnown:false,
+        unitReviewed:true,quantityReviewed:true,
+        sourceBaseId:"",sourceSkuId:"",category:"",storageRoom:"",
+        recipient:"Casa",group:"Essenciais",subgroup:"",
+        priority:"Normal",sourcePlanId:"",sourceStepId:""
+      }));
+      additions.forEach(checkEntry);
+      tx.set(ref,{...old,entries:[...(old.entries||[]),...additions],
+        revision:Number(old.revision||0)+1});
+      return {added:additions.length,skipped:plan.skipped.length};
+    });
+  }
   async function synchronizeEmergency(market,draft) {
     const state=getState();assertSession(state,auth);
     if(!draft||draft.market!==market||draft.uid!==state.uid||
@@ -242,5 +274,5 @@ export function createShoppingActions(db,auth,getState) {
       tx.set(ref,{market,budget:b.budget,revision:Number(b.revision)+1,generation:crypto.randomUUID(),entries:nextEntries});
     });
   }
-  return {addItem,addToCart,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency,publishOfflinePurchase};
+  return {addItem,addToCart,addEanBatch,updateItem,removeItem,changeBudget,fillMissingEstimates,repurchase,closeBasket,importBackup,synchronizeEmergency,publishOfflinePurchase};
 }

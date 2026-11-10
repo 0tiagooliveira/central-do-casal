@@ -1,1 +1,14 @@
-{"name":"central-do-casal-qa","private":true,"type":"module","scripts":{"test:rules":"firebase emulators:exec --only firestore --project demo-central-do-casal \"node --test firestore/rules.test.mjs\""},"devDependencies":{"@firebase/rules-unit-testing":"^4.0.1","firebase":"^11.10.0","firebase-tools":"^14.17.0"}}
+{
+  "name": "central-do-casal-qa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-central-do-casal \"node --test firestore/rules.test.mjs\"",
+    "test:ean": "node --test tools/ean.test.mjs && node --check web/ean-catalog.js && node --check web/ean-drafts.js && node --check web/ean-scanner.js && node --check web/shopping-ui.js && node --check web/shopping.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0",
+    "firebase-tools": "^14.17.0"
+  }
+}
