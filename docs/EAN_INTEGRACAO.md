@@ -23,3 +23,6 @@
 - Conferir CORS e identificação com as APIs reais, inclusive situações 404, 429, offline e resposta inesperada.
 - Verificar métricas efetivas de Firestore somente no Console autorizado.
 - Revisar compatibilidade com a branch concorrente do PR #101 antes do merge.
+
+## Compatibilidade Android
+O campo opcional `ean` agora é preservado por `Entry.from()` e `Entry.toMap()` no Android. A alteração é retrocompatível, não modifica listas antigas nem publica um APK.
